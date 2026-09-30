@@ -1,0 +1,6 @@
+from fastapi import FastAPI
+app = FastAPI(title="Mafia Bot")
+
+@app.get("/health")
+async def health() -> dict[str, str]:
+    return {"status": "ok"}
