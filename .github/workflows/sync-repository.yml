@@ -15,13 +15,30 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Diagnose destination authentication
+        env:
+          DEST_REPO_TOKEN: ${{ secrets.DEST_REPO_TOKEN }}
+        run: |
+          set -e
+          echo "Checking destination token identity..."
+          curl -fsS -H "Authorization: Bearer ${DEST_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/user | python -c 'import json,sys; d=json.load(sys.stdin); print("Authenticated GitHub user:", d.get("login")); print("Token type:", d.get("type"))'
+
+          echo "Checking destination repository access..."
+          curl -fsS -H "Authorization: Bearer ${DEST_REPO_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/tusancofeenet-ai/Mafia | \
+            python -c 'import json,sys; d=json.load(sys.stdin); print("Repository:", d.get("full_name")); print("Private:", d.get("private")); print("Permissions:", d.get("permissions"))'
+
       - name: Push to destination repository
         env:
           DEST_REPO_TOKEN: ${{ secrets.DEST_REPO_TOKEN }}
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git remote add destination https://x-access-token:${DEST_REPO_TOKEN}@github.com/tusancofeenet-ai/Mafia.git
+          git remote add destination "https://x-access-token:${DEST_REPO_TOKEN}@github.com/tusancofeenet-ai/Mafia.git"
 
           git push destination main --force
