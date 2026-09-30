@@ -1,0 +1,27 @@
+name: Sync Repository
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push to destination repository
+        env:
+          DEST_REPO_TOKEN: ${{ secrets.DEST_REPO_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git remote add destination https://x-access-token:${DEST_REPO_TOKEN}@github.com/tusancofeenet-ai/Mafia-REPO.git
+
+          git push destination main --force
