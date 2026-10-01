@@ -629,10 +629,17 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 await session.commit()
                 message = "بازیکن از لیست بازی حذف شد."
             elif game.status == "running" and target.alive:
-                target.alive = False
-                target.exit_type = "death"
-                await session.commit()
-                message = "بازیکن به لیست کشته‌شده‌ها منتقل شد."
+                if game.phase == "night":
+                    from app.services.gameplay import queue_pending_status_action
+                    round_no = await current_round(session, game.id)
+                    await queue_pending_status_action(session, game, "death", target_id, round_no, actor.id if actor else None)
+                    await session.commit()
+                    message = "حذف برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
+                else:
+                    target.alive = False
+                    target.exit_type = "death"
+                    await session.commit()
+                    message = "بازیکن به لیست کشته‌شده‌ها منتقل شد."
             else:
                 await callback.answer("این بازیکن قابل حذف نیست.", show_alert=True)
                 return
@@ -736,7 +743,7 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 payload.update(target_vote)
             session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False)))
             await session.commit()
-            if game.phase in {"day", "voting"} and action in {"silence", "kick", "slaughter", "warning"}:
+            if game.phase in {"day", "voting"} and action in {"remove", "silence", "kick", "slaughter", "warning"}:
                 try:
                     await callback.bot.send_message(
                         group.telegram_id,
