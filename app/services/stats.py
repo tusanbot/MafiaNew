@@ -112,14 +112,14 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
     correct_votes = {uid: 0 for uid in by_user}; accepted_challenges = {uid: 0 for uid in by_user}
     faceoff_counts = {uid: 0 for uid in by_user}; faceoff_wins = {uid: 0 for uid in by_user}
     killed_ids = {int(d["killed_user_id"]) for d in resolved if d.get("killed_user_id")}
-    saved_rounds = sum(1 for d in resolved if d.get("saved"))
+    saved_rounds = {int(d.get("round_no", 0)) for d in resolved if d.get("saved")}
     for event, data in actions:
         actor = event.actor_user_id
         if actor not in by_user:
             continue
         if data.get("action_type") == "mafia_kill" and int(data.get("target_user_id", 0)) in killed_ids:
             kills[actor] += 1
-        elif data.get("action_type") == "doctor_save" and saved_rounds:
+        elif data.get("action_type") == "doctor_save" and int(data.get("round_no", 0)) in saved_rounds:
             saves[actor] += 1
         elif data.get("action_type") == "detective_check":
             investigations[actor] += 1
