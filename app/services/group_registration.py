@@ -65,5 +65,15 @@ async def check_group_registration(bot, chat_id: int) -> GroupRegistrationCheck:
 
 
 async def register_group(session: AsyncSession, chat, user_id: int) -> Group:
+    # Registration must always receive the real aiogram Chat object.
+    # Never accept/resolve a groups.id here: groups.id is an internal PK,
+    # while groups.telegram_id must always come from Chat.id.
+    if chat is None or getattr(chat, "type", None) not in ("group", "supergroup"):
+        raise ValueError("ثبت گروه فقط با Chat واقعی تلگرام انجام می‌شود.")
+
+    chat_id = getattr(chat, "id", None)
+    if not isinstance(chat_id, int) or chat_id >= 0:
+        raise ValueError("شناسه گروه تلگرام نامعتبر است.")
+
     group = await GroupRepository.upsert_from_chat(session, chat)
     return await GroupRepository.register(session, group, user_id)
