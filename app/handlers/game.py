@@ -392,20 +392,20 @@ async def round_start_handler(callback: CallbackQuery) -> None:
         )
         group = await session.get(Group, game.group_id)
         if group:
-            await callback.bot.send_message(
+            msg = await callback.bot.send_message(
                 group.telegram_id,
                 f"▶️ دور {result['round_no']} شروع شد.\n"
                 f"👑 سردست: {leader.display_name if leader else 'بازیکن'}\n\n"
-                "🗣 نوبت صحبت‌ها آغاز شد.",
+                f"🗣 نوبت صحبت {leader.display_name if leader else 'بازیکن'}\n\n"
+                "⏱ 02:00 فرصت صحبت داری",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
                     game.turn_color, game.challenge_color, True,
                     bool(turn and turn.get("kind") != "extra"),
                 ),
             )
-        if game.next_auto_enabled:
             from app.handlers.gameplay import _schedule_auto_next
-            await _schedule_auto_next(callback.bot, game.game_key)
+            await _schedule_auto_next(callback.bot, game.game_key, group.telegram_id, msg.message_id)
         await callback.answer("دور شروع شد.")
 
 
