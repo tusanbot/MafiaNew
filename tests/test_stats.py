@@ -47,3 +47,11 @@ def test_performance_score_is_weighted_and_capped():
         correct_votes=0, accepted_challenges=0,
         faceoff_wins=0, survived=True,
     ) == 3
+
+
+def test_requested_achievement_targets():
+    rows = {row[0]: row for row in ACHIEVEMENTS}
+    assert rows["three_win_streak"][1] == "استرایکر"
+    assert rows["five_win_streak"][1] == "ابر استرایکر"
+    assert rows["independent_master"][2] == "کسب ۱ برد با تیم مستقل"
+    assert rows["army_one"][2] == "کسب ۳ برد با تیم مستقل"
