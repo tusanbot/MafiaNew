@@ -408,7 +408,7 @@ def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False)
         builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"round:settings:{game_key}"))
         return builder.as_markup()
 
-    builder.row(InlineKeyboardButton(text="👑 سردست انتخاب شد", callback_data=f"leader:menu:{game_key}"))
+    builder.row(InlineKeyboardButton(text="👑 انتخاب سردست", callback_data=f"leader:menu:{game_key}"))
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"round:settings:{game_key}"))
     builder.row(InlineKeyboardButton(text="▶️ شروع دور", callback_data=f"round:start:{game_key}"))
     return builder.as_markup()
