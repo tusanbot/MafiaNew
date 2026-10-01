@@ -90,25 +90,7 @@ class GameRepository:
         )
         players = list(result.scalars())
         if len(players) >= scenario.max_players:
-            if not game.reserve_enabled:
-                return None
-            reserve_result = await session.execute(
-                select(GamePlayer.reserve_position)
-                .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
-                .order_by(GamePlayer.reserve_position.desc())
-            )
-            last = reserve_result.scalar_one_or_none()
-            player = GamePlayer(
-                game_id=game.id,
-                user_id=user.id,
-                seat=0,
-                is_reserved=True,
-                reserve_position=(last or 0) + 1,
-            )
-            session.add(player)
-            await session.commit()
-            await session.refresh(player)
-            return player
+            return None
         used_seats = {player.seat for player in players}
         seat = next((n for n in range(1, scenario.max_players + 1) if n not in used_seats), None)
         if seat is None:
@@ -159,6 +141,42 @@ class GameRepository:
             )
         await session.commit()
         return True, promoted
+
+    @staticmethod
+    async def join_reserve(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
+        if game.status != "waiting" or not game.reserve_enabled:
+            return None
+        existing = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+        )
+        player = existing.scalar_one_or_none()
+        if player is not None:
+            return player if player.is_reserved else None
+        scenario = await session.get(Scenario, game.scenario_id)
+        if scenario is None:
+            return None
+        count_result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(False))
+        )
+        if len(list(count_result.scalars())) < scenario.max_players:
+            return None
+        last_result = await session.execute(
+            select(GamePlayer.reserve_position)
+            .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
+            .order_by(GamePlayer.reserve_position.desc())
+        )
+        last = last_result.scalar_one_or_none()
+        player = GamePlayer(
+            game_id=game.id,
+            user_id=user.id,
+            seat=0,
+            is_reserved=True,
+            reserve_position=(last or 0) + 1,
+        )
+        session.add(player)
+        await session.commit()
+        await session.refresh(player)
+        return player
 
     @staticmethod
     async def change_seat(session: AsyncSession, game: Game, user: User, seat: int) -> bool:
