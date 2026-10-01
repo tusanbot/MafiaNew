@@ -363,7 +363,7 @@ async def round_toggle_handler(callback: CallbackQuery) -> None:
             return
         await session.commit()
         from app.handlers.keyboards import leader_settings_keyboard
-        await callback.message.edit_reply_markup(reply_markup=leader_settings_keyboard(game.game_key, game))
+        await callback.message.edit_reply_markup(reply_markup=leader_settings_keyboard(game.game_key, game, True))
     await callback.answer("تنظیم ذخیره شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("round:start:"))
