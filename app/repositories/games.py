@@ -59,6 +59,9 @@ class GameRepository:
         turn_color: str = "پیش‌فرض",
         challenge_color: str = "پیش‌فرض",
         reserve_enabled: bool = True,
+        turn_seconds: int = 120,
+        challenge_seconds: int = 60,
+        extra_challenge_seconds: int = 60,
     ) -> Game:
         """Create a Game using only settings that are part of the Game schema."""
         game = Game(
@@ -75,6 +78,9 @@ class GameRepository:
             challenge_enabled=True,
             challenge_mode=scenario.challenge_mode,
             challenge_limit=getattr(scenario, "challenge_limit", 1),
+            turn_seconds=turn_seconds,
+            challenge_seconds=challenge_seconds,
+            extra_challenge_seconds=extra_challenge_seconds,
         )
         session.add(game)
         await session.commit()
