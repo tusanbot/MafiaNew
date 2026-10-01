@@ -19,6 +19,7 @@ class User(Base):
     independent_wins: Mapped[int] = mapped_column(Integer, default=0)
     challenges: Mapped[int] = mapped_column(Integer, default=0)
     achievements_count: Mapped[int] = mapped_column(Integer, default=0)
+    score: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     registered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
