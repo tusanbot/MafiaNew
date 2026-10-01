@@ -114,7 +114,10 @@ async def register_group_callback(callback: CallbackQuery) -> None:
             callback.from_user.first_name or "",
             callback.from_user.last_name,
         )
-        await register_group(session, group, user.id)
+        # register_group must receive the real Telegram Chat object.
+        # Passing the internal Group model here would mix groups.id with
+        # the Telegram chat ID, which the registration guard prevents.
+        group = await register_group(session, chat, user.id)
         await callback.message.edit_text(
             f"گروه «{group.title or chat_id}» با موفقیت در ربات ثبت شد.",
             reply_markup=group_start_menu(group.id),
