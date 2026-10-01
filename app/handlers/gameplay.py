@@ -53,7 +53,9 @@ def _day_keyboard(game, current: bool = False):
         bool(emoji_settings.get("challenge", True)),
     )
 
-_challenge_tasks = {}\n_turn_tasks = {}\nTURN_SECONDS = 60
+_challenge_tasks = {}
+_turn_tasks = {}
+TURN_SECONDS = 60
 
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
