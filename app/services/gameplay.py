@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote
+from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario
 from app.core.game.engine import GameEngine, GameEnginePhase, GameState
 from app.services.roles import assign_roles
 
@@ -235,7 +235,7 @@ async def current_turn(session, game_id: int) -> dict | None:
 
 
 async def _current_scenario(session, game):
-    return await session.get(__import__("app.db.models", fromlist=["Scenario"]).Scenario, game.scenario_id)
+    return await session.get(Scenario, game.scenario_id)
 
 
 async def is_user_silenced(session, game_id: int, user_id: int, round_no: int) -> bool:
@@ -432,7 +432,7 @@ async def select_challenge_placement(session, game, turn_owner: User, request_ev
         raise ValueError("ابتدا باید یک درخواست چالش انتخاب شود.")
     started = datetime.fromisoformat(turn["started_at"])
     now = datetime.now(timezone.utc)
-    if now - started >= __import__("datetime").timedelta(minutes=1):
+    from datetime import timedelta\n    if now - started >= timedelta(minutes=1):
         placement = "after"
     data["placement"] = placement
     data["placement_selected_at"] = now.isoformat()
