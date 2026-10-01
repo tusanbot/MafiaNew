@@ -318,7 +318,7 @@ async def night_callback(callback: CallbackQuery):
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
                     msg = await callback.bot.send_message(
                         chat_id,
-                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(turn.get('kind', 'main'))))} فرصت صحبت داری",
                         reply_markup=_day_keyboard(game, True),
                     )
                     await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
@@ -528,7 +528,7 @@ async def next_turn_handler(callback: CallbackQuery):
             kind = "چالش" if result["kind"] == "challenge" else ("ترن اضافه" if result["kind"] == "extra" else "اصلی")
             msg = await callback.bot.send_message(
                 chat_id,
-                f"🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled,
                     game.turn_color_enabled, game.turn_color, game.challenge_color,
