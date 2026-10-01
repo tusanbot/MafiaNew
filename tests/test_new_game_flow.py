@@ -78,3 +78,38 @@ def test_host_callback_shape_matches_handler() -> None:
     assert parts[0:2] == ["newgame", "sethost"]
     assert int(parts[2]) == group_id
     assert int(parts[3]) == host_id
+
+def test_host_callback_shape_matches_handler() -> None:
+    group_id, host_id = 123, 456789
+    callback_data = f"newgame:sethost:{group_id}:{host_id}"
+    parts = callback_data.split(":")
+    assert len(parts) == 4
+    assert parts[0:2] == ["newgame", "sethost"]
+    assert int(parts[2]) == group_id
+    assert int(parts[3]) == host_id
+
+
+def test_new_game_color_callbacks_have_four_parts() -> None:
+    turn = "newgame:set_turn_color:123:قرمز".split(":")
+    challenge = "newgame:set_challenge_color:123:آبی".split(":")
+    assert len(turn) == 4
+    assert turn[:2] == ["newgame", "set_turn_color"]
+    assert int(turn[2]) == 123
+    assert turn[3] == "قرمز"
+    assert len(challenge) == 4
+    assert challenge[:2] == ["newgame", "set_challenge_color"]
+    assert int(challenge[2]) == 123
+    assert challenge[3] == "آبی"
+
+
+def test_night_callbacks_match_keyboard_shapes() -> None:
+    resolve = "night:resolve:abc123".split(":")
+    action = "night:mafia_kill:abc123:456".split(":")
+    assert len(resolve) == 3
+    assert resolve[0:2] == ["night", "resolve"]
+    assert resolve[2] == "abc123"
+    assert len(action) == 4
+    assert action[0] == "night"
+    assert action[1] == "mafia_kill"
+    assert action[2] == "abc123"
+    assert int(action[3]) == 456
