@@ -226,16 +226,34 @@ async def check_winner(session, game_id):
     return None
 
 async def finalize_game(session, game, winner):
-    if game.status == "finished": return
-    existing = await session.execute(select(GameEvent).where(GameEvent.game_id == game.id, GameEvent.event_type == "stats_recorded"))
-    if existing.scalars().first(): return
+    """Finalize a game with a manually selected or engine-detected result."""
+    if game.status == "finished":
+        return
+    existing = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "stats_recorded"
+    ))
+    if existing.scalars().first():
+        return
+    valid = {"citizen", "mafia", "independent", "citizen_independent", "draw"}
+    if winner not in valid:
+        raise ValueError("نتیجه بازی نامعتبر است.")
     game.status, game.phase, game.finished_at = "finished", "result", datetime.now(timezone.utc)
     for player, user, role in await all_players(session, game.id):
         user.games_played += 1
-        if role and role.team == winner:
+        winning = (
+            (winner == "mafia" and role and role.team == "mafia")
+            or (winner == "citizen" and role and role.team == "citizen")
+            or (winner == "independent" and role and role.team == "independent")
+            or (winner == "citizen_independent" and role and role.team in {"citizen", "independent"})
+        )
+        if winning:
             user.games_won += 1
-            if winner == "mafia": user.mafia_wins += 1
-            elif winner == "citizen": user.citizen_wins += 1
+            if role.team == "mafia":
+                user.mafia_wins += 1
+            elif role.team == "citizen":
+                user.citizen_wins += 1
+            elif role.team == "independent":
+                user.independent_wins += 1
     await _event(session, game, "stats_recorded", {"winner": winner})
 
 
