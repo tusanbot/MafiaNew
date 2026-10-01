@@ -13,7 +13,7 @@ class GameEnginePhase(str, Enum):
     FINISHED = "finished"
 
 ALLOWED = {
-    GameEnginePhase.SETUP: {GameEnginePhase.NIGHT, GameEnginePhase.FINISHED},
+    GameEnginePhase.SETUP: {GameEnginePhase.DAY, GameEnginePhase.NIGHT, GameEnginePhase.FINISHED},
     GameEnginePhase.NIGHT: {GameEnginePhase.DAY, GameEnginePhase.RESULT, GameEnginePhase.FINISHED},
     GameEnginePhase.DAY: {GameEnginePhase.VOTING, GameEnginePhase.NIGHT, GameEnginePhase.RESULT, GameEnginePhase.FINISHED},
     GameEnginePhase.VOTING: {GameEnginePhase.NIGHT, GameEnginePhase.RESULT, GameEnginePhase.FINISHED},
