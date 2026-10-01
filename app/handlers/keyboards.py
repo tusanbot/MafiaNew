@@ -96,6 +96,19 @@ def player_management_menu(group_id: int, back_callback: str | None = None) -> I
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
+def player_target_management_keyboard(group_id: int, action: str, players) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for player, user in players:
+        name = user.display_name or user.first_name or user.username or str(user.telegram_id)
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{player.seat}. {name[:40]}",
+                callback_data=f"gameadmin:player_target:{group_id}:{action}:{user.id}",
+            )
+        )
+    _back(builder, f"gameadmin:players:{group_id}")
+    return builder.as_markup()
+
 
 def game_features_menu(group_id: int, challenge_mode: str = "در حال دریافت", next_status: str = "در حال دریافت", back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -118,7 +131,6 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
     ))
     builder.row(InlineKeyboardButton(text=f"رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
     builder.row(InlineKeyboardButton(text=f"رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
-    builder.row(InlineKeyboardButton(text="سایر امکانات", callback_data=f"gameadmin:extra:{group_id}:other"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
