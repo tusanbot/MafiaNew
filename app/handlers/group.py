@@ -34,7 +34,7 @@ async def new_game_handler(message: Message) -> None:
 
     async with session_factory() as session:
         group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
-        if not group or not group.is_active:
+        if not group or not group.is_active or group.registered_at is None:
             await message.answer("این گروه هنوز در ربات ثبت نشده است. از /start داخل گروه برای ثبت گروه استفاده کنید.")
             return
         active = await GameRepository.get_active(session, group.id)
