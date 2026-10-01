@@ -203,11 +203,26 @@ async def deal_roles(callback: CallbackQuery) -> None:
         if not scenario or len(players) != scenario.max_players:
             await callback.answer(f"برای پخش نقش باید {scenario.max_players if scenario else 'تعداد کامل'} صندلی تکمیل باشد.", show_alert=True)
             return
-        assignments = await assign_roles(session, game)
+        # پاسخ callback را زود ارسال می‌کنیم تا دکمه در حالت loading گیر نکند؛
+        # ادامه‌ی پخش نقش مستقل از acknowledgement تلگرام انجام می‌شود.
+        await callback.answer("در حال پخش نقش‌ها…")
+
+        try:
+            assignments = await assign_roles(session, game)
+            # role_messages فقط داده‌های انتساب را می‌خواند و قبل از تغییر وضعیت بازی
+            # ساخته می‌شود تا در صورت خطا، بازی ناخواسته وارد مرحله running نشود.
+            group_list, private_messages = await role_messages(session, game, assignments)
+        except Exception:
+            await session.rollback()
+            await callback.message.answer(
+                "پخش نقش انجام نشد. لطفاً دوباره تلاش کنید؛ وضعیت بازی به مرحله انتظار باقی ماند."
+            )
+            raise
+
         game.status = "running"
         game.phase = "setup"
         await session.commit()
-        group_list, private_messages = await role_messages(session, game, assignments)
+
         sent = 0
         failed = []
         for telegram_id, text in private_messages:
@@ -216,6 +231,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 sent += 1
             except Exception:
                 failed.append(telegram_id)
+
         try:
             players_now = await GameRepository.players(session, game.id)
             await callback.bot.send_message(
@@ -225,6 +241,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
             )
         except Exception:
             failed.append(host.telegram_id)
+
         failed = list(dict.fromkeys(failed))
         if failed:
             await callback.message.answer(
@@ -232,7 +249,6 @@ async def deal_roles(callback: CallbackQuery) -> None:
             )
         else:
             await callback.message.answer("نقش همه بازیکنان در PV ارسال شد.")
-    await callback.answer("نقش‌ها پخش شدند.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:"))
