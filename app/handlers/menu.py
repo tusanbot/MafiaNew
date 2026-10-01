@@ -514,6 +514,9 @@ async def game_features(callback: CallbackQuery) -> None:
                 game.next_auto_enabled,
                 game.auto_silence_warnings,
                 game.auto_kick_warnings,
+                game.turn_seconds,
+                game.challenge_seconds,
+                game.extra_challenge_seconds,
                 back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
             ),
         )
@@ -1043,7 +1046,8 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             "تنظیمات بازی",
             reply_markup=game_features_menu(
                 group.id, game.challenge_enabled, game.challenge_mode, game.next_host_enabled, game.next_player_enabled,
-                game.next_auto_enabled, game.auto_silence_warnings, game.auto_kick_warnings
+                game.next_auto_enabled, game.auto_silence_warnings, game.auto_kick_warnings,
+                game.turn_seconds, game.challenge_seconds, game.extra_challenge_seconds
             ),
         )
     await callback.answer("تنظیم ذخیره شد.")
@@ -1487,6 +1491,70 @@ async def toggle_draft_auto_next(callback: CallbackQuery) -> None:
             group.id, draft.challenge_enabled, draft.next_host_enabled,
             draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
     await callback.answer("نکست خودکار تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:time:"))
+async def new_game_time_menu(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("تنظیم زمان نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, kind = parts
+    group_id = int(group_raw)
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
+        current = {
+            "turn": draft.turn_seconds,
+            "challenge": draft.challenge_seconds,
+            "extra_challenge": draft.extra_challenge_seconds,
+        }.get(kind)
+        if current is None:
+            await callback.answer("نوع زمان نامعتبر است.", show_alert=True)
+            return
+        from app.handlers.keyboards import duration_keyboard
+        await callback.message.edit_text(
+            "انتخاب زمان " + {"turn": "نوبت", "challenge": "چالش", "extra_challenge": "چالش اضافه"}[kind],
+            reply_markup=duration_keyboard("newgame", group.id, kind, current, f"newgame:settings:{group.id}"),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:set_time:"))
+async def new_game_set_time(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("تنظیم زمان نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, kind, value_raw = parts
+    group_id, value = int(group_raw), int(value_raw)
+    if kind not in {"turn", "challenge", "extra_challenge"} or not 15 <= value <= 600:
+        await callback.answer("مقدار زمان نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        setattr(draft, {"turn": "turn_seconds", "challenge": "challenge_seconds", "extra_challenge": "extra_challenge_seconds"}[kind], value)
+        await session.commit()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_text(
+            "تنظیمات بازی",
+            reply_markup=new_game_settings_keyboard(
+                group.id, draft.challenge_enabled, draft.next_host_enabled, draft.next_player_enabled,
+                draft.next_auto_enabled, draft.auto_play, draft.turn_seconds, draft.challenge_seconds,
+                draft.extra_challenge_seconds,
+            ),
+        )
+    await callback.answer("زمان ذخیره شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:extras:"))
