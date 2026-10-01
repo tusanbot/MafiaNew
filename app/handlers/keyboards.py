@@ -110,15 +110,23 @@ def player_target_management_keyboard(group_id: int, action: str, players) -> In
     return builder.as_markup()
 
 
-def game_features_menu(group_id: int, challenge_mode: str = "در حال دریافت", next_status: str = "در حال دریافت", back_callback: str | None = None) -> InlineKeyboardMarkup:
+def game_features_menu(
+    group_id: int,
+    challenge_mode: str = "در حال دریافت",
+    next_status: str = "در حال دریافت",
+    back_callback: str | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"وضعیت چالش: {challenge_mode}", callback_data=f"gameadmin:feature:{group_id}:challenge"))
-    builder.row(InlineKeyboardButton(text=f"وضعیت نکست: {next_status}", callback_data=f"gameadmin:feature:{group_id}:next"))
+    builder.row(InlineKeyboardButton(
+        text=f"وضعیت چالش: {challenge_mode}",
+        callback_data=f"gameadmin:feature:{group_id}:challenge",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"وضعیت نوبت: {next_status}",
+        callback_data=f"gameadmin:feature:{group_id}:next",
+    ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
     builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
-    builder.row(InlineKeyboardButton(text="تغییر سناریو", callback_data=f"gameadmin:feature:{group_id}:scenario"))
-    builder.row(InlineKeyboardButton(text="تغییر گرداننده", callback_data=f"gameadmin:feature:{group_id}:host"))
-    builder.row(InlineKeyboardButton(text="امکانات ویژه", callback_data=f"gameadmin:feature:{group_id}:special"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
