@@ -3,7 +3,7 @@ from collections import Counter
 import json
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Game, GamePlayer, Role, Scenario, User
+from app.db.models import Game, GamePlayer, Role, Scenario, ScenarioRole, User
 
 def build_role_keys(player_count: int, scenario: Scenario | None = None) -> list[str]:
     if scenario and scenario.key:
@@ -25,7 +25,20 @@ async def assign_roles(session: AsyncSession, game: Game) -> list[tuple[GamePlay
     result = await session.execute(select(GamePlayer, User).join(User, User.id == GamePlayer.user_id).where(GamePlayer.game_id == game.id).order_by(GamePlayer.seat))
     players = list(result.all())
     scenario = await session.get(Scenario, game.scenario_id)
-    keys = build_role_keys(len(players), scenario)
+    composition = list((await session.execute(
+        select(ScenarioRole, Role)
+        .join(Role, Role.id == ScenarioRole.role_id)
+        .where(ScenarioRole.scenario_id == game.scenario_id)
+        .order_by(ScenarioRole.position, ScenarioRole.id)
+    )).all())
+    if composition:
+        keys = []
+        for scenario_role, role in composition:
+            keys.extend([role.key] * max(1, scenario_role.count))
+        if len(keys) != len(players):
+            raise ValueError(f"تعداد نقش‌های سناریو ({len(keys)}) با تعداد بازیکنان ({len(players)}) برابر نیست.")
+    else:
+        keys = build_role_keys(len(players), scenario)
     secrets.SystemRandom().shuffle(keys)
     roles_result = await session.execute(select(Role).where(Role.key.in_(set(keys))))
     role_map = {role.key: role for role in roles_result.scalars()}
