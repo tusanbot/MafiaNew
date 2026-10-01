@@ -61,7 +61,6 @@ def _day_keyboard(game, current: bool = False):
 
 _challenge_tasks = {}
 _turn_tasks = {}
-TURN_SECONDS = 120
 TURN_UPDATE_SECONDS = 10
 
 async def _load(session, key):
@@ -88,7 +87,7 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                 if started.tzinfo is None:
                     started = started.replace(tzinfo=timezone.utc)
                 elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
-                remaining = max(0, TURN_SECONDS - elapsed)
+                remaining = max(0, int(game.turn_seconds or 120) - elapsed)
                 if chat_id and message_id:
                     user = await session.get(User, int(turn["user_id"]))
                     name = tg_name(user.display_name or user.first_name if user else "بازیکن")
@@ -123,7 +122,7 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                 name = tg_name(user.display_name or user.first_name if user else "بازیکن")
                 msg = await bot.send_message(
                     chat_id,
-                    f"🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                    f"🗣 نوبت صحبت {name}\n\n⏱ {int(game.turn_seconds or 120) // 60:02d}:{int(game.turn_seconds or 120) % 60:02d} فرصت صحبت داری",
                     reply_markup=_day_keyboard(game, True),
                 )
                 _turn_tasks[game.game_key] = asyncio.create_task(
@@ -270,7 +269,7 @@ async def night_callback(callback: CallbackQuery):
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
                     msg = await callback.bot.send_message(
                         chat_id,
-                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ {int(game.turn_seconds or 120) // 60:02d}:{int(game.turn_seconds or 120) % 60:02d} فرصت صحبت داری",
                         reply_markup=_day_keyboard(game, True),
                     )
                     await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
