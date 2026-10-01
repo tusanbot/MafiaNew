@@ -144,3 +144,27 @@ def test_leader_callback_shapes() -> None:
     parts = "leader:select:abc123:456".split(":")
     assert parts[:3] == ["leader", "select", "abc123"]
     assert int(parts[3]) == 456
+
+
+def test_lobby_text_is_forced_rtl() -> None:
+    text = "\u200fبازیکنان اصلی : 4/10"
+    assert text.startswith("\u200f")
+
+
+def test_round_controls_use_automatic_leader_and_finish_button() -> None:
+    from app.handlers.keyboards import day_keyboard, leader_settings_keyboard
+
+    class GameStub:
+        challenge_enabled = True
+        next_host_enabled = True
+        next_player_enabled = True
+        next_auto_enabled = False
+
+    leader_markup = leader_settings_keyboard("abc", GameStub())
+    callbacks = [button.callback_data for row in leader_markup.inline_keyboard for button in row]
+    assert "leader:auto:abc" in callbacks
+    assert not any(":manual:" in x for x in callbacks if x)
+
+    day_markup = day_keyboard("abc")
+    day_callbacks = [button.callback_data for row in day_markup.inline_keyboard for button in row]
+    assert "day:finish:abc" in day_callbacks
