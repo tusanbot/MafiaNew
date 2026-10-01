@@ -582,6 +582,20 @@ async def player_action(callback: CallbackQuery) -> None:
         }
         if action == "remove" and game.status == "running":
             labels["remove"] = "حذف / کشتن بازیکن"
+        if action == "faceoff" and callback.message.chat.type in ("group", "supergroup"):
+            try:
+                await callback.bot.send_message(
+                    callback.from_user.id,
+                    "عملیات محرمانه مدیریت بازیکن\n\nبازیکن مبدا را انتخاب کنید:",
+                    reply_markup=player_target_management_keyboard(group.id, action, players),
+                )
+                await callback.message.edit_text(
+                    "عملیات محرمانه مدیریت بازیکن برای مدیر در PV ارسال شد."
+                )
+                await callback.answer("انتخاب فیس‌آف در PV ارسال شد.")
+            except Exception:
+                await callback.answer("برای عملیات محرمانه، ابتدا ربات را در PV /start کنید.", show_alert=True)
+            return
         await callback.message.edit_text(
             f"{labels.get(action, action)}\n\nبازیکن موردنظر را انتخاب کنید:",
             reply_markup=player_target_management_keyboard(group.id, action, players),
