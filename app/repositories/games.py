@@ -27,6 +27,21 @@ class GameRepository:
         return result.scalars().first()
 
     @staticmethod
+    async def delete_drafts(session: AsyncSession, group_id: int) -> int:
+        """Remove abandoned configuration drafts before starting a fresh flow."""
+        result = await session.execute(
+            select(Game.id).where(Game.group_id == group_id, Game.status == "draft")
+        )
+        ids = [row[0] for row in result.all()]
+        if not ids:
+            return 0
+        await session.execute(
+            Game.__table__.delete().where(Game.id.in_(ids))
+        )
+        await session.commit()
+        return len(ids)
+
+    @staticmethod
     async def get_by_key(session: AsyncSession, game_key: str) -> Game | None:
         result = await session.execute(select(Game).where(Game.game_key == game_key))
         return result.scalar_one_or_none()
