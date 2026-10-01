@@ -5,6 +5,7 @@ from app.handlers.menu import router as menu_router
 from app.handlers.group import router as group_router
 from app.handlers.game import router as game_router
 from app.handlers.gameplay import router as gameplay_router
+from app.handlers.text_commands import router as text_commands_router
 
 def register_handlers(dispatcher: Dispatcher) -> None:
     dispatcher.include_router(common_router)
@@ -13,3 +14,6 @@ def register_handlers(dispatcher: Dispatcher) -> None:
     dispatcher.include_router(group_router)
     dispatcher.include_router(game_router)
     dispatcher.include_router(gameplay_router)
+    # Exact-match text commands are registered last so they never override
+    # existing FSM, profile, menu, game, or gameplay handlers.
+    dispatcher.include_router(text_commands_router)
