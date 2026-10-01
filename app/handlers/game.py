@@ -29,6 +29,7 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
     text, full = await render_lobby(session, game)
     await callback.message.edit_text(
         text,
+        parse_mode="HTML",
         reply_markup=lobby_keyboard_v2(
             game.game_key,
             scenario,
@@ -238,6 +239,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 host.telegram_id,
                 group_list + "\n\n👑 انتخاب سردست\nسردست به‌صورت دستی یا خودکار انتخاب می‌شود:",
                 reply_markup=leader_selection_keyboard(game.game_key, players_now),
+                parse_mode="HTML",
             )
         except Exception:
             failed.append(host.telegram_id)
