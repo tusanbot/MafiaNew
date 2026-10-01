@@ -667,6 +667,9 @@ async def new_game_set_host(callback: CallbackQuery) -> None:
         except Exception:
             await callback.answer("اطلاعات گرداننده از تلگرام قابل دریافت نیست.", show_alert=True)
             return
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("گرداننده باید مدیر گروه باشد.", show_alert=True)
+            return
         tg_user = member.user
         host = await UserRepository(session).upsert_from_telegram(
             tg_user.id,
