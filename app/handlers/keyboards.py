@@ -84,61 +84,128 @@ def player_management_menu(group_id: int, back_callback: str | None = None) -> I
     builder = InlineKeyboardBuilder()
     for key, label in (
         ("remove", "حذف بازیکن"),
-        ("replace", "جایگزین بازیکن"),
+        ("replace", "جایگزین"),
         ("silence", "سکوت"),
         ("extra_turn", "ترن اضافه"),
-        ("kick", "کیک"),
-        ("birthday", "تولد بازیکن"),
+        ("kick", "کیک از بازی"),
+        ("warning", "ثبت تذکر"),
         ("faceoff", "فیس آف"),
-        ("warning", "تذکر"),
+        ("slaughter", "سلاخی"),
+        ("birthday", "تولد"),
     ):
         builder.row(InlineKeyboardButton(text=label, callback_data=f"gameadmin:player_action:{group_id}:{key}"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
-def player_target_management_keyboard(group_id: int, action: str, players) -> InlineKeyboardMarkup:
+
+def player_target_management_keyboard(group_id: int, action: str, players, *, only_alive: bool = False, only_dead: bool = False, only_reserve: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for player, user in players:
+        if only_alive and (player.is_reserved or not player.alive):
+            continue
+        if only_dead and (player.is_reserved or player.alive or player.exit_type != "death"):
+            continue
+        if only_reserve and not player.is_reserved:
+            continue
         name = user.display_name or user.first_name or user.username or str(user.telegram_id)
-        builder.row(
-            InlineKeyboardButton(
-                text=f"{player.seat}. {name[:40]}",
-                callback_data=f"gameadmin:player_target:{group_id}:{action}:{user.id}",
-            )
-        )
+        status = " — رزرو" if player.is_reserved else (" — حذف‌شده" if not player.alive else "")
+        builder.row(InlineKeyboardButton(
+            text=f"{player.seat if not player.is_reserved else 'ر'} {name[:38]}{status}",
+            callback_data=f"gameadmin:player_target:{group_id}:{action}:{user.id}",
+        ))
+    _back(builder, f"gameadmin:players:{group_id}")
+    return builder.as_markup()
+
+
+def player_target_action_keyboard(group_id: int, action: str, players) -> InlineKeyboardMarkup:
+    return player_target_management_keyboard(group_id, action, players)
+
+
+def player_replace_destination_keyboard(group_id: int, source_id: int, reserves) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for player, user in reserves:
+        name = user.display_name or user.first_name or user.username or str(user.telegram_id)
+        builder.row(InlineKeyboardButton(
+            text=f"رزرو {player.reserve_position} — {name[:38]}",
+            callback_data=f"gameadmin:player_replace_to:{group_id}:{source_id}:{user.id}",
+        ))
     _back(builder, f"gameadmin:players:{group_id}")
     return builder.as_markup()
 
 
 def game_features_menu(
     group_id: int,
-    challenge_mode: str = "در حال دریافت",
-    next_status: str = "در حال دریافت",
+    challenge_enabled: bool = True,
+    next_host_enabled: bool = True,
+    next_player_enabled: bool = True,
+    next_auto_enabled: bool = False,
+    auto_silence_warnings: bool = False,
+    auto_kick_warnings: bool = False,
     back_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=f"وضعیت چالش: {challenge_mode}",
+        text=f"{'🟢' if challenge_enabled else '⚪'} محدودیت چالش",
         callback_data=f"gameadmin:feature:{group_id}:challenge",
     ))
     builder.row(InlineKeyboardButton(
-        text=f"وضعیت نوبت: {next_status}",
-        callback_data=f"gameadmin:feature:{group_id}:next",
+        text=f"{'🟢' if next_host_enabled else '⚪'} نکست گرداننده",
+        callback_data=f"gameadmin:feature:{group_id}:next_host",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"{'🟢' if next_player_enabled else '⚪'} نکست بازیکن",
+        callback_data=f"gameadmin:feature:{group_id}:next_player",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"{'🟢' if next_auto_enabled else '⚪'} نکست خودکار",
+        callback_data=f"gameadmin:feature:{group_id}:next_auto",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"{'🟢' if auto_silence_warnings else '⚪'} سکوت خودکار با تذکر چهارم",
+        callback_data=f"gameadmin:feature:{group_id}:auto_silence",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"{'🟢' if auto_kick_warnings else '⚪'} کیک خودکار با تذکر پنجم",
+        callback_data=f"gameadmin:feature:{group_id}:auto_kick",
     ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
-    builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="لغو واقعی بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="مدیریت اموجی‌ها", callback_data=f"gameadmin:emoji:{group_id}"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
 
-def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض", back_callback: str | None = None) -> InlineKeyboardMarkup:
+def emoji_management_menu(group_id: int, settings: dict, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    labels = {
+        "death": "مرگ",
+        "kick": "کیک",
+        "challenge": "چالش",
+        "silence": "سکوت",
+        "extra_turn": "ترن اضافه",
+        "warning": "تعداد تذکر",
+    }
+    builder = InlineKeyboardBuilder()
+    for key, label in labels.items():
+        builder.row(InlineKeyboardButton(
+            text=f"{'🟢' if settings.get(key, True) else '⚪'} {label}",
+            callback_data=f"gameadmin:emoji_toggle:{group_id}:{key}",
+        ))
+    _back(builder, back_callback or f"gameadmin:features:{group_id}")
+    return builder.as_markup()
+
+
+def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض", turn_color_enabled: bool = True, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
         callback_data=f"gameadmin:extra:{group_id}:auto_play",
     ))
-    builder.row(InlineKeyboardButton(text=f"رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
-    builder.row(InlineKeyboardButton(text=f"رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
+    builder.row(InlineKeyboardButton(
+        text=f"تفکیک رنگ نوبت/چالش: {'فعال' if turn_color_enabled else 'غیرفعال'}",
+        callback_data=f"gameadmin:extra:{group_id}:turn_color_enabled",
+    ))
+    builder.row(InlineKeyboardButton(text=f"تغییر رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
+    builder.row(InlineKeyboardButton(text=f"تغییر رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
