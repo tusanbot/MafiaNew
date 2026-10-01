@@ -34,7 +34,7 @@ async def _profile_text(session, user: User) -> str:
         for stat, role in role_rows:
             role_rate = (stat.wins / stat.games * 100) if stat.games else 0
             extras = []
-            if stat.kills: extras.append(f"کشت {stat.kills}")
+            if stat.kills: extras.append(f"شات {stat.kills}")
             if stat.saves: extras.append(f"نجات {stat.saves}")
             if stat.investigations: extras.append(f"تحقیق {stat.investigations}")
             detail = " • " + " • ".join(extras) if extras else ""
@@ -54,7 +54,7 @@ async def _profile_text(session, user: User) -> str:
         f"🔵 برد شهروند: {user.citizen_wins}\n"
         f"🟣 برد مستقل: {user.independent_wins}\n\n"
         f"⚔️ چالش‌ها: {user.challenges}  |  پذیرفته‌شده: {user.challenges_accepted}\n"
-        f"🎯 کشت: {user.kills}  |  نجات: {user.saves}\n"
+        f"🎯 شات: {user.kills}  |  نجات: {user.saves}\n"
         f"🔎 تحقیقات: {user.investigations}  |  موفق: {user.investigation_hits}\n"
         f"🗳 رأی درست علیه مافیا: {user.correct_votes}\n"
         f"⚔️ فیس‌آف: {user.faceoffs}  |  برد: {user.faceoff_wins}\n"
