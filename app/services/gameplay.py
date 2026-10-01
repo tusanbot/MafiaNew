@@ -317,15 +317,31 @@ async def choose_leader(session, game, leader_user_id: int | None = None):
         leader_user_id = secrets.choice(sorted(alive_ids))
     if leader_user_id not in alive_ids:
         raise ValueError("سردست باید یکی از بازیکنان زنده باشد.")
-    game.phase = "day"
-    game.started_at = game.started_at or datetime.now(timezone.utc)
     round_no = await current_round(session, game.id)
     await _event(session, game, "leader_selected", {
         "round_no": round_no, "leader_user_id": leader_user_id,
         "mode": "auto" if auto_selected else "manual",
     })
-    await start_day_turns(session, game, leader_user_id)
-    return {"leader_user_id": leader_user_id, "round_no": round_no, "kind": "main"}
+    await session.commit()
+    return {"leader_user_id": leader_user_id, "round_no": round_no, "mode": "auto" if auto_selected else "manual"}
+
+
+async def start_round(session, game):
+    if game.status != "running" or game.phase != "setup":
+        raise ValueError("مرحله شروع دور فعال نیست.")
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "leader_selected"
+    ).order_by(GameEvent.id.desc()))
+    leader_event = result.scalars().first()
+    if not leader_event:
+        raise ValueError("ابتدا باید سردست انتخاب شود.")
+    data = _payload(leader_event)
+    leader_id = int(data["leader_user_id"])
+    game.phase = "day"
+    game.started_at = game.started_at or datetime.now(timezone.utc)
+    await start_day_turns(session, game, leader_id)
+    return {"leader_user_id": leader_id, "round_no": int(data.get("round_no", 1))}
+
 
 async def start_day_turns(session, game, first_user_id: int | None = None):
     if game.status != "running" or game.phase != "day":
