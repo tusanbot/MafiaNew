@@ -52,3 +52,10 @@ def test_player_lifecycle_columns_exist() -> None:
         "extra_turn_round",
     } <= {column.key for column in inspect(GamePlayer).columns}
     assert "score" in {column.key for column in inspect(User).columns}
+
+
+def test_scenario_training_link_columns_exist() -> None:
+    from app.db.models import Scenario
+    assert {"training_url", "telegram_training_url"} <= {
+        column.key for column in inspect(Scenario).columns
+    }
