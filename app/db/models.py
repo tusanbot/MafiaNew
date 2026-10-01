@@ -12,6 +12,7 @@ class User(Base):
     last_name: Mapped[str | None] = mapped_column(String(255))
     display_name: Mapped[str] = mapped_column(String(255), default="")
     bio: Mapped[str | None] = mapped_column(Text)
+    tags: Mapped[str] = mapped_column(Text, default="")
     games_played: Mapped[int] = mapped_column(Integer, default=0)
     games_won: Mapped[int] = mapped_column(Integer, default=0)
     mafia_wins: Mapped[int] = mapped_column(Integer, default=0)
@@ -74,6 +75,15 @@ class Scenario(Base):
     challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+class ScenarioRole(Base):
+    __tablename__ = "scenario_roles"
+    __table_args__ = (UniqueConstraint("scenario_id", "role_id", name="uq_scenario_role"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"))
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"))
+    count: Mapped[int] = mapped_column(Integer, default=1)
+    position: Mapped[int] = mapped_column(Integer, default=0)
 
 class Role(Base):
     __tablename__ = "roles"
