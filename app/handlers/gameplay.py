@@ -37,6 +37,17 @@ from app.handlers.keyboards import (
 
 router = Router(name="gameplay")
 
+
+def _day_keyboard(game, current: bool = False):
+    return day_turn_keyboard(
+        game.game_key,
+        current,
+        getattr(game, "challenge_enabled", True),
+        getattr(game, "turn_color_enabled", True),
+        getattr(game, "turn_color", "پیش‌فرض"),
+        getattr(game, "challenge_color", "پیش‌فرض"),
+    )
+
 _challenge_tasks = {}
 
 async def _load(session, key):
@@ -138,7 +149,7 @@ async def night_callback(callback: CallbackQuery):
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
-                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=day_turn_keyboard(game.game_key, True))
+                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=_day_keyboard(game, True))
                 else:
                     await callback.bot.send_message(chat_id, text)
             await callback.answer("شب بررسی شد.")
