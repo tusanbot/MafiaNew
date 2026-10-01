@@ -1,9 +1,11 @@
 from aiogram import Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import CallbackQuery
 from sqlalchemy import desc, func, select
 import json
 
-from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, Scenario, User, Vote
+from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
@@ -21,6 +23,11 @@ from app.handlers.keyboards import (
     scenario_keyboard,
     admin_panel_menu,
     admin_scenario_keyboard,
+    scenario_management_menu,
+    scenario_admin_list_keyboard,
+    scenario_role_keyboard,
+    scenario_challenge_keyboard,
+    scenario_delete_confirm_keyboard,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -29,8 +36,17 @@ from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round
 from app.config import get_settings
 from app.utils.text import tg_name
+from uuid import uuid4
 
 router = Router(name="menu")
+
+class ScenarioAdminState(StatesGroup):
+    name = State()
+    description = State()
+    min_players = State()
+    max_players = State()
+    challenge = State()
+    roles = State()
 
 
 async def _is_group_admin(bot, group: Group, user_id: int) -> bool:
@@ -1000,7 +1016,7 @@ async def menu_profile(callback: CallbackQuery) -> None:
 async def menu_scenarios(callback: CallbackQuery) -> None:
     if not callback.message:
         return
-    await callback.message.edit_text("سناریوهای فعال را انتخاب کنید.", reply_markup=scenario_keyboard())
+    await callback.message.edit_text("🎭 مدیریت سناریوها\n\nایجاد، ویرایش یا حذف سناریوهای ذخیره‌شده در دیتابیس.", reply_markup=scenario_management_menu())
     await callback.answer()
 
 
@@ -1017,7 +1033,17 @@ async def bot_settings(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data.startswith("botsettings:"))
 async def bot_settings_placeholder(callback: CallbackQuery) -> None:
-    await callback.answer("این بخش برای اتصال تنظیمات واقعی آماده شده و گزینه‌های آن در نسخه بعدی تکمیل می‌شوند.", show_alert=True)
+    if not callback.message:
+        return
+    action = callback.data.split(":", 1)[1]
+    if action == "general":
+        text = "⚙️ تنظیمات عمومی\n\nتنظیمات رفتاری و شخصی ربات؛ مانند نمایش پروفایل و گزارش عملکرد."
+    elif action == "notifications":
+        text = "🔔 تنظیمات اعلان‌ها\n\nاعلان‌های شروع بازی، نوبت و چالش، نتیجه بازی، دستاورد و رتبه در این بخش مدیریت می‌شوند."
+    else:
+        text = "بخش تنظیمات پیدا نشد."
+    await callback.message.edit_text(text, reply_markup=bot_settings_menu())
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data == "menu:ranking")
