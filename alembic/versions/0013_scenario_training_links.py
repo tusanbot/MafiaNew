@@ -16,6 +16,9 @@ SCENARIO_LINKS = {
     "zodiac": ("https://whitesho.com/ZodiacScenario/%D8%B3%D9%86%D8%A7%D8%B1%DB%8C%D9%88-%D8%B2%D9%88%D8%AF%DB%8C%D8%A7%DA%A9-%D8%A8%D8%A7%D8%B2%DB%8C-%D9%85%D8%A7%D9%81%DB%8C%D8%A7", None),
 }
 
+def _execute(stmt, **params):
+    op.execute(stmt.bindparams(**params))
+
 def upgrade():
     bind = op.get_bind()
     cols = {c["name"] for c in sa.inspect(bind).get_columns("scenarios")}
@@ -24,12 +27,12 @@ def upgrade():
     if "telegram_training_url" not in cols:
         op.add_column("scenarios", sa.Column("telegram_training_url", sa.Text(), nullable=True))
     for key, (training_url, telegram_training_url) in SCENARIO_LINKS.items():
-        op.execute(sa.text("""
+        _execute(sa.text("""
             UPDATE scenarios
             SET training_url = :training_url,
                 telegram_training_url = :telegram_training_url
             WHERE key = :key
-        """), {"key": key, "training_url": training_url, "telegram_training_url": telegram_training_url})
+        """), key=key, training_url=training_url, telegram_training_url=telegram_training_url)
 
 def downgrade():
     bind = op.get_bind()
