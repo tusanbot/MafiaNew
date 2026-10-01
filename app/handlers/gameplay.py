@@ -222,6 +222,7 @@ async def night_callback(callback: CallbackQuery):
                 return
             chat_id = await _group_chat_id(session, game)
             if result["winner"]:
+                await send_game_result_notifications(callback.bot, session, game)
                 text = f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
             elif result["eliminated"]:
                 text = f"روز آغاز شد.\nبازیکن {result['eliminated'].display_name} در شب حذف شد."
