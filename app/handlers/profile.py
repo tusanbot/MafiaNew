@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 
 from app.db.models import User
 from app.db.session import session_factory
-from app.handlers.keyboards import ranking_menu
+from app.handlers.keyboards import main_menu, ranking_menu
 from app.services.profile import sync_telegram_user
 from app.services.stats import leaderboard, rank_for_score, user_achievements
 from app.utils.text import tg_name
@@ -115,5 +115,5 @@ async def achievements_callback(callback: CallbackQuery) -> None:
         user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         achievements = await user_achievements(session, user.id) if user else []
         text = "🏅 دستاوردهای شما\n\n" + ("\n".join(f"{a.icon} {a.name_fa} — +{a.points}\n{a.description}" for a in achievements) if achievements else "هنوز دستاوردی کسب نکرده‌اید.")
-        await callback.message.edit_text(text)
+        await callback.message.edit_text(text, reply_markup=main_menu())
     await callback.answer()
