@@ -306,8 +306,28 @@ def vote_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
 def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if players:
-        builder.row(InlineKeyboardButton(text="چالش یک بازیکن", callback_data=f"day:challenge:{game_key}"))
-    builder.row(InlineKeyboardButton(text="شروع رأی‌گیری", callback_data=f"day:vote:{game_key}"))
+        builder.row(InlineKeyboardButton(text="⚔️ چالش یک بازیکن", callback_data=f"day:challenge:{game_key}"))
+    builder.row(
+        InlineKeyboardButton(text="🗳 رأی‌گیری", callback_data=f"day:vote:{game_key}"),
+        InlineKeyboardButton(text="🌙 شروع فاز شب", callback_data=f"day:night:{game_key}"),
+    )
+    builder.row(InlineKeyboardButton(text="🏁 اتمام بازی", callback_data=f"day:finish:{game_key}"))
+    return builder.as_markup()
+
+
+def leader_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}")
+    )
+    for player, user in players:
+        name = user.display_name or user.first_name or user.username or str(user.telegram_id)
+        builder.row(
+            InlineKeyboardButton(
+                text=f"👤 {player.seat:02d}. {name[:42]}",
+                callback_data=f"leader:manual:{game_key}:{user.id}",
+            )
+        )
     return builder.as_markup()
 
 
@@ -338,9 +358,10 @@ def day_turn_keyboard(
     turn_color: str = "پیش‌فرض",
     challenge_color: str = "پیش‌فرض",
     challenge_emoji_enabled: bool = True,
+    allow_challenge: bool = True,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if challenge_enabled:
+    if challenge_enabled and allow_challenge:
         mark = ({"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "طلایی": "🟡"}.get(challenge_color, "⚔️") if turn_color_enabled else "") if challenge_emoji_enabled else ""
         builder.row(InlineKeyboardButton(text=f"{mark} درخواست چالش".strip(), callback_data=f"turn:request_challenge:{game_key}"))
     if is_current_speaker:
