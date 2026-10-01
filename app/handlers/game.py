@@ -237,5 +237,8 @@ async def lobby_group_management(callback: CallbackQuery) -> None:
             await callback.answer("این بخش فقط برای مدیران گروه است.", show_alert=True)
             return
         from app.handlers.keyboards import group_management_menu
-        await callback.message.edit_text("مدیریت گروه", reply_markup=group_management_menu())
+        await callback.message.edit_text(
+            "مدیریت گروه",
+            reply_markup=group_management_menu(f"groupadmin:lobby:{game.game_key}"),
+        )
     await callback.answer()
