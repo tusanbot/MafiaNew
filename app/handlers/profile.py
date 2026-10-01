@@ -1,16 +1,22 @@
 from aiogram import Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import func, select
 
 from app.db.models import Role, User, UserRoleStat
 from app.db.session import session_factory
-from app.handlers.keyboards import main_menu, ranking_menu
+from app.handlers.keyboards import main_menu, ranking_menu, profile_menu
 from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
 
 router = Router(name="profile")
+
+class ProfileEditState(StatesGroup):
+    name = State()
+    tags = State()
 
 async def _profile_text(session, user: User) -> str:
     position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
@@ -66,7 +72,7 @@ async def profile_handler(message: Message) -> None:
     async with session_factory() as session:
         db_user = await sync_telegram_user(session, tg.id, tg.username, tg.first_name or "", tg.last_name)
         await session.commit()
-        await message.answer(await _profile_text(session, db_user))
+        await message.answer("👤 پروفایل شما\n\nبخش موردنظر را انتخاب کنید.", reply_markup=profile_menu())
 
 @router.callback_query(lambda c: c.data == "menu:profile")
 async def profile_menu(callback: CallbackQuery) -> None:
@@ -76,7 +82,7 @@ async def profile_menu(callback: CallbackQuery) -> None:
         tg = callback.from_user
         user = await sync_telegram_user(session, tg.id, tg.username, tg.first_name or "", tg.last_name)
         await session.commit()
-        await callback.message.edit_text(await _profile_text(session, user))
+        await callback.message.edit_text("👤 پروفایل شما\n\nبخش موردنظر را انتخاب کنید.", reply_markup=profile_menu())
     await callback.answer()
 
 @router.message(Command("ranking"))
@@ -153,3 +159,62 @@ async def achievements_callback(callback: CallbackQuery) -> None:
         else:
             await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu())
     await callback.answer()
+
+@router.callback_query(lambda c: c.data == "profile:score")
+async def profile_score(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user: return
+    async with session_factory() as session:
+        user = await sync_telegram_user(session, callback.from_user)
+        await session.commit()
+        await callback.message.edit_text(await _profile_text(session, user), reply_markup=profile_menu())
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "profile:rank")
+async def profile_rank(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user: return
+    async with session_factory() as session:
+        user = await sync_telegram_user(session, callback.from_user)
+        position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
+        rank, next_score, remaining = rank_progress(user.score)
+        text = "🏆 رتبه شما\n\n" + f"رتبه: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
+        text += f"تا رتبه بعد: {remaining} امتیاز" if next_score is not None else "بالاترین رتبه را دارید."
+        await callback.message.edit_text(text, reply_markup=profile_menu())
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "profile:name")
+async def profile_name_start(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.set_state(ProfileEditState.name)
+    await callback.message.edit_text("✏️ نام نمایشی جدید را ارسال کنید.\nبرای انصراف /cancel را بفرستید.")
+    await callback.answer()
+
+@router.message(ProfileEditState.name)
+async def profile_name_save(message: Message, state: FSMContext) -> None:
+    if not message.from_user or message.chat.type != "private": return
+    value = (message.text or "").strip()
+    if value == "/cancel":
+        await state.clear(); await message.answer("ویرایش لغو شد.", reply_markup=profile_menu()); return
+    if not 2 <= len(value) <= 40:
+        await message.answer("نام باید بین ۲ تا ۴۰ کاراکتر باشد."); return
+    async with session_factory() as session:
+        user = await sync_telegram_user(session, message.from_user); user.display_name = value; await session.commit()
+    await state.clear(); await message.answer("✅ نام نمایشی ذخیره شد.", reply_markup=profile_menu())
+
+@router.callback_query(lambda c: c.data == "profile:tags")
+async def profile_tags_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user: return
+    await state.set_state(ProfileEditState.tags)
+    await callback.message.edit_text("🏷 تگ‌های پروفایل\n\nتگ‌ها را با کاما جدا کنید؛ حداکثر ۵ تگ و هر تگ ۲۰ کاراکتر.\nبرای پاک کردن همه «-» را بفرستید.")
+    await callback.answer()
+
+@router.message(ProfileEditState.tags)
+async def profile_tags_save(message: Message, state: FSMContext) -> None:
+    if not message.from_user or message.chat.type != "private": return
+    value = (message.text or "").strip()
+    if value == "/cancel":
+        await state.clear(); await message.answer("ویرایش لغو شد.", reply_markup=profile_menu()); return
+    tags = [] if value == "-" else [x.strip() for x in value.split(",") if x.strip()]
+    if len(tags) > 5 or any(len(x) > 20 for x in tags):
+        await message.answer("حداکثر ۵ تگ و طول هر تگ حداکثر ۲۰ کاراکتر است."); return
+    async with session_factory() as session:
+        user = await sync_telegram_user(session, message.from_user); user.tags = ",".join(tags); await session.commit()
+    await state.clear(); await message.answer("✅ تگ‌ها ذخیره شدند.", reply_markup=profile_menu())
