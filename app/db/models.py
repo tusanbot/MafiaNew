@@ -60,6 +60,8 @@ class Scenario(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
     challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    telegram_training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class Role(Base):
     __tablename__ = "roles"
