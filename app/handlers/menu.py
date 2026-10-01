@@ -182,7 +182,7 @@ async def active_game(callback: CallbackQuery) -> None:
                 f"گروه: {group.title}\n\nبازی فعال\n"
                 f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
                 f"وضعیت: {game.status}\nمرحله: {game.phase}",
-                reply_markup=active_game_menu(group.id),
+                reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
             )
     await callback.answer()
 
@@ -276,7 +276,7 @@ async def game_info(callback: CallbackQuery) -> None:
             return
         game = await GameRepository.get_active(session, group.id)
         if not game:
-            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=active_game_menu(group.id))
+            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"))
         else:
             scenario = await session.get(Scenario, game.scenario_id)
             players = await GameRepository.players(session, game.id)
@@ -320,7 +320,7 @@ async def player_management(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "مدیریت بازیکنان\n\n" + ("\n".join(lines) if lines else "بازیکنی در بازی نیست.") +
             "\n\nعملیات موردنظر را انتخاب کنید.",
-            reply_markup=player_management_menu(group.id),
+            reply_markup=player_management_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
 
@@ -362,7 +362,7 @@ async def game_extras(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "امکانات اضافی بازی\n\n"
             "ساختار این بخش آماده توسعه است؛ تنظیمات زمان‌بندی و ظاهر بازی در همین بخش اضافه می‌شوند.",
-            reply_markup=game_extras_menu(group.id),
+            reply_markup=game_extras_menu(group.id, game.auto_play, game.turn_color, game.challenge_color, back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
 
@@ -545,7 +545,7 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             f"تنظیمات بازی\n\n"
             f"چالش: {challenge}\n"
             f"نوبت بعدی: {next_status}",
-            reply_markup=game_features_menu(group.id, challenge_mode=challenge, next_status=next_status),
+            reply_markup=game_features_menu(group.id, challenge_mode=challenge, next_status=next_status, back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
 
