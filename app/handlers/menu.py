@@ -537,8 +537,10 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 if queue_event:
                     queue_data = json.loads(queue_event.payload or "{}")
                     queue_data.setdefault("queue", [])
-                    if target_id not in queue_data["queue"]:
+                    queue_data.setdefault("extra_turn_users", [])
+                    if target_id not in queue_data["extra_turn_users"]:
                         queue_data["queue"].append(target_id)
+                        queue_data["extra_turn_users"].append(target_id)
                     queue_event.payload = json.dumps(queue_data, ensure_ascii=False)
                 event_type, message = "extra_turn_granted", "ترن اضافه برای پایان این دور ثبت شد."
             elif action == "kick":
