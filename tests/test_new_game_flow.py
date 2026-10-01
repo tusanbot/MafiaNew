@@ -69,3 +69,12 @@ def test_scenario_callback_shape_matches_handler() -> None:
     assert parts[0:2] == ["newgame", "setscenario"]
     assert int(parts[2]) == group_id
     assert int(parts[3]) == scenario_id
+
+def test_host_callback_shape_matches_handler() -> None:
+    group_id, host_id = 123, 456789
+    callback_data = f"newgame:sethost:{group_id}:{host_id}"
+    parts = callback_data.split(":")
+    assert len(parts) == 4
+    assert parts[0:2] == ["newgame", "sethost"]
+    assert int(parts[2]) == group_id
+    assert int(parts[3]) == host_id
