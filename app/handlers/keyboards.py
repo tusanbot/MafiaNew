@@ -194,6 +194,8 @@ def emoji_management_menu(group_id: int, settings: dict, back_callback: str | No
     labels = {
         "death": "مرگ",
         "kick": "کیک",
+        "faceoff": "فیس آف",
+        "slaughter": "سلاخی",
         "challenge": "چالش",
         "silence": "سکوت",
         "extra_turn": "ترن اضافه",
