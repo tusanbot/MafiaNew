@@ -30,3 +30,29 @@ def scenario_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="کلاسیک", callback_data="scenario:classic"))
     return builder.as_markup()
+
+
+def player_target_keyboard(prefix: str, game_key: str, players) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for player, user, *rest in players:
+        builder.row(InlineKeyboardButton(
+            text=f"{player.seat}. {user.display_name or user.first_name}",
+            callback_data=f"{prefix}:{game_key}:{user.id}",
+        ))
+    return builder.as_markup()
+
+def night_action_keyboard(game_key: str, action_type: str, players) -> InlineKeyboardMarkup:
+    return player_target_keyboard(f"night:{action_type}", game_key, players)
+
+def vote_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
+    return player_target_keyboard("vote", game_key, players)
+
+def day_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="شروع رأی‌گیری", callback_data=f"day:vote:{game_key}"))
+    return builder.as_markup()
+
+def continue_night_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
+    return builder.as_markup()
