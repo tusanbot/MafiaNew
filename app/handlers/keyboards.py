@@ -645,3 +645,11 @@ def scenario_challenge_keyboard(action: str = "create", include_unchanged: bool 
         builder.row(InlineKeyboardButton(text="↩️ بدون تغییر", callback_data=f"scenario_admin:{action}:challenge:unchanged"))
     builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
+
+def scenario_delete_confirm_keyboard(scenario_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🗑 بله، حذف شود", callback_data=f"scenario_admin:delete_confirm:{scenario_id}"),
+        InlineKeyboardButton(text="انصراف", callback_data="menu:scenarios"),
+    )
+    return builder.as_markup()
