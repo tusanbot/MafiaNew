@@ -46,7 +46,7 @@ async def _bot_is_active(bot, group: Group) -> bool:
 
 async def _manageable_groups(session, bot, user_id: int) -> list[Group]:
     result = await session.execute(
-        select(Group).where(Group.is_active.is_(True)).order_by(Group.title)
+        select(Group).where(Group.is_active.is_(True), Group.registered_at.is_not(None)).order_by(Group.title)
     )
     groups = []
     for group in result.scalars().all():
@@ -57,7 +57,7 @@ async def _manageable_groups(session, bot, user_id: int) -> list[Group]:
 
 async def _selected_group(session, bot, user_id: int, group_id: int) -> Group | None:
     group = await session.get(Group, group_id)
-    if not group or not group.is_active:
+    if not group or not group.is_active or group.registered_at is None:
         return None
     if not await _is_group_admin(bot, group, user_id):
         return None
