@@ -4,7 +4,7 @@ from aiogram.types import Message
 from sqlalchemy import select
 
 from app.db.session import session_factory
-from app.db.models import Scenario, GroupSettings
+from app.db.models import Scenario, GroupSettings, User
 from app.repositories.games import GameRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.users import UserRepository
@@ -129,3 +129,36 @@ async def night_lock_handler(message: Message, command: CommandObject) -> None:
 @router.message(Command("turnlock"))
 async def turn_lock_handler(message: Message, command: CommandObject) -> None:
     await _set_lock(message, "turn_lock", command.args or "")
+
+
+@router.message(Command("challenge"))
+async def challenge_command(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup") or not message.from_user:
+        return
+    if not message.reply_to_message or not message.reply_to_message.from_user:
+        await message.answer("برای چالش، روی پیام بازیکن موردنظر Reply کنید و /challenge را بفرستید.")
+        return
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        if not group:
+            await message.answer("گروه ثبت نشده است.")
+            return
+        game = await GameRepository.get_active(session, group.id)
+        if not game or game.phase != "day":
+            await message.answer("چالش فقط در مرحله روز بازی فعال است.")
+            return
+        challenger = await UserRepository(session).upsert_from_telegram(
+            message.from_user.id, message.from_user.username,
+            message.from_user.first_name or "", message.from_user.last_name
+        )
+        target = await UserRepository(session).get_by_telegram_id(message.reply_to_message.from_user.id)
+        if not target:
+            await message.answer("بازیکن هدف هنوز در سیستم بازی ثبت نشده است.")
+            return
+        from app.services.gameplay import submit_challenge
+        try:
+            await submit_challenge(session, game, challenger, target.id)
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+        await message.answer(f"{target.display_name or target.first_name} به چالش دعوت شد.")
