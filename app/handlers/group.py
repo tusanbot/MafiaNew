@@ -1,6 +1,7 @@
 from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import Message
+from sqlalchemy import select
 
 from app.db.session import session_factory
 from app.db.models import Scenario
@@ -39,7 +40,7 @@ async def new_game_handler(message: Message) -> None:
             return
 
         result = await session.execute(
-            __import__("sqlalchemy").select(Scenario).where(
+            select(Scenario).where(
                 Scenario.key == "classic", Scenario.enabled.is_(True)
             )
         )
