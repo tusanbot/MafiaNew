@@ -214,3 +214,44 @@ async def finalize_game(session, game, winner):
             if winner == "mafia": user.mafia_wins += 1
             elif winner == "citizen": user.citizen_wins += 1
     await _event(session, game, "stats_recorded", {"winner": winner})
+
+async def submit_challenge(session, game, challenger: User, target_user_id: int):
+    if game.status != "running" or game.phase != "day":
+        raise ValueError("چالش فقط در مرحله روز امکان‌پذیر است.")
+    challenger_row = (await session.execute(select(GamePlayer).where(
+        GamePlayer.game_id == game.id, GamePlayer.user_id == challenger.id, GamePlayer.alive.is_(True)
+    ))).scalar_one_or_none()
+    if challenger_row is None:
+        raise ValueError("فقط بازیکن زنده می‌تواند چالش ثبت کند.")
+    target_row = (await session.execute(select(GamePlayer).where(
+        GamePlayer.game_id == game.id, GamePlayer.user_id == target_user_id, GamePlayer.alive.is_(True)
+    ))).scalar_one_or_none()
+    if target_row is None or target_user_id == challenger.id:
+        raise ValueError("هدف چالش معتبر نیست.")
+    round_no = await current_round(session, game.id)
+    recent = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "challenge"
+    ).order_by(GameEvent.id.desc()))
+    for event in recent.scalars():
+        data = _payload(event)
+        if data.get("round_no") == round_no and data.get("challenger_id") == challenger.id:
+            raise ValueError("در این دور قبلاً چالش ثبت کرده‌اید.")
+    await _event(session, game, "challenge", {
+        "round_no": round_no, "challenger_id": challenger.id,
+        "target_user_id": target_user_id, "status": "pending",
+    }, challenger.id)
+    challenger.challenges += 1
+    await session.commit()
+    return {"round_no": round_no}
+
+async def resolve_challenge(session, game, challenge_event_id: int, accepted: bool):
+    event = await session.get(GameEvent, challenge_event_id)
+    if not event or event.game_id != game.id or event.event_type != "challenge":
+        raise ValueError("چالش پیدا نشد.")
+    data = _payload(event)
+    if data.get("status") != "pending":
+        raise ValueError("این چالش قبلاً تعیین تکلیف شده است.")
+    data["status"] = "accepted" if accepted else "rejected"
+    event.payload = json.dumps(data, ensure_ascii=False)
+    await session.commit()
+    return data
