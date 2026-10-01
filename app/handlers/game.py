@@ -8,7 +8,7 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import render_lobby, role_messages
 from app.services.roles import assign_roles
-from app.services.gameplay import choose_leader
+from app.services.gameplay import choose_leader, start_round
 from app.handlers.keyboards import leader_selection_keyboard
 from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2
 
@@ -274,20 +274,86 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
             for player, user in players:
                 marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
                 names.append(f"{marker} {player.seat:02d}. {user.display_name or user.first_name or 'بازیکن'}")
-            from app.handlers.keyboards import day_turn_keyboard
-            turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+            from app.handlers.keyboards import leader_settings_keyboard
             await callback.bot.send_message(
                 group.telegram_id,
-                f"👑 سردست: {leader.display_name or leader.first_name or 'بازیکن'}\n"
-                f"🎯 دور {result['round_no']} آغاز شد.\n\n"
-                f"👥 بازیکنان حاضر در بازی\n" + "\n".join(names),
+                f"👑 سردست انتخاب شد: {leader.display_name or leader.first_name or 'بازیکن'}\n\n"
+                f"👥 لیست بازیکنان حاضر در بازی\n" + "\n".join(names) +
+                "\n\nتنظیمات چالش و نکست را بررسی کنید و سپس «شروع دور» را بزنید.",
+                reply_markup=leader_settings_keyboard(game.game_key, game),
+            )
+        await callback.answer("سردست انتخاب شد و دور آغاز شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("round:toggle_"))
+async def round_toggle_handler(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 3 or not callback.from_user:
+        return
+    action, key = parts[1], parts[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game and game.host_user_id else None
+        if not game or game.status != "running" or game.phase != "setup":
+            await callback.answer("تنظیمات این مرحله دیگر قابل تغییر نیست.", show_alert=True)
+            return
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند تنظیمات شروع دور را تغییر دهد.", show_alert=True)
+            return
+        if action == "toggle_challenge":
+            game.challenge_enabled = not game.challenge_enabled
+        elif action == "toggle_host_next":
+            game.next_host_enabled = not game.next_host_enabled
+        elif action == "toggle_player_next":
+            game.next_player_enabled = not game.next_player_enabled
+        elif action == "toggle_auto_next":
+            game.next_auto_enabled = not game.next_auto_enabled
+        else:
+            await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+            return
+        await session.commit()
+        from app.handlers.keyboards import leader_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=leader_settings_keyboard(game.game_key, game))
+    await callback.answer("تنظیم ذخیره شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("round:start:"))
+async def round_start_handler(callback: CallbackQuery) -> None:
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game and game.host_user_id else None
+        if not game or game.status != "running":
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند دور را شروع کند.", show_alert=True)
+            return
+        try:
+            result = await start_round(session, game)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        leader = await session.get(User, result["leader_user_id"])
+        group = await session.get(Group, game.group_id)
+        if group:
+            turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+            from app.handlers.keyboards import day_turn_keyboard
+            await callback.bot.send_message(
+                group.telegram_id,
+                f"▶️ دور {result['round_no']} شروع شد.\n"
+                f"👑 سردست: {leader.display_name if leader else 'بازیکن'}\n\n"
+                "🗣 نوبت صحبت‌ها آغاز شد.",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
                     game.turn_color, game.challenge_color, True,
                     bool(turn and turn.get("kind") != "extra"),
                 ),
             )
-        await callback.answer("سردست انتخاب شد و دور آغاز شد.")
+            if game.next_auto_enabled:
+                from app.handlers.gameplay import _schedule_auto_next
+                await _schedule_auto_next(callback.bot, game.game_key)
+        await callback.answer("دور شروع شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:lobby:"))
 async def lobby_game_management(callback: CallbackQuery) -> None:
