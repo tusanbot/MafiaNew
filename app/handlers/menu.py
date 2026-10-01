@@ -19,10 +19,9 @@ from app.handlers.keyboards import (
     scenario_keyboard,
 )
 from app.repositories.games import GameRepository
-from app.services.profile import sync_telegram_user
-from app.services.game import create_game
 from app.repositories.users import UserRepository
-from app.repositories.games import GameRepository
+from app.services.game import create_game
+from app.services.profile import sync_telegram_user
 
 router = Router(name="menu")
 
