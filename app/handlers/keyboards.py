@@ -469,7 +469,7 @@ def new_game_extras_keyboard(
     return builder.as_markup()
 
 
-def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True) -> InlineKeyboardMarkup:
+def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True, training_url: str | None = None, telegram_training_url: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     buttons = []
     for seat in range(1, scenario.max_players + 1):
@@ -496,6 +496,13 @@ def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool 
     )
     if can_deal:
         builder.row(InlineKeyboardButton(text="پخش نقش", callback_data=f"lobby:deal:{game_key}"))
+    if training_url or telegram_training_url:
+        buttons = []
+        if training_url:
+            buttons.append(InlineKeyboardButton(text="📚 آموزش سناریو", url=training_url))
+        if telegram_training_url:
+            buttons.append(InlineKeyboardButton(text="📣 آموزش در تلگرام", url=telegram_training_url))
+        builder.row(*buttons)
     if is_host:
         builder.row(
             InlineKeyboardButton(text="مدیریت بازی", callback_data=f"gameadmin:lobby:{game_key}"),
