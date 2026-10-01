@@ -85,7 +85,17 @@ async def register_group_callback(callback: CallbackQuery) -> None:
 
     async with session_factory() as session:
         group = await GroupRepository.upsert_from_chat(session, callback.message.chat)
-        await register_group(session, group, callback.from_user.id)
+
+        # registered_by_user_id is an internal users.id FK, not a Telegram ID.
+        # Sync the Telegram user first and persist the internal PK in groups.
+        user = await sync_telegram_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.username,
+            callback.from_user.first_name or "",
+            callback.from_user.last_name,
+        )
+        await register_group(session, group, user.id)
         await callback.message.edit_text(
             f"گروه «{group.title or chat_id}» با موفقیت در ربات ثبت شد.",
             reply_markup=group_start_menu(group.id),
