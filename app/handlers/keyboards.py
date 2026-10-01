@@ -121,6 +121,18 @@ def player_target_action_keyboard(group_id: int, action: str, players) -> Inline
     return player_target_management_keyboard(group_id, action, players)
 
 
+def player_faceoff_destination_keyboard(group_id: int, source_id: int, players) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for player, user in players:
+        name = user.display_name or user.first_name or user.username or str(user.telegram_id)
+        builder.row(InlineKeyboardButton(
+            text=f"{player.seat}. {name[:38]}",
+            callback_data=f"gameadmin:faceoff_to:{group_id}:{source_id}:{user.id}",
+        ))
+    _back(builder, f"gameadmin:players:{group_id}")
+    return builder.as_markup()
+
+
 def player_replace_destination_keyboard(group_id: int, source_id: int, reserves) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for player, user in reserves:
