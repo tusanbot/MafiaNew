@@ -33,7 +33,7 @@ async def start_handler(message: Message) -> None:
                 await message.answer(
                     "این گروه هنوز در ربات ثبت نشده است.\n\n"
                     "برای ثبت، ابتدا مطمئن شوید ربات مدیر گروه است و دسترسی‌های لازم را دارد.",
-                    reply_markup=registration_keyboard(message.chat.id),
+                    reply_markup=registration_keyboard(),
                 )
             else:
                 await message.answer(
@@ -58,7 +58,7 @@ async def start_handler(message: Message) -> None:
     )
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("groupreg:register:"))
+@router.callback_query(lambda c: c.data == "groupreg:register")
 async def register_group_callback(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
@@ -81,7 +81,7 @@ async def register_group_callback(callback: CallbackQuery) -> None:
         lines.extend(f"• {item}" for item in check.problems)
         await callback.message.edit_text(
             "\n".join(lines),
-            reply_markup=registration_keyboard(chat_id),
+            reply_markup=registration_keyboard(),
         )
         await callback.answer("شرایط ثبت کامل نیست.", show_alert=True)
         return
