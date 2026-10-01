@@ -29,7 +29,7 @@ async def start_handler(message: Message) -> None:
             if member.status not in ("creator", "administrator"):
                 await message.answer("منوی مدیریت ربات فقط برای مدیران گروه در دسترس است.")
                 return
-            if not group.is_active:
+            if not group.is_active or group.registered_at is None:
                 await message.answer(
                     "این گروه هنوز در ربات ثبت نشده است.\n\n"
                     "برای ثبت، ابتدا مطمئن شوید ربات مدیر گروه است و دسترسی‌های لازم را دارد.",
@@ -102,7 +102,7 @@ async def group_start_menu_callback(callback: CallbackQuery) -> None:
     group_id = int(parts[2])
     async with session_factory() as session:
         group = await session.get(Group, group_id)
-        if not group or not group.is_active:
+        if not group or not group.is_active or group.registered_at is None:
             await callback.answer("این گروه هنوز ثبت نشده است.", show_alert=True)
             return
         member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
