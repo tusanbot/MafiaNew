@@ -566,20 +566,6 @@ async def _require_group_admin(callback: CallbackQuery, session, group_id: int):
     return group
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("groupstart:new:"))
-async def group_new_game(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    group_id = int(callback.data.rsplit(":", 1)[1])
-    async with session_factory() as session:
-        group = await _require_group_admin(callback, session, group_id)
-        if not group:
-            return
-        text = await render_new_game_menu(session, group, callback.from_user.id)
-        await callback.message.edit_text(text, reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_menu"]).new_game_menu(group.id))
-    await callback.answer()
-
-
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:menu:"))
 async def new_game_menu_handler(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
