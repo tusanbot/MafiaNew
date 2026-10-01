@@ -428,16 +428,18 @@ async def next_turn_handler(callback: CallbackQuery):
         else:
             user = await session.get(User, result["user_id"])
             name = user.display_name or user.first_name if user else "بازیکن"
-            kind = "چالش" if result["kind"] == "challenge" else "اصلی"
+            kind = "چالش" if result["kind"] == "challenge" else ("ترن اضافه" if result["kind"] == "extra" else "اصلی")
             await callback.bot.send_message(
                 chat_id,
                 f"نوبت {kind} {name} شروع شد.",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled,
                     game.turn_color_enabled, game.turn_color, game.challenge_color,
-                    True, result["kind"] != "extra"
+                    True, result["kind"] not in {"extra", "challenge"}
                 ),
             )
+            if game.next_auto_enabled:
+                await _schedule_auto_next(callback.bot, game.game_key)
         await callback.answer("نکست ترن انجام شد.")
 
 
