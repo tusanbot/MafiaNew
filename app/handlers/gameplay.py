@@ -335,8 +335,20 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
-        if not turn or int(turn.get("user_id", -1)) != actor.id:
-            await callback.answer("فقط صاحب نوبت فعلی می‌تواند نکست ترن بزند.", show_alert=True)
+        if not turn:
+            await callback.answer("نوبت فعالی وجود ندارد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        is_host = bool(host and host.id == actor.id)
+        is_turn_owner = int(turn.get("user_id", -1)) == actor.id
+        if is_host and not game.next_host_enabled:
+            await callback.answer("نکست گرداننده در تنظیمات بازی غیرفعال است.", show_alert=True)
+            return
+        if not is_host and is_turn_owner and not game.next_player_enabled:
+            await callback.answer("نکست بازیکن در تنظیمات بازی غیرفعال است.", show_alert=True)
+            return
+        if not is_host and not is_turn_owner:
+            await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
         try:
             result = await next_turn(session, game)
