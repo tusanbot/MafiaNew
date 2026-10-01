@@ -70,3 +70,30 @@ def challenge_response_keyboard(game_key: str, event_id: int) -> InlineKeyboardM
         InlineKeyboardButton(text="رد چالش", callback_data=f"challenge:reject:{game_key}:{event_id}"),
     )
     return builder.as_markup()
+
+
+def day_turn_keyboard(game_key: str, is_current_speaker: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="درخواست چالش", callback_data=f"turn:request_challenge:{game_key}"))
+    if is_current_speaker:
+        builder.row(InlineKeyboardButton(text="نکست ترن", callback_data=f"turn:next:{game_key}"))
+    return builder.as_markup()
+
+
+def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for event, data in requests:
+        builder.row(InlineKeyboardButton(
+            text=f"چالش {data.get('requester_name', 'بازیکن')}",
+            callback_data=f"challenge:grant:{game_key}:{event.id}",
+        ))
+    return builder.as_markup()
+
+
+def challenge_placement_keyboard(game_key: str, event_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="قبل از صحبت", callback_data=f"challenge:place:{game_key}:{event_id}:before"),
+        InlineKeyboardButton(text="بعد از صحبت", callback_data=f"challenge:place:{game_key}:{event_id}:after"),
+    )
+    return builder.as_markup()
