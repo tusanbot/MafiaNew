@@ -84,6 +84,8 @@ class GamePlayer(Base):
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     seat: Mapped[int] = mapped_column(Integer)
+    is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)
+    reserve_position: Mapped[int | None] = mapped_column(Integer)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"))
     alive: Mapped[bool] = mapped_column(Boolean, default=True)
     joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
