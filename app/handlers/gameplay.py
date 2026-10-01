@@ -10,6 +10,7 @@ from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.services.gameplay import (
     alive_players,
+    all_players,
     current_round,
     resolve_night,
     start_match,
@@ -139,6 +140,39 @@ async def _group_chat_id(session, game):
     group = await session.get(Group, game.group_id)
     return group.telegram_id if group else None
 
+
+async def _public_status_roster(session, game) -> str:
+    try:
+        emoji_settings = json.loads(game.emoji_settings or "{}")
+    except (TypeError, ValueError):
+        emoji_settings = {}
+    rows = await all_players(session, game.id)
+    lines = ["👥 لیست بازیکنان حاضر در بازی", ""]
+    for player, user, _role in rows:
+        if player.is_reserved:
+            continue
+        name = tg_name(user.display_name or user.first_name or user.username or "بازیکن")
+        marks = []
+        if player.alive:
+            if player.silence_until_round is not None and emoji_settings.get("silence", True):
+                marks.append("🔇")
+            if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True):
+                marks.append("➕")
+            if player.warning_count and emoji_settings.get("warning", True):
+                marks.append(f"⚠️{player.warning_count}")
+            state = "زنده"
+        else:
+            if player.exit_type == "death" and emoji_settings.get("death", True):
+                marks.append("💀")
+            elif player.exit_type == "kick" and emoji_settings.get("kick", True):
+                marks.append("⛔")
+            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True):
+                marks.append("🩸")
+            # Face-off is a hidden act and is never exposed in the public roster.
+            state = "حذف‌شده"
+        lines.append(f"{player.seat:02d}. {' '.join(marks)} {name} — {state}".strip())
+    return "\n".join(lines)
+
 async def _send_night_menus(bot, session, game):
     if not game.auto_play:
         return
@@ -225,7 +259,7 @@ async def night_callback(callback: CallbackQuery):
                 await send_game_result_notifications(callback.bot, session, game)
                 text = f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
             elif result["eliminated"]:
-                text = f"روز آغاز شد.\nبازیکن {result['eliminated'].display_name} در شب حذف شد."
+                text = "روز آغاز شد."
             else:
                 text = "روز آغاز شد.\nاین شب حذف نداشت."
             if chat_id:
@@ -236,7 +270,7 @@ async def night_callback(callback: CallbackQuery):
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
                     msg = await callback.bot.send_message(
                         chat_id,
-                        f"{text}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
                         reply_markup=_day_keyboard(game, True),
                     )
                     await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
@@ -272,7 +306,7 @@ async def night_callback(callback: CallbackQuery):
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
                     msg = await callback.bot.send_message(
                         chat_id,
-                        f"{text}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
                         reply_markup=_day_keyboard(game, True),
                     )
                     await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
@@ -616,6 +650,7 @@ async def vote_handler(callback: CallbackQuery):
                 text = f"🗳 رأی‌گیری تمام شد.\n\nبازیکن {name} حذف شد."
             else:
                 text = "🗳 رأی‌گیری تمام شد.\n\nرأی‌گیری مساوی شد و کسی حذف نشد."
+            text += f"\n\n{await _public_status_roster(session, game)}"
             text += "\n\n🌙 شب بعد آغاز شد."
             await callback.message.edit_text(text)
             if game.auto_play:
