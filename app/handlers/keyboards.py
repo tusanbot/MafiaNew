@@ -631,3 +631,15 @@ def admin_scenario_keyboard(scenarios) -> InlineKeyboardMarkup:
         ))
     _back(builder, "admin:dashboard")
     return builder.as_markup()
+
+def scenario_challenge_keyboard(action: str = "create", include_unchanged: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="⚔️ چالش محدود", callback_data=f"scenario_admin:{action}:challenge:limited"),
+        InlineKeyboardButton(text="⚔️ چالش آزاد", callback_data=f"scenario_admin:{action}:challenge:free"),
+    )
+    builder.row(InlineKeyboardButton(text="🚫 بدون چالش", callback_data=f"scenario_admin:{action}:challenge:off"))
+    if include_unchanged:
+        builder.row(InlineKeyboardButton(text="↩️ بدون تغییر", callback_data=f"scenario_admin:{action}:challenge:unchanged"))
+    builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
+    return builder.as_markup()
