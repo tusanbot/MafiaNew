@@ -48,10 +48,42 @@ def _day_keyboard(game, current: bool = False):
         getattr(game, "challenge_color", "پیش‌فرض"),
     )
 
-_challenge_tasks = {}
+_challenge_tasks = {}\n_turn_tasks = {}\nTURN_SECONDS = 60
 
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
+
+async def _schedule_auto_next(bot, game_key: str):
+    async def runner():
+        await asyncio.sleep(TURN_SECONDS)
+        async with session_factory() as session:
+            game = await _load(session, game_key)
+            if not game or game.status != "running" or not game.next_auto_enabled:
+                return
+            turn = await current_turn(session, game.id)
+            if not turn or turn.get("status") != "active":
+                return
+            chat_id = await _group_chat_id(session, game)
+            try:
+                result = await next_turn(session, game)
+            except ValueError:
+                return
+            if not chat_id:
+                return
+            if result["kind"] == "finished_day":
+                await bot.send_message(chat_id, "زمان نوبت به پایان رسید و نوبت‌های اصلی این دور تمام شد.")
+            else:
+                user = await session.get(User, result["user_id"])
+                name = user.display_name or user.first_name if user else "بازیکن"
+                kind = "چالش" if result["kind"] == "challenge" else "اصلی"
+                await bot.send_message(chat_id, f"زمان نوبت تمام شد؛ نوبت {kind} {name} شروع شد.", reply_markup=_day_keyboard(game, True))
+                if game.next_auto_enabled:
+                    _turn_tasks[game.id] = asyncio.create_task(_schedule_auto_next(bot, game_key))
+    old = _turn_tasks.pop(game.id, None)
+    if old:
+        old.cancel()
+    _turn_tasks[game.id] = asyncio.create_task(runner())
+
 
 async def _group_chat_id(session, game):
     group = await session.get(Group, game.group_id)
@@ -323,6 +355,11 @@ async def challenge_place_handler(callback: CallbackQuery):
         await callback.answer("زمان چالش ثبت شد.")
 
 
+async def _reschedule_auto_next(bot, game):
+    if game.next_auto_enabled and game.status == "running":
+        await _schedule_auto_next(bot, game.game_key)
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("turn:next:"))
 async def next_turn_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
@@ -360,6 +397,10 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
+            old_task = _turn_tasks.pop(game.id, None)
+            if old_task:
+                old_task.cancel()
+
             await callback.bot.send_message(
                 chat_id,
                 "نوبت‌های اصلی این دور تمام شد. اکنون رأی‌گیری را می‌توانید شروع کنید.",
