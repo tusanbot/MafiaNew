@@ -1163,6 +1163,8 @@ async def render_new_game_menu(session, group, user_id: int | None = None):
         return "امکان ایجاد پیش‌نویس بازی وجود ندارد."
     scenario = await session.get(Scenario, draft.scenario_id)
     host = await session.get(User, draft.host_user_id) if draft.host_user_id else None
+    emojis = _emoji_settings(draft)
+    emoji_count = sum(1 for value in emojis.values() if value)
     return (
         "ایجاد بازی\n\n"
         f"سناریو: {scenario.name_fa if scenario else 'انتخاب نشده'}\n"
@@ -1171,7 +1173,8 @@ async def render_new_game_menu(session, group, user_id: int | None = None):
         f"نکست گرداننده: {'فعال' if draft.next_host_enabled else 'غیرفعال'}\n"
         f"نکست بازیکن: {'فعال' if draft.next_player_enabled else 'غیرفعال'}\n"
         f"نکست خودکار: {'فعال' if draft.next_auto_enabled else 'غیرفعال'}\n"
-        f"بازی خودکار شب: {'فعال' if draft.auto_play else 'غیرفعال'}"
+        f"بازی خودکار شب: {'فعال' if draft.auto_play else 'غیرفعال'}\n"
+        f"اموجی‌های وضعیت: {emoji_count}/8 فعال"
     )
 
 
@@ -1403,7 +1406,7 @@ async def new_game_extras_handler(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         await callback.message.edit_text(
             "امکانات اضافه",
-            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)),
+            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, any(_emoji_settings(draft).values())),
         )
     await callback.answer()
 
@@ -1424,24 +1427,71 @@ async def toggle_draft_auto(callback: CallbackQuery) -> None:
     await callback.answer("بازی خودکار تغییر کرد.")
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_emoji:"))
-async def toggle_draft_emoji(callback: CallbackQuery) -> None:
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:emoji:"))
+async def new_game_emoji_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
     group_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
         group = await _require_group_admin(callback, session, group_id)
-        if not group: return
+        if not group:
+            return
         draft = await _ensure_draft(session, group, callback.from_user.id)
-        try:
-            settings = json.loads(draft.emoji_settings or "{}")
-        except (TypeError, ValueError):
-            settings = {}
-        settings["challenge"] = not bool(settings.get("challenge", True))
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
+        from app.handlers.keyboards import new_game_emoji_menu
+        await callback.message.edit_text(
+            "اموجی‌های وضعیت و اکت‌ها\n\n"
+            "این تنظیمات برای بازی فعلی از زمان ایجاد لابی ذخیره می‌شوند.",
+            reply_markup=new_game_emoji_menu(group.id, _emoji_settings(draft)),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:emoji_toggle:"))
+async def new_game_emoji_toggle(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("تنظیم اموجی نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, key = parts
+    try:
+        group_id = int(group_raw)
+    except ValueError:
+        await callback.answer("شناسه گروه نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        settings = _emoji_settings(draft)
+        if key not in settings:
+            await callback.answer("اموجی نامعتبر است.", show_alert=True)
+            return
+        settings[key] = not settings[key]
         draft.emoji_settings = json.dumps(settings, ensure_ascii=False)
         await session.commit()
-        from app.handlers.keyboards import new_game_extras_keyboard
-        await callback.message.edit_reply_markup(reply_markup=new_game_extras_keyboard(
-            group.id, draft.turn_color, draft.challenge_color, settings["challenge"]))
-    await callback.answer("وضعیت اموجی تغییر کرد.")
+        from app.handlers.keyboards import new_game_emoji_menu
+        await callback.message.edit_reply_markup(reply_markup=new_game_emoji_menu(group.id, settings))
+    await callback.answer("تنظیم اموجی ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_emoji:"))
+async def toggle_draft_emoji_legacy(callback: CallbackQuery) -> None:
+    # Backward compatibility for old callback buttons.
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        settings = _emoji_settings(draft)
+        settings["challenge"] = not settings["challenge"]
+        draft.emoji_settings = json.dumps(settings, ensure_ascii=False)
+        await session.commit()
+    await callback.answer("وضعیت اموجی چالش تغییر کرد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:turn_color:"))
@@ -1521,7 +1571,7 @@ async def _set_new_game_color(callback: CallbackQuery, kind: str) -> None:
             "امکانات اضافه",
             reply_markup=new_game_extras_keyboard(
                 group.id, draft.turn_color, draft.challenge_color,
-                json.loads(draft.emoji_settings or "{}").get("challenge", True)
+                any(_emoji_settings(draft).values())
             ),
         )
     await callback.answer("تنظیم ذخیره شد.")
@@ -1597,7 +1647,7 @@ async def draft_turn_color(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         draft.turn_color = colors[(colors.index(draft.turn_color) + 1) % len(colors)] if draft.turn_color in colors else colors[0]
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)))
+        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, any(_emoji_settings(draft).values())))
     await callback.answer("رنگ نوبت تغییر کرد.")
 
 
