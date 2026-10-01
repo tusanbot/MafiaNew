@@ -94,6 +94,19 @@ async def update_user_progress(session: AsyncSession, user: User) -> list[Achiev
             earned.append(achievements[key])
     return earned
 
+def performance_score(*, kills: int, saves: int, investigation_hits: int, correct_votes: int, accepted_challenges: int, faceoff_wins: int, survived: bool) -> int:
+    """Bound measurable in-game performance at 30 points per completed game."""
+    return min(
+        30,
+        kills * 8
+        + saves * 6
+        + investigation_hits * 5
+        + correct_votes * 2
+        + accepted_challenges * 4
+        + faceoff_wins * 6
+        + (3 if survived else 0),
+    )
+
 async def _collect_game_stats(session: AsyncSession, game_id: int):
     events = list((await session.execute(
         select(GameEvent).where(GameEvent.game_id == game_id).order_by(GameEvent.id)
@@ -163,18 +176,17 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
                    (winner == "citizen_independent" and role and role.team in {"citizen", "independent"}))
         # Performance score: participation + result + measurable actions.
         # A per-game cap prevents one unusually active game from dominating the leaderboard.
-        performance_score = min(
-            30,
-            kills[user.id] * 8
-            + saves[user.id] * 6
-            + investigation_hits[user.id] * 5
-            + correct_votes[user.id] * 2
-            + accepted_challenges[user.id] * 4
-            + faceoff_wins[user.id] * 6
-            + (3 if player.alive else 0)
+        performance = performance_score(
+            kills=kills[user.id],
+            saves=saves[user.id],
+            investigation_hits=investigation_hits[user.id],
+            correct_votes=correct_votes[user.id],
+            accepted_challenges=accepted_challenges[user.id],
+            faceoff_wins=faceoff_wins[user.id],
+            survived=player.alive,
         )
         result_score = 20 if winning else 0
-        user.score += 5 + result_score + performance_score
+        user.score += 5 + result_score + performance
         user.win_streak = user.win_streak + 1 if winning else 0
         user.best_win_streak = max(user.best_win_streak, user.win_streak)
         user.kills += kills[user.id]; user.saves += saves[user.id]
