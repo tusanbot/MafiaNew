@@ -78,7 +78,7 @@ async def _schedule_auto_next(bot, game_key: str):
             if not chat_id:
                 return
             if result["kind"] == "finished_day":
-                await bot.send_message(chat_id, "زمان نوبت به پایان رسید و نوبت‌های اصلی این دور تمام شد.")
+                await bot.send_message(chat_id, "زمان نوبت به پایان رسید و صحبت‌های این دور تمام شد.", reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)))
             else:
                 user = await session.get(User, result["user_id"])
                 name = user.display_name or user.first_name if user else "بازیکن"
