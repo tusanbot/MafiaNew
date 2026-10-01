@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Scenario, User
 from app.repositories.games import GameRepository
+from app.utils.text import tg_name
 
 
 def gregorian_to_jalali(year: int, month: int, day: int) -> tuple[int, int, int]:
@@ -83,14 +84,14 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
         item = next(((p, u) for p, u in players if p.seat == seat), None)
         if item:
             _, user = item
-            name = escape(user.display_name or user.first_name or str(user.telegram_id))
+            name = tg_name(user.display_name or user.first_name or str(user.telegram_id))
             lines.append(f'{seat:02d}. <a href="tg://user?id={user.telegram_id}">{name}</a>')
         else:
             lines.append(f"{seat:02d}. — خالی —")
     if reserves:
         lines.extend(["", "لیست رزرو:"])
         for p, u in reserves:
-            name = escape(u.display_name or u.first_name or str(u.telegram_id))
+            name = tg_name(u.display_name or u.first_name or str(u.telegram_id))
             lines.append(f'{p.reserve_position}. <a href="tg://user?id={u.telegram_id}">{name}</a>')
     lines.extend([
         "",
@@ -106,7 +107,7 @@ async def role_messages(session: AsyncSession, game, assignments):
     now = datetime.now(ZoneInfo("Asia/Tehran"))
     jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
     scenario_name = scenario.name_fa if scenario else "نامشخص"
-    host_name = host.display_name if host else "نامشخص"
+    host_name = tg_name(host.display_name if host else "نامشخص")
 
     team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
     rows = []
@@ -126,7 +127,7 @@ async def role_messages(session: AsyncSession, game, assignments):
     )
     list_lines = []
     for seat, name, role_name, team, description, telegram_id in rows:
-        list_lines.append(f'<a href="tg://user?id={telegram_id}">{escape(name)}</a> — {escape(role_name)} --------- {escape(team)}')
+        list_lines.append(f'<a href="tg://user?id={telegram_id}">{tg_name(name)}</a> — {escape(role_name)} --------- {escape(team)}')
     group_list = header + "\n".join(list_lines) + "\n◤◢◣◥◤◢◣◥◤◢◣◥\n\n༄"
 
     player_messages = []
