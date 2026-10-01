@@ -62,10 +62,13 @@ async def start_handler(message: Message) -> None:
 async def register_group_callback(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    chat_id = int(callback.data.rsplit(":", 1)[1])
-    if callback.message.chat.id != chat_id:
-        await callback.answer("درخواست ثبت برای این گروه معتبر نیست.", show_alert=True)
+    # The callback message itself is the authoritative source for the Telegram
+    # chat ID. Never trust an ID embedded in callback_data: old keyboards can
+    # survive database resets and may contain an internal groups.id.
+    if callback.message.chat.type not in ("group", "supergroup"):
+        await callback.answer("ثبت گروه باید از داخل همان گروه انجام شود.", show_alert=True)
         return
+    chat_id = callback.message.chat.id
 
     member = await callback.bot.get_chat_member(chat_id, callback.from_user.id)
     if member.status not in ("creator", "administrator"):
@@ -83,9 +86,8 @@ async def register_group_callback(callback: CallbackQuery) -> None:
         await callback.answer("شرایط ثبت کامل نیست.", show_alert=True)
         return
 
-    # Never derive the group record from the callback message chat object.
-    # The callback_data contains the authoritative Telegram chat_id that was
-    # originally used to render the registration button.
+    # Resolve the actual Telegram chat from the callback message chat ID.
+    # This also makes stale registration keyboards safe after DB resets.
     try:
         chat = await callback.bot.get_chat(chat_id)
     except Exception:
