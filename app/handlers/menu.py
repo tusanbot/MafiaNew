@@ -644,8 +644,16 @@ async def new_game_host(callback: CallbackQuery) -> None:
 async def new_game_set_host(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    _, _, _, group_raw, user_raw = callback.data.split(":")
-    group_id, host_tid = int(group_raw), int(user_raw)
+    parts = callback.data.split(":")
+    if len(parts) != 4 or parts[0] != "newgame" or parts[1] != "sethost":
+        await callback.answer("درخواست انتخاب گرداننده نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, user_raw = parts
+    try:
+        group_id, host_tid = int(group_raw), int(user_raw)
+    except ValueError:
+        await callback.answer("شناسه گرداننده نامعتبر است.", show_alert=True)
+        return
     async with session_factory() as session:
         group = await _require_group_admin(callback, session, group_id)
         if not group:
