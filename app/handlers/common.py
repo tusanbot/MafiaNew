@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select
 
@@ -13,6 +13,7 @@ from app.handlers.keyboards import (
 from app.repositories.groups import GroupRepository
 from app.services.profile import sync_telegram_user
 from app.services.group_registration import check_group_registration, register_group
+from app.config import get_settings
 
 router = Router(name="common")
 
@@ -173,3 +174,17 @@ async def group_start_menu_callback(callback: CallbackQuery) -> None:
                 reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_menu"]).new_game_menu(group.id),
             )
     await callback.answer()
+
+
+@router.message(Command("admin"))
+async def admin_command(message: Message) -> None:
+    if not message.from_user:
+        return
+    if message.chat.type != "private":
+        await message.answer("پنل مدیریت ربات فقط در PV قابل استفاده است.")
+        return
+    if message.from_user.id not in get_settings().admin_id_set:
+        await message.answer("دسترسی شما به پنل مدیریت ربات مجاز نیست.")
+        return
+    from app.handlers.keyboards import admin_panel_menu
+    await message.answer("🛠 پنل مدیریت ربات\n\nبخش موردنظر را انتخاب کنید.", reply_markup=admin_panel_menu())
