@@ -83,8 +83,25 @@ async def register_group_callback(callback: CallbackQuery) -> None:
         await callback.answer("شرایط ثبت کامل نیست.", show_alert=True)
         return
 
+    # Never derive the group record from the callback message chat object.
+    # The callback_data contains the authoritative Telegram chat_id that was
+    # originally used to render the registration button.
+    try:
+        chat = await callback.bot.get_chat(chat_id)
+    except Exception:
+        await callback.answer("اطلاعات گروه از تلگرام قابل دریافت نیست.", show_alert=True)
+        return
+
+    if chat.type not in ("group", "supergroup"):
+        await callback.answer("شناسه ثبت‌شده مربوط به یک گروه نیست.", show_alert=True)
+        return
+
     async with session_factory() as session:
-        group = await GroupRepository.upsert_from_chat(session, callback.message.chat)
+        # Resolve strictly by Telegram chat ID so a stale/incorrect Chat object
+        # can never create a second group row for another ID.
+        group = await GroupRepository.get_by_telegram_id(session, chat_id)
+        if group is None:
+            group = await GroupRepository.upsert_from_chat(session, chat)
 
         # registered_by_user_id is an internal users.id FK, not a Telegram ID.
         # Sync the Telegram user first and persist the internal PK in groups.
