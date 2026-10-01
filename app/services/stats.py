@@ -138,7 +138,7 @@ async def _collect_game_stats(session: AsyncSession, game_id: int):
     return actions, resolved, votes, faceoffs, challenges
 
 
-async def record_game_result(session: AsyncSession, game_id: int, winner: str) -> dict[int, list[Achievement]]:
+async def record_game_result(session: AsyncSession, game_id: int, winner: str) -> dict[int, dict]:
     result = await session.execute(select(GamePlayer, User, Role).outerjoin(Role, Role.id == GamePlayer.role_id).where(GamePlayer.game_id == game_id))
     rows = result.all()
     actions, resolved, votes, faceoffs, challenges = await _collect_game_stats(session, game_id)
@@ -195,7 +195,10 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
             survived=player.alive,
         )
         result_score = 20 if winning else 0
-        user.score += 5 + result_score + performance
+        score_before = user.score
+        rank_before = rank_for_score(score_before)
+        score_delta = 5 + result_score + performance
+        user.score += score_delta
         user.win_streak = user.win_streak + 1 if winning else 0
         user.best_win_streak = max(user.best_win_streak, user.win_streak)
         user.kills += kills[user.id]; user.saves += saves[user.id]
@@ -212,7 +215,7 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
             role_stat.kills += kills[user.id]; role_stat.saves += saves[user.id]
             role_stat.investigations += investigations[user.id]; role_stat.investigation_hits += investigation_hits[user.id]
         earned = await update_user_progress(session, user)
-        if earned: newly_earned[user.id] = earned
+        newly_earned[user.id] = {"achievements": earned, "score_delta": score_delta, "score_before": score_before, "score_after": user.score, "rank_before": rank_before, "rank_after": rank_for_score(user.score), "stats": {"kills": kills[user.id], "saves": saves[user.id], "investigations": investigations[user.id], "investigation_hits": investigation_hits[user.id], "correct_votes": correct_votes[user.id], "accepted_challenges": accepted_challenges[user.id], "faceoffs": faceoff_counts[user.id], "faceoff_wins": faceoff_wins[user.id], "survived": bool(player.alive), "performance": performance, "won": bool(winning)}}
     return newly_earned
 
 async def leaderboard(session: AsyncSession, limit: int = 10, team: str | None = None):
