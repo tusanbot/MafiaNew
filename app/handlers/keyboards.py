@@ -261,7 +261,7 @@ def scenario_select_keyboard(group_id: int, scenarios) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
         builder.row(InlineKeyboardButton(text=scenario.name_fa, callback_data=f"newgame:setscenario:{group_id}:{scenario.id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
@@ -271,23 +271,63 @@ def host_select_keyboard(group_id: int, admins) -> InlineKeyboardMarkup:
         user = member.user
         name = user.full_name or user.username or str(user.id)
         builder.row(InlineKeyboardButton(text=name[:60], callback_data=f"newgame:sethost:{group_id}:{user.id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
 def new_game_settings_keyboard(group_id: int, reserve_enabled: bool = True) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"رزرو: {'فعال' if reserve_enabled else 'غیرفعال'}", callback_data=f"newgame:toggle_reserve:{group_id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    builder.row(
+        InlineKeyboardButton(
+            text=f"رزرو: {'فعال' if reserve_enabled else 'غیرفعال'}",
+            callback_data=f"newgame:toggle_reserve:{group_id}",
+        )
+    )
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
-def new_game_extras_keyboard(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض") -> InlineKeyboardMarkup:
+def new_game_color_keyboard(group_id: int, kind: str, current: str = "پیش‌فرض") -> InlineKeyboardMarkup:
+    options = ("پیش‌فرض", "قرمز", "آبی", "سبز", "زرد", "بنفش")
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}", callback_data=f"newgame:toggle_auto:{group_id}"))
-    builder.row(InlineKeyboardButton(text=f"رنگ نوبت: {turn_color}", callback_data=f"newgame:turn_color:{group_id}"))
-    builder.row(InlineKeyboardButton(text=f"رنگ چالش: {challenge_color}", callback_data=f"newgame:challenge_color:{group_id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    for value in options:
+        marker = "✓ " if value == current else ""
+        builder.row(
+            InlineKeyboardButton(
+                text=f"{marker}{value}",
+                callback_data=f"newgame:set_{kind}_color:{group_id}:{value}",
+            )
+        )
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:extras:{group_id}"))
+    return builder.as_markup()
+
+
+def new_game_extras_keyboard(
+    group_id: int,
+    auto_play: bool = False,
+    turn_color: str = "پیش‌فرض",
+    challenge_color: str = "پیش‌فرض",
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
+            callback_data=f"newgame:toggle_auto:{group_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=f"رنگ نوبت: {turn_color}",
+            callback_data=f"newgame:turn_color:{group_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=f"رنگ چالش: {challenge_color}",
+            callback_data=f"newgame:challenge_color:{group_id}",
+        )
+    )
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
