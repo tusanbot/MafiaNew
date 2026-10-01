@@ -305,6 +305,45 @@ class GameRepository:
         return True
 
     @staticmethod
+    async def replace_player(session: AsyncSession, game: Game, source: GamePlayer, destination: GamePlayer) -> bool:
+        if game.status != "waiting":
+            return False
+        if source.is_reserved or not destination.is_reserved:
+            return False
+        destination.is_reserved = False
+        destination.reserve_position = None
+        destination.seat = source.seat
+        destination.role_id = source.role_id
+        destination.alive = True
+        destination.exit_type = None
+        await session.delete(source)
+        await session.flush()
+        await update(GamePlayer).where(
+            GamePlayer.game_id == game.id,
+            GamePlayer.is_reserved.is_(True),
+            GamePlayer.reserve_position > destination.reserve_position,
+        ).values(reserve_position=GamePlayer.reserve_position - 1)
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def mark_removed(session: AsyncSession, player: GamePlayer, exit_type: str) -> None:
+        player.alive = False
+        player.exit_type = exit_type
+        await session.commit()
+
+    @staticmethod
+    async def restore_player(session: AsyncSession, player: GamePlayer) -> bool:
+        if player.alive or player.exit_type != "death":
+            return False
+        player.alive = True
+        player.exit_type = None
+        player.silence_until_round = None
+        player.extra_turn_round = None
+        await session.commit()
+        return True
+
+    @staticmethod
     async def start(session: AsyncSession, game: Game) -> bool:
         if game.status != "waiting":
             return False
