@@ -39,6 +39,7 @@ def test_game_management_columns_exist() -> None:
         "auto_kick_warnings",
         "turn_color_enabled",
         "emoji_settings",
+        "challenge_limit",
     } <= game_columns
 
 
