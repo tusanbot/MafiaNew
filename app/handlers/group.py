@@ -65,6 +65,37 @@ async def new_game_handler(message: Message) -> None:
         await message.answer(text, reply_markup=lobby_keyboard(game.game_key, can_start))
 
 
+@router.message(lambda m: bool(m.text) and m.text.strip().lstrip("/") == "جایگزین")
+async def reserve_text_handler(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup") or not message.from_user:
+        return
+    if message.reply_to_message and message.reply_to_message.from_user:
+        if not await is_group_admin(message):
+            await message.answer("افزودن فرد دیگر به لیست رزرو فقط برای مدیر گروه مجاز است.")
+            return
+        target_tg = message.reply_to_message.from_user.id
+        target_tg_user = message.reply_to_message.from_user
+    else:
+        target_tg = message.from_user.id
+        target_tg_user = message.from_user
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game or game.status != "waiting":
+            await message.answer("در حال حاضر بازی در مرحله‌ای نیست که لیست رزرو قابل ثبت باشد.")
+            return
+        user = await UserRepository(session).upsert_from_telegram(
+            target_tg, target_tg_user.username, target_tg_user.first_name or "", target_tg_user.last_name
+        )
+        player = await GameRepository.join_reserve(session, game, user)
+        if not player:
+            await message.answer("ثبت در لیست رزرو انجام نشد؛ ظرفیت اصلی باید تکمیل باشد یا شما قبلاً در بازی هستید.")
+            return
+        await message.answer(
+            f"بازیکن {user.display_name or user.first_name} با شماره رزرو {player.reserve_position} وارد لیست جایگزین شد."
+        )
+
+
 @router.message(Command("mafia"))
 async def mafia_menu_handler(message: Message) -> None:
     await message.answer("برای ساخت بازی در گروه، /newgame را اجرا کنید.")
