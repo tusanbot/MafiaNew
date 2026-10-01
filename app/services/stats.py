@@ -53,8 +53,7 @@ def rank_progress(score: int) -> tuple[str, int | None, int]:
     for index, (minimum, name) in enumerate(RANKS):
         if score >= minimum:
             current = name
-            if index + 1 < len(RANKS):
-                next_threshold = RANKS[index + 1][0]
+            next_threshold = RANKS[index + 1][0] if index + 1 < len(RANKS) else None
     remaining = max(0, next_threshold - score) if next_threshold is not None else 0
     return current, next_threshold, remaining
 
