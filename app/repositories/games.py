@@ -17,11 +17,10 @@ class GameRepository:
 
     @staticmethod
     async def get_draft(session: AsyncSession, group_id: int, host_user_id: int | None = None) -> Game | None:
-        result = await session.execute(
-            select(Game)
-            .where(Game.group_id == group_id, Game.status == "draft")
-            .order_by(Game.id.desc())
-        )
+        query = select(Game).where(Game.group_id == group_id, Game.status == "draft")
+        if host_user_id is not None:
+            query = query.where(Game.host_user_id == host_user_id)
+        result = await session.execute(query.order_by(Game.id.desc()))
         return result.scalars().first()
 
     @staticmethod
@@ -30,7 +29,20 @@ class GameRepository:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str, status: str = "waiting", **settings) -> Game:
+    async def create(
+        session: AsyncSession,
+        group: Group,
+        scenario: Scenario,
+        host: User,
+        game_key: str,
+        status: str = "waiting",
+        *,
+        auto_play: bool = False,
+        turn_color: str = "پیش‌فرض",
+        challenge_color: str = "پیش‌فرض",
+        reserve_enabled: bool = True,
+    ) -> Game:
+        """Create a Game using only settings that are part of the Game schema."""
         game = Game(
             game_key=game_key,
             group_id=group.id,
@@ -38,10 +50,10 @@ class GameRepository:
             host_user_id=host.id,
             status=status,
             phase="lobby",
-            auto_play=bool(settings.get("auto_play", False)),
-            turn_color=settings.get("turn_color", "پیش‌فرض"),
-            challenge_color=settings.get("challenge_color", "پیش‌فرض"),
-            reserve_enabled=bool(settings.get("reserve_enabled", True)),
+            auto_play=auto_play,
+            turn_color=turn_color,
+            challenge_color=challenge_color,
+            reserve_enabled=reserve_enabled,
         )
         session.add(game)
         await session.commit()
