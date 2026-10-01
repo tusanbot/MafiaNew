@@ -1245,7 +1245,7 @@ async def new_game_extras_handler(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         await callback.message.edit_text(
             "امکانات اضافه",
-            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color),
+            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)),
         )
     await callback.answer()
 
@@ -1255,16 +1255,35 @@ async def toggle_draft_auto(callback: CallbackQuery) -> None:
     group_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
         group = await _require_group_admin(callback, session, group_id)
-        if not group:
-            return
+        if not group: return
         draft = await _ensure_draft(session, group, callback.from_user.id)
-        if not draft:
-            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
-            return
         draft.auto_play = not draft.auto_play
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
-    await callback.answer()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
+            group.id, draft.challenge_enabled, draft.next_host_enabled,
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+    await callback.answer("بازی خودکار تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_emoji:"))
+async def toggle_draft_emoji(callback: CallbackQuery) -> None:
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group: return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        try:
+            settings = json.loads(draft.emoji_settings or "{}")
+        except (TypeError, ValueError):
+            settings = {}
+        settings["challenge"] = not bool(settings.get("challenge", True))
+        draft.emoji_settings = json.dumps(settings, ensure_ascii=False)
+        await session.commit()
+        from app.handlers.keyboards import new_game_extras_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_extras_keyboard(
+            group.id, draft.turn_color, draft.challenge_color, settings["challenge"]))
+    await callback.answer("وضعیت اموجی تغییر کرد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:turn_color:"))
@@ -1343,7 +1362,8 @@ async def _set_new_game_color(callback: CallbackQuery, kind: str) -> None:
         await callback.message.edit_text(
             "امکانات اضافه",
             reply_markup=new_game_extras_keyboard(
-                group.id, draft.auto_play, draft.turn_color, draft.challenge_color
+                group.id, draft.turn_color, draft.challenge_color,
+                json.loads(draft.emoji_settings or "{}").get("challenge", True)
             ),
         )
     await callback.answer("تنظیم ذخیره شد.")
@@ -1419,7 +1439,7 @@ async def draft_turn_color(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         draft.turn_color = colors[(colors.index(draft.turn_color) + 1) % len(colors)] if draft.turn_color in colors else colors[0]
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
+        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)))
     await callback.answer("رنگ نوبت تغییر کرد.")
 
 
@@ -1436,5 +1456,5 @@ async def draft_challenge_color(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         draft.challenge_color = colors[(colors.index(draft.challenge_color) + 1) % len(colors)] if draft.challenge_color in colors else colors[0]
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
+        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)))
     await callback.answer("رنگ چالش تغییر کرد.")
