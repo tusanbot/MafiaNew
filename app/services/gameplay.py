@@ -126,6 +126,7 @@ async def resolve_night(session, game):
         ))).first()
         if row:
             row[0].alive = False
+            row[0].exit_type = "death"
             eliminated = row[1]
     await _event(session, game, "night_resolved",
                  {"round_no": round_no, "killed_user_id": eliminated.id if eliminated else None,
