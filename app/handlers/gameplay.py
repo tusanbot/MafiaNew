@@ -27,6 +27,8 @@ from app.services.gameplay import (
     current_turn,
     next_turn,
 )
+from app.utils.text import tg_name
+
 from app.handlers.keyboards import (
     day_keyboard,
     night_action_keyboard,
@@ -86,7 +88,7 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                 remaining = max(0, TURN_SECONDS - elapsed)
                 if chat_id and message_id:
                     user = await session.get(User, int(turn["user_id"]))
-                    name = user.display_name or user.first_name if user else "بازیکن"
+                    name = tg_name(user.display_name or user.first_name if user else "بازیکن")
                     minutes, seconds = divmod(remaining, 60)
                     try:
                         await bot.edit_message_text(
@@ -115,7 +117,7 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     )
                     return
                 user = await session.get(User, result["user_id"])
-                name = user.display_name or user.first_name if user else "بازیکن"
+                name = tg_name(user.display_name or user.first_name if user else "بازیکن")
                 msg = await bot.send_message(
                     chat_id,
                     f"🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
@@ -304,8 +306,8 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         await session.commit()
         msg = await callback.bot.send_message(
             callback.message.chat.id,
-            f"درخواست چالش: {actor.display_name or actor.first_name}\n"
-            f"صاحب ترن اصلی: {turn_owner.display_name or turn_owner.first_name}\n\n"
+            f"درخواست چالش: {tg_name(actor.display_name or actor.first_name)}\n"
+            f"صاحب ترن اصلی: {tg_name(turn_owner.display_name or turn_owner.first_name)}\n\n"
             "صاحب ترن یکی از درخواست‌ها را انتخاب می‌کند.",
             reply_markup=challenge_requests_keyboard(game.game_key, [(event, request_data)]),
         )
@@ -368,7 +370,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                     if chat_id and req:
                         await callback.bot.send_message(
                             chat_id,
-                            f"زمان انتخاب نشد؛ چالش {req.display_name or req.first_name} بعد از صحبت اجرا می‌شود.",
+                            f"زمان انتخاب نشد؛ چالش {tg_name(req.display_name or req.first_name)} بعد از صحبت اجرا می‌شود.",
                         )
         task = asyncio.create_task(auto_after())
         _challenge_tasks[result["request_event_id"]] = task
@@ -473,7 +475,7 @@ async def next_turn_handler(callback: CallbackQuery):
             )
         else:
             user = await session.get(User, result["user_id"])
-            name = user.display_name or user.first_name if user else "بازیکن"
+            name = tg_name(user.display_name or user.first_name if user else "بازیکن")
             kind = "چالش" if result["kind"] == "challenge" else ("ترن اضافه" if result["kind"] == "extra" else "اصلی")
             msg = await callback.bot.send_message(
                 chat_id,
