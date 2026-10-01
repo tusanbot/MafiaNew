@@ -12,7 +12,7 @@ from app.repositories.users import UserRepository
 from app.services.game import render_lobby, role_messages, gregorian_to_jalali
 from app.services.roles import assign_roles
 from app.services.gameplay import choose_leader, start_round
-from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2, leader_settings_keyboard
+from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2, leader_settings_keyboard, leader_choice_keyboard, leader_players_keyboard
 from app.utils.text import tg_name, tg_plain_name
 
 router = Router(name="game")
@@ -242,7 +242,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
         try:
             await callback.bot.send_message(
                 callback.message.chat.id,
-                "🎭 نقش‌ها پخش شد.\n\n👑 انتخاب سردست\n⚙️ تنظیمات بازی\n▶️ شروع دور",
+                "🎭 نقش‌ها پخش شد.\n\nبرای ادامه، انتخاب سردست یا تنظیمات بازی را انتخاب کنید.",
                 reply_markup=leader_settings_keyboard(game.game_key, game),
             )
         except Exception:
@@ -255,6 +255,87 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 )
             except Exception:
                 pass
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:menu:"))
+async def leader_menu_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game else None
+        if not game or game.status != "running" or game.phase != "setup" or not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("دسترسی ندارید یا مرحله انتخاب سردست تمام شده است.", show_alert=True)
+            return
+        players = await GameRepository.players(session, game.id)
+        await callback.message.edit_text("👑 انتخاب سردست\n\nروش انتخاب را مشخص کنید:", reply_markup=leader_choice_keyboard(game.game_key, players))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:manual:"))
+async def leader_manual_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game else None
+        if not game or game.status != "running" or game.phase != "setup" or not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("دسترسی ندارید یا مرحله انتخاب سردست تمام شده است.", show_alert=True)
+            return
+        players = await GameRepository.players(session, game.id)
+        await callback.message.edit_text("✋ انتخاب دستی سردست\n\nبازیکن موردنظر را انتخاب کنید:", reply_markup=leader_players_keyboard(game.game_key, players))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:pick:"))
+async def leader_pick_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    key, user_id_raw = parts[2], parts[3]
+    try:
+        leader_user_id = int(user_id_raw)
+    except ValueError:
+        await callback.answer("بازیکن نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game else None
+        if not game or game.status != "running" or game.phase != "setup" or not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("دسترسی ندارید یا مرحله انتخاب سردست تمام شده است.", show_alert=True)
+            return
+        try:
+            result = await choose_leader(session, game, leader_user_id)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        leader = await session.get(User, result["leader_user_id"])
+        name = tg_name(leader.display_name or leader.first_name or "بازیکن") if leader else "بازیکن"
+        await callback.message.edit_text(
+            f"👑 سردست انتخاب شد: {name}\n\nتنظیمات را بررسی کنید و سپس «شروع دور» را بزنید.",
+            reply_markup=leader_settings_keyboard(game.game_key, game, True),
+        )
+    await callback.answer("سردست انتخاب شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:back:"))
+async def leader_back_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game else None
+        if not game or not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+        await callback.message.edit_text("🎭 آماده شروع دور است.", reply_markup=leader_settings_keyboard(game.game_key, game, True))
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:auto:"))
@@ -279,7 +360,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         leader = await session.get(User, result["leader_user_id"])
         await callback.message.edit_text(
             f"👑 سردست به‌صورت خودکار انتخاب شد: {tg_name(leader.display_name or leader.first_name or 'بازیکن') if leader else 'بازیکن'}\n\n"
-            "⚙️ تنظیمات بازی را بررسی کنید و سپس «شروع دور» را بزنید.",
+            "تنظیمات را بررسی کنید و سپس «شروع دور» را بزنید.",
             reply_markup=leader_settings_keyboard(game.game_key, game, True),
         )
         await callback.answer("سردست انتخاب شد.")
