@@ -600,8 +600,16 @@ async def new_game_scenario(callback: CallbackQuery) -> None:
 async def new_game_set_scenario(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    _, _, _, group_raw, scenario_raw = callback.data.split(":")
-    group_id, scenario_id = int(group_raw), int(scenario_raw)
+    parts = callback.data.split(":")
+    if len(parts) != 4 or parts[0] != "newgame" or parts[1] != "setscenario":
+        await callback.answer("درخواست انتخاب سناریو نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, scenario_raw = parts
+    try:
+        group_id, scenario_id = int(group_raw), int(scenario_raw)
+    except ValueError:
+        await callback.answer("شناسه سناریو نامعتبر است.", show_alert=True)
+        return
     async with session_factory() as session:
         group = await _require_group_admin(callback, session, group_id)
         if not group:
