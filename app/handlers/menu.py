@@ -1895,7 +1895,14 @@ async def scenario_delete_confirm(callback: CallbackQuery) -> None:
         if active:
             await callback.answer("این سناریو در یک بازی فعال استفاده می‌شود و فعلاً قابل حذف نیست.", show_alert=True)
             return
-        await session.delete(scenario)
-        await session.commit()
-    await callback.message.edit_text("🗑 سناریو حذف شد.", reply_markup=scenario_management_menu())
+        history = await session.scalar(select(Game.id).where(Game.scenario_id == sid).limit(1))
+        if history:
+            scenario.enabled = False
+            await session.commit()
+            result_text = "🗑 سناریو از فهرست فعال حذف شد؛ چون سابقه بازی دارد، برای حفظ تاریخچه به‌صورت غیرفعال نگه داشته شد."
+        else:
+            await session.delete(scenario)
+            await session.commit()
+            result_text = "🗑 سناریو حذف شد."
+    await callback.message.edit_text(result_text, reply_markup=scenario_management_menu())
     await callback.answer()
