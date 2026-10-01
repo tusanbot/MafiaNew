@@ -178,6 +178,8 @@ async def night_callback(callback: CallbackQuery):
             if chat_id:
                 if not result["winner"]:
                     await start_day_turns(session, game)
+                    if game.next_auto_enabled:
+                        await _schedule_auto_next(callback.bot, game.game_key)
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
