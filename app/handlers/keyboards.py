@@ -326,11 +326,21 @@ def challenge_response_keyboard(game_key: str, event_id: int) -> InlineKeyboardM
     return builder.as_markup()
 
 
-def day_turn_keyboard(game_key: str, is_current_speaker: bool = False) -> InlineKeyboardMarkup:
+def day_turn_keyboard(
+    game_key: str,
+    is_current_speaker: bool = False,
+    challenge_enabled: bool = True,
+    turn_color_enabled: bool = True,
+    turn_color: str = "پیش‌فرض",
+    challenge_color: str = "پیش‌فرض",
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="درخواست چالش", callback_data=f"turn:request_challenge:{game_key}"))
+    if challenge_enabled:
+        mark = {"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "طلایی": "🟡"}.get(challenge_color, "⚔️") if turn_color_enabled else ""
+        builder.row(InlineKeyboardButton(text=f"{mark} درخواست چالش".strip(), callback_data=f"turn:request_challenge:{game_key}"))
     if is_current_speaker:
-        builder.row(InlineKeyboardButton(text="نکست ترن", callback_data=f"turn:next:{game_key}"))
+        mark = {"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "طلایی": "🟡"}.get(turn_color, "🗣️") if turn_color_enabled else ""
+        builder.row(InlineKeyboardButton(text=f"{mark} نکست ترن".strip(), callback_data=f"turn:next:{game_key}"))
     return builder.as_markup()
 
 
