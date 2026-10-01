@@ -388,35 +388,29 @@ async def round_start_handler(callback: CallbackQuery) -> None:
         leader = await session.get(User, result["leader_user_id"])
         turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
         from app.handlers.keyboards import day_turn_keyboard
-        base_text = callback.message.text or ""
-        if "\n\n👑 سردست انتخاب شد:" in base_text:
-            base_text = base_text.split("\n\n👑 سردست انتخاب شد:", 1)[0]
         await callback.message.edit_text(
-            base_text +
-            f"\n\n▶️ دور {result['round_no']} شروع شد." +
-            f"\n👑 سردست: {leader.display_name if leader else 'بازیکن'}" +
-            "\n\n🗣 نوبت صحبت‌ها آغاز شد.",
-            reply_markup=day_turn_keyboard(
-                game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                game.turn_color, game.challenge_color, True,
-                bool(turn and turn.get("kind") != "extra"),
-            ),
+            f"▶️ دور {result['round_no']} شروع شد.\n"
+            f"👑 سردست: {tg_name(leader.display_name if leader else 'بازیکن')}\n\n"
+            "🗣 نوبت صحبت‌ها آغاز شد.",
+            reply_markup=None,
         )
         group = await session.get(Group, game.group_id)
         if group:
+            from app.handlers.gameplay import update_round_roster, _schedule_auto_next, _duration_text
+            await update_round_roster(callback.bot, session, game, group.telegram_id)
+            speaker = await session.get(User, int(turn["user_id"])) if turn else None
             msg = await callback.bot.send_message(
                 group.telegram_id,
                 f"▶️ دور {result['round_no']} شروع شد.\n"
                 f"👑 سردست: {tg_name(leader.display_name if leader else 'بازیکن')}\n\n"
-                f"🗣 نوبت صحبت {leader.display_name if leader else 'بازیکن'}\n\n"
-                "⏱ 02:00 فرصت صحبت داری",
+                f"🗣 نوبت صحبت {tg_name((speaker.display_name or speaker.first_name) if speaker else 'بازیکن')}\n\n"
+                f"⏱ {_duration_text(int(game.turn_seconds or 120))} فرصت صحبت داری",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
                     game.turn_color, game.challenge_color, True,
                     bool(turn and turn.get("kind") != "extra"),
                 ),
             )
-            from app.handlers.gameplay import _schedule_auto_next
             await _schedule_auto_next(callback.bot, game.game_key, group.telegram_id, msg.message_id)
         await callback.answer("دور شروع شد.")
 
