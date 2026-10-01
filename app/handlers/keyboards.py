@@ -211,6 +211,29 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
     return builder.as_markup()
 
 
+def cancel_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="تأیید لغو بازی", callback_data=f"gameadmin:cancel_confirm:{group_id}"),
+        InlineKeyboardButton(text="انصراف", callback_data=f"gameadmin:features:{group_id}"),
+    )
+    return builder.as_markup()
+
+
+def finish_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for key, label in (
+        ("citizen", "برد شهروند"),
+        ("mafia", "برد مافیا"),
+        ("independent", "برد مستقل"),
+        ("citizen_independent", "برد شهروند/مستقل"),
+        ("draw", "مساوی"),
+    ):
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"gameadmin:finish_result:{group_id}:{key}"))
+    _back(builder, f"gameadmin:features:{group_id}")
+    return builder.as_markup()
+
+
 def bot_settings_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="تنظیمات عمومی", callback_data="botsettings:general"))
