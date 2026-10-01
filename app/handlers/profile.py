@@ -7,14 +7,15 @@ from app.db.models import Role, User, UserRoleStat
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu
 from app.services.profile import sync_telegram_user
-from app.services.stats import achievement_progress, leaderboard, rank_for_score, user_achievements
+from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
 
 router = Router(name="profile")
 
 async def _profile_text(session, user: User) -> str:
     position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
-    rank = rank_for_score(user.score)
+    rank, next_rank_score, rank_remaining = rank_progress(user.score)
+    rank_hint = f"تا رتبه بعد: {rank_remaining} امتیاز" if next_rank_score is not None else "بالاترین رتبه"
     win_rate = (user.games_won / user.games_played * 100) if user.games_played else 0
     role_rows = list((await session.execute(
         select(UserRoleStat, Role).join(Role, Role.id == UserRoleStat.role_id)
@@ -38,6 +39,7 @@ async def _profile_text(session, user: User) -> str:
         "👤 پروفایل بازیکن\n\n"
         f"نام: {tg_name(user.display_name or user.first_name or 'بازیکن')}\n"
         f"رتبه: {rank}  •  جایگاه: #{position}\n"
+        f"📊 {rank_hint}\n"
         f"امتیاز: {user.score}\n\n"
         f"🎮 بازی‌ها: {user.games_played}\n"
         f"🏆 بردها: {user.games_won}\n"
