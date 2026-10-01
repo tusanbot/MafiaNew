@@ -186,30 +186,28 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         turn_owner = await session.get(User, result["turn_user_id"])
-        requests = await pending_challenge_requests(session, game)
-        request_rows = []
-        for event, data in requests:
-            requester = await session.get(User, int(data["requester_id"]))
-            if requester:
-                data["requester_name"] = requester.display_name or requester.first_name
-                event.payload = json.dumps(data, ensure_ascii=False)
-                request_rows.append((event, data))
-        await session.commit()
         if not turn_owner:
             await callback.answer("صاحب نوبت پیدا نشد.", show_alert=True)
             return
+        event = await session.get(GameEvent, result["event_id"])
+        request_data = json.loads(event.payload or "{}")
+        request_data["requester_name"] = actor.display_name or actor.first_name
+        event.payload = json.dumps(request_data, ensure_ascii=False)
+        await session.commit()
         try:
             msg = await callback.bot.send_message(
                 turn_owner.telegram_id,
-                f"درخواست چالش در نوبت شما\n\n{actor.display_name or actor.first_name} درخواست چالش داده است.",
-                reply_markup=challenge_requests_keyboard(game.game_key, request_rows),
+                f"درخواست چالش\n\n{actor.display_name or actor.first_name} درخواست کرده است که در نوبت شما چالش بگیرد.",
+                reply_markup=challenge_requests_keyboard(
+                    game.game_key,
+                    [(event, request_data)],
+                ),
             )
-            await attach_challenge_request_message(session, result["event_id"], turn_owner.telegram_id, msg.message_id)
+            await attach_challenge_request_message(session, event.id, turn_owner.telegram_id, msg.message_id)
         except Exception:
             await callback.answer("درخواست ثبت شد؛ صاحب نوبت باید قبلاً ربات را در خصوصی /start کرده باشد.", show_alert=True)
             return
         await callback.answer("درخواست چالش ارسال شد.")
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
 async def challenge_grant_handler(callback: CallbackQuery):
