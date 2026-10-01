@@ -47,8 +47,10 @@ def night_action_keyboard(game_key: str, action_type: str, players) -> InlineKey
 def vote_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     return player_target_keyboard("vote", game_key, players)
 
-def day_keyboard(game_key: str) -> InlineKeyboardMarkup:
+def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    if players:
+        builder.row(InlineKeyboardButton(text="چالش یک بازیکن", callback_data=f"day:challenge:{game_key}"))
     builder.row(InlineKeyboardButton(text="شروع رأی‌گیری", callback_data=f"day:vote:{game_key}"))
     return builder.as_markup()
 
