@@ -745,12 +745,21 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
         if not game:
             await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
             return
-        await session.execute(Vote.__table__.delete().where(Vote.game_id == game.id))
-        await session.execute(GameEvent.__table__.delete().where(GameEvent.game_id == game.id))
-        await session.execute(GamePlayer.__table__.delete().where(GamePlayer.game_id == game.id))
-        await session.delete(game)
+        if game.status not in ("draft", "waiting", "running"):
+            await callback.answer("این بازی دیگر قابل لغو نیست.", show_alert=True)
+            return
+        game.status = "cancelled"
+        game.phase = "finished"
+        from datetime import datetime, timezone
+        game.finished_at = datetime.now(timezone.utc)
+        session.add(GameEvent(
+            game_id=game.id,
+            actor_user_id=(await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id,
+            event_type="game_cancelled",
+            payload=json.dumps({"reason": "admin_cancelled"}, ensure_ascii=False),
+        ))
         await session.commit()
-        await callback.message.edit_text("بازی به‌طور کامل لغو و اطلاعات آن پاک شد.", reply_markup=group_game_menu(group.id))
+        await callback.message.edit_text("بازی لغو شد و سوابق آن برای تاریخچه حفظ شد.", reply_markup=group_game_menu(group.id))
     await callback.answer("بازی لغو شد.")
 
 
