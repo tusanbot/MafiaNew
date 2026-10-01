@@ -68,7 +68,7 @@ class Game(Base):
     game_key: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
     scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id"))
-    host_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    host_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(30), default="waiting")
     phase: Mapped[str] = mapped_column(String(30), default="lobby")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
