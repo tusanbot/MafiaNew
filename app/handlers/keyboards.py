@@ -338,12 +338,17 @@ def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool 
         item = next(((p, u) for p, u in players if p.seat == seat), None)
         if item:
             _, user = item
-            name = (user.display_name or user.first_name or str(seat))[:12]
+            name = (
+                user.display_name
+                or user.first_name
+                or user.username
+                or str(user.telegram_id)
+            )[:12]
             label = f"{seat:02d} {name}"
         else:
             label = f"{seat:02d} —"
         buttons.append(InlineKeyboardButton(text=label, callback_data=f"lobby:seat:{game_key}:{seat}"))
-    for i in range(0, len(buttons), 2):
+    for i in range(0, len(buttons), 4):
         builder.row(*buttons[i:i+2])
     if reserve_enabled and len(players) >= scenario.max_players:
         builder.row(InlineKeyboardButton(text="رزرو", callback_data=f"lobby:reserve:{game_key}"))
