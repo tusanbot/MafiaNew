@@ -20,7 +20,6 @@ from app.handlers.keyboards import (
     player_management_menu,
     player_target_management_keyboard,
     ranking_menu,
-    scenario_keyboard,
     admin_panel_menu,
     admin_scenario_keyboard,
     scenario_management_menu,
