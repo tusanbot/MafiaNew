@@ -486,34 +486,115 @@ async def player_target_action(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:feature:"))
-async def game_feature_placeholder(callback: CallbackQuery) -> None:
-    labels = {
-        "challenge": "وضعیت چالش",
-        "next": "وضعیت نکست",
-        "finish": "اتمام بازی",
-        "cancel": "لغو بازی",
-        "scenario": "تغییر سناریو",
-        "host": "تغییر گرداننده",
-        "special": "امکانات ویژه",
-    }
+async def game_feature_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
     parts = callback.data.split(":")
-    action = parts[-1]
-    if action in {"finish", "cancel"}:
-        await callback.answer(f"{labels[action]} در مرحله بعد با منطق واقعی بازی متصل می‌شود.", show_alert=True)
-    else:
-        await callback.answer(f"{labels.get(action, 'این امکان')} آماده اتصال به منطق بازی است.", show_alert=True)
+    if len(parts) != 4:
+        await callback.answer("تنظیم بازی نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, action = parts
+    try:
+        group_id = int(group_raw)
+    except ValueError:
+        await callback.answer("شناسه گروه نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
+            return
+        game = await GameRepository.get_active(session, group.id)
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        if action == "cancel":
+            ok = await GameRepository.cancel(session, game)
+            if not ok:
+                await callback.answer("لغو بازی انجام نشد.", show_alert=True)
+                return
+            await callback.message.edit_text(
+                "بازی لغو شد.",
+                reply_markup=group_game_menu(group.id),
+            )
+            await callback.answer("بازی لغو شد.")
+            return
+        if action == "finish":
+            if game.status != "running":
+                await callback.answer("فقط بازی در حال اجرا قابل اتمام است.", show_alert=True)
+                return
+            winner = await check_winner(session, game.id)
+            if not winner:
+                await callback.answer("هنوز برنده مشخص نشده است؛ برای پایان اجباری از «لغو بازی» استفاده کنید.", show_alert=True)
+                return
+            await finalize_game(session, game, winner)
+            await session.commit()
+            await callback.message.edit_text(
+                f"بازی با نتیجه {winner} به پایان رسید.",
+                reply_markup=group_game_menu(group.id),
+            )
+            await callback.answer("بازی پایان یافت.")
+            return
+        game = await GameRepository.get_active(session, group.id)
+        scenario = await session.get(Scenario, game.scenario_id)
+        from app.services.gameplay import current_turn
+        turn = await current_turn(session, game.id) if game.status == "running" else None
+        challenge = scenario.challenge_mode if scenario else "نامشخص"
+        next_status = "فعال" if turn and turn.get("status") == "active" else "غیرفعال"
+        await callback.message.edit_text(
+            f"تنظیمات بازی\n\n"
+            f"چالش: {challenge}\n"
+            f"نوبت بعدی: {next_status}",
+            reply_markup=game_features_menu(group.id, challenge_mode=challenge, next_status=next_status),
+        )
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:extra:"))
-async def game_extra_placeholder(callback: CallbackQuery) -> None:
-    labels = {
-        "auto_play": "بازی خودکار",
-        "turn_color": "رنگ نوبت",
-        "challenge_color": "رنگ چالش",
-        "other": "سایر امکانات",
-    }
-    action = callback.data.rsplit(":", 1)[1]
-    await callback.answer(f"{labels.get(action, 'این امکان')} در حال تکمیل است.", show_alert=True)
+async def game_extra_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("تنظیم اضافی نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, action = parts
+    try:
+        group_id = int(group_raw)
+    except ValueError:
+        await callback.answer("شناسه گروه نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
+            return
+        game = await GameRepository.get_active(session, group.id)
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        if action == "auto_play":
+            game.auto_play = not game.auto_play
+        elif action == "turn_color":
+            colors = ["پیش‌فرض", "سبز", "آبی", "بنفش", "قرمز", "طلایی"]
+            game.turn_color = colors[(colors.index(game.turn_color) + 1) % len(colors)] if game.turn_color in colors else colors[0]
+        elif action == "challenge_color":
+            colors = ["پیش‌فرض", "سبز", "آبی", "بنفش", "قرمز", "طلایی"]
+            game.challenge_color = colors[(colors.index(game.challenge_color) + 1) % len(colors)] if game.challenge_color in colors else colors[0]
+        else:
+            await callback.answer("امکان اضافی نامعتبر است.", show_alert=True)
+            return
+        await session.commit()
+        await callback.message.edit_text(
+            "امکانات اضافی بازی\n\n"
+            f"بازی خودکار: {'فعال' if game.auto_play else 'غیرفعال'}\n"
+            f"رنگ نوبت: {game.turn_color}\n"
+            f"رنگ چالش: {game.challenge_color}",
+            reply_markup=game_extras_menu(
+                group.id, game.auto_play, game.turn_color, game.challenge_color
+            ),
+        )
+    await callback.answer("تنظیم ذخیره شد.")
 
 
 @router.callback_query(lambda c: c.data == "menu:profile")
