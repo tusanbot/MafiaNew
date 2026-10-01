@@ -126,6 +126,11 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 if not chat_id:
                     return
+                if message_id:
+                    try:
+                        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
+                    except Exception:
+                        pass
                 if result["kind"] == "finished_day":
                     await bot.send_message(
                         chat_id,
