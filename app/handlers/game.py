@@ -1,5 +1,6 @@
 from aiogram import Router
 from datetime import datetime
+from html import escape
 from zoneinfo import ZoneInfo
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
@@ -295,9 +296,9 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         for player, user, role in assignments:
             marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
             roster_lines.append(
-                f"{marker} {player.seat:02d} **{user.display_name or user.first_name or 'بازیکن'}** — "
-                f"{role.name_fa if role else 'نامشخص'} --------- "
-                f"{team_names.get(role.team, role.team) if role else 'نامشخص'}"
+                f'{marker} {player.seat:02d} <a href="tg://user?id={user.telegram_id}">{escape(user.display_name or user.first_name or "بازیکن")}</a> — '
+                f'{escape(role.name_fa) if role else "نامشخص"} --------- '
+                f'{escape(team_names.get(role.team, role.team)) if role else "نامشخص"}'
             )
         scenario = await session.get(Scenario, game.scenario_id)
         roster_text = (
@@ -317,6 +318,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
             (leader.display_name or leader.first_name or "بازیکن") +
             "\nتنظیمات چالش و نکست را بررسی کنید و سپس «شروع دور» را بزنید.",
             reply_markup=leader_settings_keyboard(game.game_key, game),
+            parse_mode="HTML",
         )
         await callback.answer("سردست انتخاب شد.")
 
