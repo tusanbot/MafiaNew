@@ -20,6 +20,8 @@ class User(Base):
     challenges: Mapped[int] = mapped_column(Integer, default=0)
     achievements_count: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    registered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    registered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
