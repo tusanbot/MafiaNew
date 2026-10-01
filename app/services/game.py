@@ -118,11 +118,12 @@ async def role_messages(session: AsyncSession, game, assignments):
         f"🗓 سناریو : {scenario_name}\n"
         f"👮‍♂ گرداننده : {host_name}\n\n"
         f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
+        f"👥 لیست بازیکنان حاضر در بازی\n"
         f"◤◢◣◥◤◢◣◥◤◢◣◥\n"
     )
     list_lines = []
     for seat, name, role_name, team, description, telegram_id in rows:
-        list_lines.append(f"{seat:02d} {name} — {role_name} — {team}")
+        list_lines.append(f"{seat:02d} **{name}** — {role_name} --------- {team}")
     group_list = header + "\n".join(list_lines) + "\n◤◢◣◥◤◢◣◥◤◢◣◥\n\n༄"
 
     player_messages = []
