@@ -163,6 +163,11 @@ async def group_start_menu_callback(callback: CallbackQuery) -> None:
             )
         elif action == "new":
             from app.handlers.menu import render_new_game_menu
+            from app.repositories.games import GameRepository
+            # Every explicit "بازی جدید" starts a clean configuration draft.
+            # Returning from submenus uses newgame:menu and therefore preserves
+            # the current draft while navigating.
+            await GameRepository.delete_drafts(session, group.id)
             await callback.message.edit_text(
                 await render_new_game_menu(session, group, callback.from_user.id),
                 reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_menu"]).new_game_menu(group.id),
