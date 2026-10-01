@@ -1164,6 +1164,7 @@ async def new_game_settings(callback: CallbackQuery) -> None:
                 draft.next_host_enabled if draft else True,
                 draft.next_player_enabled if draft else True,
                 draft.next_auto_enabled if draft else False,
+                draft.auto_play if draft else False,
             ),
         )
     await callback.answer()
