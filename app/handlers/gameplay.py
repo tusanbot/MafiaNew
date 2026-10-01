@@ -347,6 +347,9 @@ async def challenge_place_handler(callback: CallbackQuery):
         task = _challenge_tasks.pop(int(event_id), None)
         if task:
             task.cancel()
+        turn_task = _turn_tasks.pop(game.id, None)
+        if turn_task:
+            turn_task.cancel()
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
