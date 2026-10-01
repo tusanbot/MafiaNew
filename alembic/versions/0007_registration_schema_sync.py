@@ -13,13 +13,14 @@ def _columns(table_name: str) -> set[str]:
     return {column["name"] for column in inspect(bind).get_columns(table_name)}
 
 
-def _foreign_keys(table_name: str) -> set[str]:
+def _has_fk(table_name: str, column_name: str, referred_table: str, referred_column: str) -> bool:
     bind = op.get_bind()
-    return {
-        fk.get("name")
-        for fk in inspect(bind).get_foreign_keys(table_name)
-        if fk.get("name")
-    }
+    for fk in inspect(bind).get_foreign_keys(table_name):
+        if fk.get("referred_table") != referred_table:
+            continue
+        if fk.get("constrained_columns") == [column_name] and fk.get("referred_columns") == [referred_column]:
+            return True
+    return False
 
 
 def upgrade():
@@ -38,8 +39,7 @@ def upgrade():
             sa.Column("registered_by_user_id", sa.Integer(), nullable=True),
         )
 
-    user_fks = _foreign_keys("users")
-    if "fk_users_registered_by_user_id" not in user_fks:
+    if not _has_fk("users", "registered_by_user_id", "users", "id"):
         op.create_foreign_key(
             "fk_users_registered_by_user_id",
             "users",
@@ -60,8 +60,7 @@ def upgrade():
             sa.Column("registered_by_user_id", sa.Integer(), nullable=True),
         )
 
-    group_fks = _foreign_keys("groups")
-    if "fk_groups_registered_by_user_id" not in group_fks:
+    if not _has_fk("groups", "registered_by_user_id", "users", "id"):
         op.create_foreign_key(
             "fk_groups_registered_by_user_id",
             "groups",
@@ -72,18 +71,22 @@ def upgrade():
 
 
 def downgrade():
-    group_fks = _foreign_keys("groups")
-    if "fk_groups_registered_by_user_id" in group_fks:
-        op.drop_constraint("fk_groups_registered_by_user_id", "groups", type_="foreignkey")
+    bind = op.get_bind()
+    for fk in inspect(bind).get_foreign_keys("groups"):
+        if fk.get("referred_table") == "users" and fk.get("constrained_columns") == ["registered_by_user_id"] and fk.get("name"):
+            op.drop_constraint(fk["name"], "groups", type_="foreignkey")
+            break
     group_columns = _columns("groups")
     if "registered_by_user_id" in group_columns:
         op.drop_column("groups", "registered_by_user_id")
     if "registered_at" in group_columns:
         op.drop_column("groups", "registered_at")
 
-    user_fks = _foreign_keys("users")
-    if "fk_users_registered_by_user_id" in user_fks:
-        op.drop_constraint("fk_users_registered_by_user_id", "users", type_="foreignkey")
+    bind = op.get_bind()
+    for fk in inspect(bind).get_foreign_keys("users"):
+        if fk.get("referred_table") == "users" and fk.get("constrained_columns") == ["registered_by_user_id"] and fk.get("name"):
+            op.drop_constraint(fk["name"], "users", type_="foreignkey")
+            break
     user_columns = _columns("users")
     if "registered_by_user_id" in user_columns:
         op.drop_column("users", "registered_by_user_id")
