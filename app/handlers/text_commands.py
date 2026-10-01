@@ -5,7 +5,7 @@ from sqlalchemy import select, func
 
 from app.db.models import Game, GamePlayer, Role, User
 from app.db.session import session_factory
-from app.handlers.keyboards import leader_choice_keyboard, leader_settings_keyboard
+from app.handlers.keyboards import leader_choice_keyboard, leader_settings_keyboard, main_menu
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import render_lobby
@@ -37,6 +37,13 @@ async def _active_game(session, message: Message):
 
 async def _is_host(session, game, user) -> bool:
     return bool(game and user and game.host_user_id == user.id)
+
+
+@router.message(_exact("پیوی", "پی وی", "پنل"))
+async def text_private_panel(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or await state.get_state():
+        return
+    await message.answer("👤 پنل شخصی", reply_markup=main_menu())
 
 
 @router.message(_exact("پروفایل", "profile"))
@@ -114,6 +121,27 @@ async def text_role(message: Message, state: FSMContext) -> None:
             return
         side = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}.get(role.team, role.team)
     await message.answer(f"🎭 نقش شما\n\nنقش: {role.name_fa}\nساید: {side}")
+
+
+@router.message(_exact("حاضری", "بازیکنان"))
+async def text_players(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        if not game:
+            await message.answer("بازی فعالی وجود ندارد.")
+            return
+        players = await GameRepository.players(session, game.id)
+        reserves = await GameRepository.reserves(session, game.id)
+        lines = ["👥 بازیکنان حاضر", ""]
+        for player, user in players:
+            lines.append(f"{player.seat}. {tg_name(user.display_name or user.first_name or 'بازیکن')}")
+        if reserves:
+            lines += ["", "🔁 جایگزین‌ها"]
+            for player, user in reserves:
+                lines.append(f"{player.reserve_position}. {tg_name(user.display_name or user.first_name or 'بازیکن')}")
+    await message.answer("\n".join(lines))
 
 
 @router.message(_exact("لابی"))
