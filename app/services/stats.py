@@ -9,6 +9,7 @@ ACHIEVEMENTS = (
     ("ten_wins", "برنده حرفه‌ای", "کسب ۱۰ برد", "🥇", 50),
     ("mafia_master", "مافیای کارکشته", "کسب ۱۰ برد با تیم مافیا", "🔴", 50),
     ("citizen_master", "شهروند کارکشته", "کسب ۱۰ برد با تیم شهروند", "🔵", 50),
+    ("independent_master", "مستقل کارکشته", "کسب ۵ برد با تیم مستقل", "🟣", 40),
     ("challenge_10", "چالش‌گر", "ثبت ۱۰ چالش", "⚔️", 25),
     ("challenge_50", "چالش‌گر حرفه‌ای", "ثبت ۵۰ چالش", "🔥", 75),
 )
@@ -59,6 +60,7 @@ async def update_user_progress(session: AsyncSession, user: User) -> list[Achiev
         "ten_wins": user.games_won >= 10,
         "mafia_master": user.mafia_wins >= 10,
         "citizen_master": user.citizen_wins >= 10,
+        "independent_master": user.independent_wins >= 5,
         "challenge_10": user.challenges >= 10,
         "challenge_50": user.challenges >= 50,
     }
@@ -98,3 +100,29 @@ async def leaderboard(session: AsyncSession, limit: int = 10, team: str | None =
 
 async def user_achievements(session: AsyncSession, user_id: int):
     return list((await session.execute(select(Achievement).join(UserAchievement, UserAchievement.achievement_id == Achievement.id).where(UserAchievement.user_id == user_id).order_by(UserAchievement.earned_at.desc()))).scalars().all())
+
+
+async def achievement_progress(session: AsyncSession, user: User) -> list[tuple[Achievement, bool, int, int | None]]:
+    """Return every achievement with earned state and current/target progress."""
+    await ensure_achievements(session)
+    achievements = {a.key: a for a in (await session.execute(select(Achievement))).scalars().all()}
+    earned_ids = set((await session.execute(
+        select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)
+    )).scalars().all())
+    progress = {
+        "first_game": (user.games_played, 1),
+        "first_win": (user.games_won, 1),
+        "ten_games": (user.games_played, 10),
+        "ten_wins": (user.games_won, 10),
+        "mafia_master": (user.mafia_wins, 10),
+        "citizen_master": (user.citizen_wins, 10),
+        "independent_master": (user.independent_wins, 5),
+        "challenge_10": (user.challenges, 10),
+        "challenge_50": (user.challenges, 50),
+    }
+    rows = []
+    for key, *_ in ACHIEVEMENTS:
+        achievement = achievements[key]
+        current, target = progress.get(key, (0, None))
+        rows.append((achievement, achievement.id in earned_ids, min(current, target) if target else current, target))
+    return rows
