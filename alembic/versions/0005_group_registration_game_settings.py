@@ -8,6 +8,10 @@ depends_on = None
 
 
 def upgrade():
+    # Alembic's default version_num column may have been created as VARCHAR(32).
+    # This revision id is longer than 32 characters, so widen it before Alembic
+    # attempts to persist the new revision number.
+    op.execute("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)")
     op.add_column("groups", sa.Column("registered_at", sa.DateTime(timezone=True), nullable=True))
     op.add_column("groups", sa.Column("registered_by_user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True))
     op.add_column("games", sa.Column("auto_play", sa.Boolean(), nullable=False, server_default=sa.false()))
