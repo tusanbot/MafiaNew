@@ -624,7 +624,11 @@ async def day_night_handler(callback: CallbackQuery):
         await session.commit()
         chat_id = await _group_chat_id(session, game)
         if chat_id:
-            await callback.bot.send_message(chat_id, "🌙 فاز شب آغاز شد.")
+            await callback.bot.send_message(
+                chat_id,
+                "🌙 فاز شب آغاز شد.",
+                reply_markup=continue_night_keyboard(game.game_key),
+            )
             await _send_night_menus(callback.bot, session, game)
         await callback.answer("فاز شب آغاز شد.")
 
