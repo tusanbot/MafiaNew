@@ -579,10 +579,31 @@ def new_game_extras_keyboard(
         callback_data=f"newgame:challenge_color:{group_id}",
     ))
     builder.row(InlineKeyboardButton(
-        text=f"🙂 اموجی: {'فعال' if emoji_enabled else 'غیرفعال'}",
-        callback_data=f"newgame:toggle_emoji:{group_id}",
+        text=f"🙂 اموجی‌های وضعیت: {'فعال' if emoji_enabled else 'غیرفعال'}",
+        callback_data=f"newgame:emoji:{group_id}",
     ))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+    return builder.as_markup()
+
+
+def new_game_emoji_menu(group_id: int, settings: dict) -> InlineKeyboardMarkup:
+    labels = {
+        "death": "مرگ",
+        "kick": "کیک",
+        "faceoff": "فیس‌آف",
+        "slaughter": "سلاخی",
+        "challenge": "چالش",
+        "silence": "سکوت",
+        "extra_turn": "ترن اضافه",
+        "warning": "تعداد تذکر",
+    }
+    builder = InlineKeyboardBuilder()
+    for key, label in labels.items():
+        builder.row(InlineKeyboardButton(
+            text=f"{'🟢' if settings.get(key, True) else '⚪'} {label}",
+            callback_data=f"newgame:emoji_toggle:{group_id}:{key}",
+        ))
+    _back(builder, f"newgame:extras:{group_id}")
     return builder.as_markup()
 
 def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True, training_url: str | None = None, telegram_training_url: str | None = None) -> InlineKeyboardMarkup:
