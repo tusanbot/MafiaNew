@@ -33,6 +33,8 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
             is_host=bool(host and host.id == user_id),
             can_deal=full,
             reserve_enabled=game.reserve_enabled,
+            training_url=scenario.training_url,
+            telegram_training_url=scenario.telegram_training_url,
         ),
     )
 
