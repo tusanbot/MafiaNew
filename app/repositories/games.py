@@ -1,9 +1,8 @@
 from datetime import datetime, timezone
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Game, GamePlayer, Group, Scenario, User
-
 
 class GameRepository:
     @staticmethod
@@ -21,16 +20,12 @@ class GameRepository:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(
-        session: AsyncSession,
-        group: Group,
-        scenario: Scenario,
-        game_key: str,
-    ) -> Game:
+    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str) -> Game:
         game = Game(
             game_key=game_key,
             group_id=group.id,
             scenario_id=scenario.id,
+            host_user_id=host.id,
             status="waiting",
             phase="lobby",
         )
@@ -40,39 +35,35 @@ class GameRepository:
         return game
 
     @staticmethod
-    async def players(session: AsyncSession, game_id: int) -> list[GamePlayer]:
+    async def players(session: AsyncSession, game_id: int) -> list[tuple[GamePlayer, User]]:
         result = await session.execute(
-            select(GamePlayer).where(GamePlayer.game_id == game_id).order_by(GamePlayer.seat)
+            select(GamePlayer, User)
+            .join(User, User.id == GamePlayer.user_id)
+            .where(GamePlayer.game_id == game_id)
+            .order_by(GamePlayer.seat)
         )
-        return list(result.scalars())
+        return list(result.all())
 
     @staticmethod
     async def join(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
+        if game.status != "waiting":
+            return None
         existing = await session.execute(
-            select(GamePlayer).where(
-                GamePlayer.game_id == game.id,
-                GamePlayer.user_id == user.id,
-            )
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
         )
         if existing.scalar_one_or_none() is not None:
             return None
-
         scenario = await session.get(Scenario, game.scenario_id)
         if scenario is None:
             return None
-
-        count_result = await session.execute(
-            select(GamePlayer).where(GamePlayer.game_id == game.id)
-        )
-        players = list(count_result.scalars())
+        result = await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id))
+        players = list(result.scalars())
         if len(players) >= scenario.max_players:
             return None
-
         used_seats = {player.seat for player in players}
         seat = next((n for n in range(1, scenario.max_players + 1) if n not in used_seats), None)
         if seat is None:
             return None
-
         player = GamePlayer(game_id=game.id, user_id=user.id, seat=seat)
         session.add(player)
         await session.commit()
@@ -81,14 +72,13 @@ class GameRepository:
 
     @staticmethod
     async def leave(session: AsyncSession, game: Game, user: User) -> bool:
+        if game.status != "waiting":
+            return False
         result = await session.execute(
-            select(GamePlayer).where(
-                GamePlayer.game_id == game.id,
-                GamePlayer.user_id == user.id,
-            )
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
         )
         player = result.scalar_one_or_none()
-        if player is None or game.status != "waiting":
+        if player is None:
             return False
         await session.delete(player)
         await session.commit()
