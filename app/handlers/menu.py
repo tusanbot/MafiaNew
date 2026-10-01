@@ -403,6 +403,9 @@ async def game_extra_placeholder(callback: CallbackQuery) -> None:
 async def menu_profile(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
         return
+    if callback.message.chat.type != "private":
+        await callback.answer("پروفایل فقط در PV قابل استفاده است.", show_alert=True)
+        return
     async with session_factory() as session:
         user = await sync_telegram_user(session, callback.from_user)
         username = f"@{user.username}" if user.username else "بدون نام کاربری"
@@ -445,6 +448,9 @@ async def bot_settings_placeholder(callback: CallbackQuery) -> None:
 async def ranking(callback: CallbackQuery) -> None:
     if not callback.message:
         return
+    if callback.message.chat.type != "private":
+        await callback.answer("رتبه‌بندی فقط در PV قابل استفاده است.", show_alert=True)
+        return
     await callback.message.edit_text("رتبه بندی", reply_markup=ranking_menu())
     await callback.answer()
 
@@ -452,6 +458,9 @@ async def ranking(callback: CallbackQuery) -> None:
 @router.callback_query(lambda c: c.data.startswith("ranking:"))
 async def ranking_list(callback: CallbackQuery) -> None:
     if not callback.message:
+        return
+    if callback.message.chat.type != "private":
+        await callback.answer("رتبه‌بندی فقط در PV قابل استفاده است.", show_alert=True)
         return
     kind = callback.data.rsplit(":", 1)[1]
     async with session_factory() as session:
