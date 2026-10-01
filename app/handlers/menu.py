@@ -377,6 +377,7 @@ async def game_features(callback: CallbackQuery) -> None:
             reply_markup=game_features_menu(
                 group.id,
                 game.challenge_enabled,
+                game.challenge_mode,
                 game.next_host_enabled,
                 game.next_player_enabled,
                 game.next_auto_enabled,
@@ -646,7 +647,7 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             "تنظیمات بازی",
             reply_markup=game_features_menu(
-                group.id, game.challenge_enabled, game.next_host_enabled, game.next_player_enabled,
+                group.id, game.challenge_enabled, game.challenge_mode, game.next_host_enabled, game.next_player_enabled,
                 game.next_auto_enabled, game.auto_silence_warnings, game.auto_kick_warnings
             ),
         )
