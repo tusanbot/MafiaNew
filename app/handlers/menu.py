@@ -710,7 +710,7 @@ async def finish_game_result(callback: CallbackQuery) -> None:
         lines = [f"پایان بازی — {labels.get(winner, winner)}", ""]
         for player, user, role in rows.all():
             state = "زنده" if player.alive else player.exit_type or "حذف‌شده"
-            lines.append(f"{player.seat}. {user.display_name or user.first_name} — {role.name_fa if role else 'بدون نقش'} — {state}")
+            lines.append(f"{player.seat}. {user.display_name or user.first_name} — {role.name_fa if role else 'بدون نقش'} — {state} — تذکر: {player.warning_count} — امتیاز: {user.score}")
         await callback.message.edit_text("\n".join(lines), reply_markup=group_game_menu(group.id))
     await callback.answer("نتیجه بازی ثبت شد.")
 
