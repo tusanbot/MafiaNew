@@ -359,8 +359,21 @@ async def round_start_handler(callback: CallbackQuery) -> None:
             "◤◢◣◥◤◢◣◥◤◢◣◥\n" + "\n".join(roster_lines) +
             "\n◤◢◣◥◤◢◣◥◤◢◣◥\n༄"
         )
+        from app.handlers.keyboards import day_turn_keyboard
+        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+        try:
+            await callback.bot.send_message(
+                callback.from_user.id,
+                roster + "\n\n▶️ دور شروع شد؛ نوبت صحبت‌ها آغاز شد.",
+                reply_markup=day_turn_keyboard(
+                    game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                    game.turn_color, game.challenge_color, True,
+                    bool(turn and turn.get("kind") != "extra"),
+                ),
+            )
+        except Exception:
+            pass
         if group:
-            turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
             from app.handlers.keyboards import day_turn_keyboard
             await callback.bot.send_message(
                 group.telegram_id,
