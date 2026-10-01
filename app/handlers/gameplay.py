@@ -103,9 +103,17 @@ async def start_match_handler(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data and c.data.startswith("night:"))
 async def night_callback(callback: CallbackQuery):
     parts = callback.data.split(":")
-    if len(parts) != 3 or not callback.from_user:
+    if not callback.from_user:
         return
-    action, key, target = parts
+    if len(parts) == 3 and parts[0] == "night" and parts[1] == "resolve":
+        _, _, key = parts
+        action = "resolve"
+        target = None
+    elif len(parts) == 4 and parts[0] == "night":
+        _, action, key, target = parts
+    else:
+        await callback.answer("درخواست شب نامعتبر است.", show_alert=True)
+        return
     async with session_factory() as session:
         game = await _load(session, key)
         if not game:
