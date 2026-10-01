@@ -228,3 +228,89 @@ def challenge_placement_keyboard(game_key: str, event_id: int) -> InlineKeyboard
         InlineKeyboardButton(text="بعد از صحبت", callback_data=f"challenge:place:{game_key}:{event_id}:after"),
     )
     return builder.as_markup()
+
+def group_start_menu(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="بازی جدید", callback_data=f"groupstart:new:{group_id}"))
+    builder.row(InlineKeyboardButton(text="تاریخچه بازی ها", callback_data=f"groupstart:history:{group_id}"))
+    builder.row(InlineKeyboardButton(text="راهنما", callback_data=f"groupstart:help:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بستن", callback_data=f"groupstart:close:{group_id}"))
+    return builder.as_markup()
+
+
+def registration_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="ثبت گروه در ربات", callback_data=f"groupreg:register:{chat_id}"))
+    return builder.as_markup()
+
+
+def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="انتخاب سناریو", callback_data=f"newgame:scenario:{group_id}"))
+    builder.row(InlineKeyboardButton(text="انتخاب گرداننده", callback_data=f"newgame:host:{group_id}"))
+    builder.row(InlineKeyboardButton(text="تنظیمات بازی", callback_data=f"newgame:settings:{group_id}"))
+    builder.row(InlineKeyboardButton(text="امکانات اضافه", callback_data=f"newgame:extras:{group_id}"))
+    builder.row(InlineKeyboardButton(text="ایجاد بازی", callback_data=f"newgame:create:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:root:{group_id}"))
+    return builder.as_markup()
+
+
+def scenario_select_keyboard(group_id: int, scenarios) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for scenario in scenarios:
+        builder.row(InlineKeyboardButton(text=scenario.name_fa, callback_data=f"newgame:setscenario:{group_id}:{scenario.id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    return builder.as_markup()
+
+
+def host_select_keyboard(group_id: int, admins) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for member in admins:
+        user = member.user
+        name = user.full_name or user.username or str(user.id)
+        builder.row(InlineKeyboardButton(text=name[:60], callback_data=f"newgame:sethost:{group_id}:{user.id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    return builder.as_markup()
+
+
+def new_game_settings_keyboard(group_id: int, reserve_enabled: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"رزرو: {'فعال' if reserve_enabled else 'غیرفعال'}", callback_data=f"newgame:toggle_reserve:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    return builder.as_markup()
+
+
+def new_game_extras_keyboard(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}", callback_data=f"newgame:toggle_auto:{group_id}"))
+    builder.row(InlineKeyboardButton(text=f"رنگ نوبت: {turn_color}", callback_data=f"newgame:turn_color:{group_id}"))
+    builder.row(InlineKeyboardButton(text=f"رنگ چالش: {challenge_color}", callback_data=f"newgame:challenge_color:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:new:{group_id}"))
+    return builder.as_markup()
+
+
+def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for seat in range(1, scenario.max_players + 1):
+        occupied = next((p for p, u in players if p.seat == seat), None)
+        if occupied:
+            label = f"صندلی {seat} ✓"
+            data = f"lobby:seat:{game_key}:{seat}"
+        else:
+            label = f"صندلی {seat}"
+            data = f"lobby:seat:{game_key}:{seat}"
+        builder.row(InlineKeyboardButton(text=label, callback_data=data))
+    if len(players) >= scenario.max_players:
+        builder.row(InlineKeyboardButton(text="رزرو", callback_data=f"lobby:reserve:{game_key}"))
+    builder.row(
+        InlineKeyboardButton(text="پیوستن", callback_data=f"game:join:{game_key}"),
+        InlineKeyboardButton(text="ترک بازی", callback_data=f"game:leave:{game_key}"),
+    )
+    if can_deal:
+        builder.row(InlineKeyboardButton(text="پخش نقش", callback_data=f"lobby:deal:{game_key}"))
+    if is_host:
+        builder.row(
+            InlineKeyboardButton(text="مدیریت بازی", callback_data=f"gameadmin:lobby:{game_key}"),
+            InlineKeyboardButton(text="مدیریت گروه", callback_data=f"groupadmin:lobby:{game_key}"),
+        )
+    return builder.as_markup()
