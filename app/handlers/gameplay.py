@@ -453,13 +453,11 @@ async def day_night_handler(callback: CallbackQuery):
         if not turn or turn.get("status") != "finished":
             await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
             return
-        try:
-            await __import__("app.services.gameplay", fromlist=["set_phase"]).set_phase(
-                session, game, __import__("app.core.game.engine", fromlist=["GameEnginePhase"]).GameEnginePhase.NIGHT
-            )
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
+        if game.phase != "day":
+            await callback.answer("مرحله روز فعال نیست.", show_alert=True)
             return
+        game.phase = "night"
+        await session.commit()
         chat_id = await _group_chat_id(session, game)
         if chat_id:
             await callback.bot.send_message(chat_id, "🌙 فاز شب آغاز شد.")
