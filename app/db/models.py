@@ -53,6 +53,7 @@ class Scenario(Base):
     min_players: Mapped[int] = mapped_column(Integer)
     max_players: Mapped[int] = mapped_column(Integer)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
 
 class Role(Base):
     __tablename__ = "roles"
