@@ -34,7 +34,7 @@ for k,n,d in [
 ]: add(k,n,"mafia",d)
 
 for k,n,d in [
-("jack","جک گنجیشکه",""),("nostradamus","نوستراداموس",""),("sherlock","شرلوک",""),
+("jack","جک گنجیشکه",""),("nostradamus","نوستراداموس",""),("sherlock","شرلوک",""),("maverick","ماوریک","مستقل سناریوی پدرخوانده؛ شب معرفی دو هدف و از شب دوم دریافت نتیجه استعلام آن‌ها. در شب دوم یکی را برای ادامه در جایگاهش انتخاب می‌کند؛ در صورت تبدیل، نقش و ساید فرد انتخاب‌شده را ادامه می‌دهد. تا وقتی مستقل است شب‌کشی و استعلام او منفی است و مافیا تا زمانی که ماوریک مستقل است با برابری نفرات برنده نمی‌شود."),
 ("churchill","چرچیل","شرط برد مبتنی بر پیش‌بینی خروج"),("zodiac","زودیاک",""),("novice","نوفیس","در نسخه ۱۳ نفره مستقل است؛ قابلیت ویژه در اطلاعات ارائه‌شده مشخص نشده است.")
 ]: add(k,n,"independent",d)
 
@@ -50,6 +50,7 @@ S("capo","کاپو",("detective","citizen","citizen","executioner","heir","suspe
 S("godfather_jack","پدرخوانده-جک",("constantine","citizen","citizen","citizen","godfather","leon","watson","matador","jack","goodman","hometown")),
 S("godfather_nostra","پدرخوانده-نوسترا",("constantine","citizen","citizen","citizen","godfather","leon","watson","matador","nostradamus","goodman","hometown_kane")),
 S("godfather_sherlock","پدرخوانده-شرلوک",("constantine","citizen","citizen","citizen","godfather","leon","watson","matador","sherlock","goodman","hometown_kane")),
+S("godfather_maverick","پدرخوانده-ماوریک",("constantine","citizen","citizen","citizen","godfather","leon","watson","matador","maverick","goodman","hometown_kane")),
 S("el_clasico","الکلاسیکو",("moreno","pablo_escobar","bridget","juan","bonaparte","citizen","blanco","martinez","chaplin","churchill","citizen")),
 S("gambler","قمار باز",("mason","blacksmith","gambler","gunner","cowboy","mistress","king_slayer","psychologist","spider","terrorist","glasses_maker")),
 S("zodiac","زودیاک",("magician","gunner","citizen","ocean","protector","professional","al_capone","bomber","doctor","detective","citizen","zodiac")),
