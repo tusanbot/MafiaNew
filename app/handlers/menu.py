@@ -1611,3 +1611,50 @@ async def draft_challenge_color(callback: CallbackQuery) -> None:
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.turn_color, draft.challenge_color, json.loads(draft.emoji_settings or "{}").get("challenge", True)))
     await callback.answer("رنگ چالش تغییر کرد.")
+ 
+
+async def _scenario_admin_allowed(callback: CallbackQuery) -> bool:
+    return bool(callback.from_user and callback.message and callback.message.chat.type == "private" and callback.from_user.id in get_settings().admin_id_set)
+
+async def _scenario_form_roles(session, scenario_id: int) -> dict[int, int]:
+    rows = (await session.execute(
+        select(ScenarioRole).where(ScenarioRole.scenario_id == scenario_id).order_by(ScenarioRole.position, ScenarioRole.id)
+    )).scalars().all()
+    return {row.role_id: row.count for row in rows}
+
+@router.callback_query(lambda c: c.data == "scenario_admin:create")
+async def scenario_create_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        return
+    await state.clear()
+    await state.set_state(ScenarioAdminState.name)
+    await state.update_data(mode="create", role_counts={})
+    await callback.message.edit_text("➕ ایجاد سناریو\n\nنام سناریو را ارسال کنید:")
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "scenario_admin:edit")
+async def scenario_edit_list(callback: CallbackQuery) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        scenarios = list((await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all())
+    await callback.message.edit_text("✏️ سناریوی موردنظر را انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "edit"))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "scenario_admin:delete")
+async def scenario_delete_list(callback: CallbackQuery) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        scenarios = list((await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all())
+    await callback.message.edit_text("🗑 سناریوی موردنظر را برای حذف انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "delete"))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data == "scenario_admin:cancel")
+async def scenario_admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.edit_text("🎭 مدیریت سناریوها", reply_markup=scenario_management_menu())
+    await callback.answer()
