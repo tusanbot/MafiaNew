@@ -14,6 +14,7 @@ from app.services.roles import assign_roles
 from app.services.gameplay import choose_leader, start_round
 from app.handlers.keyboards import leader_selection_keyboard
 from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2
+from app.utils.text import tg_name, tg_plain_name
 
 router = Router(name="game")
 
@@ -121,7 +122,7 @@ async def reserve_game(callback: CallbackQuery) -> None:
         await _render(callback, session, game, user.id)
         group = await session.get(Group, game.group_id)
         if group:
-            await callback.bot.send_message(group.telegram_id, f"بازیکن {user.display_name or user.first_name} وارد لیست جایگزین شد؛ جایگاه رزرو {player.reserve_position}.")
+            await callback.bot.send_message(group.telegram_id, f"بازیکن {tg_name(user.display_name or user.first_name)} وارد لیست جایگزین شد؛ جایگاه رزرو {player.reserve_position}.")
         await callback.answer(f"رزرو شما ثبت شد؛ جایگاه رزرو {player.reserve_position}.")
 
 
@@ -296,7 +297,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         for player, user, role in assignments:
             marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
             roster_lines.append(
-                f'{marker} {player.seat:02d} <a href="tg://user?id={user.telegram_id}">{escape(user.display_name or user.first_name or "بازیکن")}</a> — '
+                f'{marker} {player.seat:02d} <a href="tg://user?id={user.telegram_id}">{tg_name(user.display_name or user.first_name or "بازیکن")}</a> — '
                 f'{escape(role.name_fa) if role else "نامشخص"} --------- '
                 f'{escape(team_names.get(role.team, role.team)) if role else "نامشخص"}'
             )
@@ -306,7 +307,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
             f"⏱ زمان : {now_tehran:%H:%M}\n"
             f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
             f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}\n"
-            f"👮‍♂ گرداننده : {host.display_name or host.first_name or 'نامشخص'}\n\n"
+            f"👮‍♂ گرداننده : {tg_name(host.display_name or host.first_name or 'نامشخص')}\n\n"
             "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
             "👥 لیست بازیکنان حاضر در بازی\n"
             "◤◢◣◥◤◢◣◥◤◢◣◥\n" + "\n".join(roster_lines) +
@@ -315,7 +316,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import leader_settings_keyboard
         await callback.message.edit_text(
             roster_text + "\n\n👑 سردست انتخاب شد: " +
-            (leader.display_name or leader.first_name or "بازیکن") +
+            tg_name(leader.display_name or leader.first_name or "بازیکن") +
             "\nتنظیمات چالش و نکست را بررسی کنید و سپس «شروع دور» را بزنید.",
             reply_markup=leader_settings_keyboard(game.game_key, game),
             parse_mode="HTML",
@@ -395,7 +396,7 @@ async def round_start_handler(callback: CallbackQuery) -> None:
             msg = await callback.bot.send_message(
                 group.telegram_id,
                 f"▶️ دور {result['round_no']} شروع شد.\n"
-                f"👑 سردست: {leader.display_name if leader else 'بازیکن'}\n\n"
+                f"👑 سردست: {tg_name(leader.display_name if leader else 'بازیکن')}\n\n"
                 f"🗣 نوبت صحبت {leader.display_name if leader else 'بازیکن'}\n\n"
                 "⏱ 02:00 فرصت صحبت داری",
                 reply_markup=day_turn_keyboard(
