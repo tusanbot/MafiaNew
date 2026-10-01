@@ -401,6 +401,9 @@ async def choose_challenge(session, game, turn_owner: User, request_event_id: in
     if data.get("status") != "pending":
         raise ValueError("این درخواست دیگر فعال نیست.")
     requester_id = int(data["requester_id"])
+    requester = await session.get(User, requester_id)
+    if requester:
+        requester.challenges += 1
     round_no = int(turn["round_no"])
     if await is_user_silenced(session, game.id, requester_id, round_no):
         raise ValueError("این بازیکن ساکت است و نمی‌تواند چالش بگیرد.")
