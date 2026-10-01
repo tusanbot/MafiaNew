@@ -48,8 +48,14 @@ def test_new_game_extra_colors_have_selection_callbacks() -> None:
 
 
 def test_game_settings_schema_defaults_are_present() -> None:
-    game = Game(game_key="test", group_id=1, scenario_id=1)
-    assert game.auto_play is False
-    assert game.turn_color == "پیش‌فرض"
-    assert game.challenge_color == "پیش‌فرض"
-    assert game.reserve_enabled is True
+    defaults = {
+        column.key: column.default.arg
+        for column in Game.__table__.columns
+        if column.key in {"auto_play", "turn_color", "challenge_color", "reserve_enabled"}
+    }
+    assert defaults == {
+        "auto_play": False,
+        "turn_color": "پیش‌فرض",
+        "challenge_color": "پیش‌فرض",
+        "reserve_enabled": True,
+    }
