@@ -360,8 +360,15 @@ async def challenge_place_handler(callback: CallbackQuery):
         )
         if chat_id:
             if result["placement"] == "before":
-                await callback.bot.send_message(chat_id, f"چالش {name} قبل از ادامه صحبت اجرا می‌شود.",
-                                                 reply_markup=day_turn_keyboard(game.game_key, True))
+                await callback.bot.send_message(
+                chat_id,
+                f"چالش {name} قبل از ادامه صحبت اجرا می‌شود.",
+                reply_markup=day_turn_keyboard(
+                    game.game_key, True, game.challenge_enabled,
+                    game.turn_color_enabled, game.turn_color, game.challenge_color,
+                    True, False
+                ),
+            )
             else:
                 await callback.bot.send_message(chat_id, f"چالش {name} بعد از پایان این نوبت اجرا می‌شود.")
         await callback.answer("زمان چالش ثبت شد.")
