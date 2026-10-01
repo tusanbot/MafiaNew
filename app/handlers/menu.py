@@ -889,6 +889,13 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
             payload=json.dumps({"reason": "admin_cancelled"}, ensure_ascii=False),
         ))
         await session.commit()
+        try:
+            await callback.bot.send_message(
+                group.telegram_id,
+                "❌ بازی توسط گرداننده لغو شد."
+            )
+        except Exception:
+            pass
         await callback.message.edit_text("بازی لغو شد و سوابق آن برای تاریخچه حفظ شد.", reply_markup=group_game_menu(group.id))
     await callback.answer("بازی لغو شد.")
 
