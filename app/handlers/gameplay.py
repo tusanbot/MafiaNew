@@ -405,15 +405,16 @@ async def challenge_place_handler(callback: CallbackQuery):
         )
         if chat_id:
             if result["placement"] == "before":
-                await callback.bot.send_message(
-                chat_id,
-                f"چالش {name} قبل از ادامه صحبت اجرا می‌شود.",
-                reply_markup=day_turn_keyboard(
-                    game.game_key, True, game.challenge_enabled,
-                    game.turn_color_enabled, game.turn_color, game.challenge_color,
-                    True, False
-                ),
-            )
+                msg = await callback.bot.send_message(
+                    chat_id,
+                    f"⚔️ چالش برای {name} اجرا شد.\n\n⏱ 02:00 فرصت صحبت داری",
+                    reply_markup=day_turn_keyboard(
+                        game.game_key, True, game.challenge_enabled,
+                        game.turn_color_enabled, game.turn_color, game.challenge_color,
+                        True, False
+                    ),
+                )
+                await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
             else:
                 await callback.bot.send_message(chat_id, f"چالش {name} بعد از پایان این نوبت اجرا می‌شود.")
         await callback.answer("زمان چالش ثبت شد.")
@@ -461,7 +462,7 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
-            old_task = _turn_tasks.pop(game.id, None)
+            old_task = _turn_tasks.pop(game.game_key, None)
             if old_task:
                 old_task.cancel()
 
@@ -474,17 +475,16 @@ async def next_turn_handler(callback: CallbackQuery):
             user = await session.get(User, result["user_id"])
             name = user.display_name or user.first_name if user else "بازیکن"
             kind = "چالش" if result["kind"] == "challenge" else ("ترن اضافه" if result["kind"] == "extra" else "اصلی")
-            await callback.bot.send_message(
+            msg = await callback.bot.send_message(
                 chat_id,
-                f"نوبت {kind} {name} شروع شد.",
+                f"🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled,
                     game.turn_color_enabled, game.turn_color, game.challenge_color,
                     True, result["kind"] not in {"extra", "challenge"}
                 ),
             )
-            if game.next_auto_enabled:
-                await _schedule_auto_next(callback.bot, game.game_key)
+            await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
         await callback.answer("نکست ترن انجام شد.")
 
 
