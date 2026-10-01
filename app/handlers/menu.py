@@ -768,10 +768,8 @@ async def player_target_action(callback: CallbackQuery) -> None:
             await session.commit()
             if game.phase in {"day", "voting"} and action in {"remove", "silence", "kick", "slaughter", "warning"}:
                 try:
-                    await callback.bot.send_message(
-                        group.telegram_id,
-                        await _public_status_roster(session, game),
-                    )
+                    from app.handlers.gameplay import update_round_roster
+                    await update_round_roster(callback.bot, session, game, group.telegram_id)
                 except Exception:
                     pass
         game_winner = None
