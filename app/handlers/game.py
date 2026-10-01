@@ -242,7 +242,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
         try:
             await callback.bot.send_message(
                 callback.message.chat.id,
-                "🎭 نقش‌ها پخش شد.\n\nبرای ادامه، انتخاب سردست یا تنظیمات بازی را انتخاب کنید.",
+                "🎭 نقش‌ها پخش شد.\n\nمرحله آماده‌سازی دور آغاز شد.",
                 reply_markup=leader_settings_keyboard(game.game_key, game),
             )
         except Exception:
