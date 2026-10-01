@@ -1,9 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import select, update
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import Chat
 
-from app.db.models import Group, GroupSettings
+from app.db.models import Group, GroupSettings, User
 
 
 class GroupRepository:
@@ -37,9 +37,21 @@ class GroupRepository:
 
     @staticmethod
     async def register(session: AsyncSession, group: Group, user_id: int) -> Group:
-        group.is_active = True
-        group.registered_at = datetime.now(timezone.utc)
-        group.registered_by_user_id = user_id
+        # registered_by_user_id stores the internal users.id, never the Telegram ID.
+        user = await session.get(User, user_id)
+        if user is None:
+            raise ValueError("ثبت‌کننده گروه در جدول users پیدا نشد.")
+
+        registered_at = datetime.now(timezone.utc)
+        await session.execute(
+            update(Group)
+            .where(Group.id == group.id)
+            .values(
+                is_active=True,
+                registered_at=registered_at,
+                registered_by_user_id=user.id,
+            )
+        )
         await session.commit()
         await session.refresh(group)
         return group
