@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario
 from app.core.game.engine import GameEngine, GameEnginePhase, GameState
 from app.services.roles import assign_roles
+from app.services.stats import record_game_result
 
 def _payload(event: GameEvent) -> dict:
     try:
@@ -262,7 +263,8 @@ async def finalize_game(session, game, winner):
                 user.citizen_wins += 1
             elif role.team == "independent":
                 user.independent_wins += 1
-    await _event(session, game, "stats_recorded", {"winner": winner})
+    newly_earned = await record_game_result(session, game.id, winner)
+    await _event(session, game, "stats_recorded", {"winner": winner, "new_achievements": {str(k): [a.key for a in v] for k, v in newly_earned.items()}})
 
 
 def _scenario_challenge_mode(game) -> str:
