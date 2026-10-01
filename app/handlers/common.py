@@ -1,17 +1,43 @@
 from aiogram import Router
 from aiogram.filters import CommandStart
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
+from sqlalchemy import select
 
 from app.db.session import session_factory
+from app.db.models import Group
+from app.handlers.keyboards import (
+    group_start_menu,
+    main_menu,
+    registration_keyboard,
+)
+from app.repositories.groups import GroupRepository
 from app.services.profile import sync_telegram_user
-from app.handlers.keyboards import main_menu
+from app.services.group_registration import check_group_registration, register_group
 
 router = Router(name="common")
+
 
 @router.message(CommandStart())
 async def start_handler(message: Message) -> None:
     if not message.from_user:
         return
+
+    if message.chat.type in ("group", "supergroup"):
+        async with session_factory() as session:
+            group = await GroupRepository.upsert_from_chat(session, message.chat)
+            if not group.is_active:
+                await message.answer(
+                    "این گروه هنوز در ربات ثبت نشده است.\n\n"
+                    "برای ثبت، ابتدا مطمئن شوید ربات مدیر گروه است و دسترسی‌های لازم را دارد.",
+                    reply_markup=registration_keyboard(message.chat.id),
+                )
+            else:
+                await message.answer(
+                    f"مدیریت ربات در گروه «{group.title or message.chat.id}»",
+                    reply_markup=group_start_menu(group.id),
+                )
+        return
+
     async with session_factory() as session:
         user = await sync_telegram_user(
             session,
@@ -26,3 +52,83 @@ async def start_handler(message: Message) -> None:
         "از منوی زیر بخش موردنظر را انتخاب کن.",
         reply_markup=main_menu(),
     )
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("groupreg:register:"))
+async def register_group_callback(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    chat_id = int(callback.data.rsplit(":", 1)[1])
+    if callback.message.chat.id != chat_id:
+        await callback.answer("درخواست ثبت برای این گروه معتبر نیست.", show_alert=True)
+        return
+
+    member = await callback.bot.get_chat_member(chat_id, callback.from_user.id)
+    if member.status not in ("creator", "administrator"):
+        await callback.answer("ثبت گروه فقط توسط مدیر گروه انجام می‌شود.", show_alert=True)
+        return
+
+    check = await check_group_registration(callback.bot, chat_id)
+    if not check.ok:
+        lines = ["ثبت گروه انجام نشد.", "", "موارد زیر را اصلاح کنید:"]
+        lines.extend(f"• {item}" for item in check.problems)
+        await callback.message.edit_text(
+            "\n".join(lines),
+            reply_markup=registration_keyboard(chat_id),
+        )
+        await callback.answer("شرایط ثبت کامل نیست.", show_alert=True)
+        return
+
+    async with session_factory() as session:
+        group = await GroupRepository.upsert_from_chat(session, callback.message.chat)
+        await register_group(session, group, callback.from_user.id)
+        await callback.message.edit_text(
+            f"گروه «{group.title or chat_id}» با موفقیت در ربات ثبت شد.",
+            reply_markup=group_start_menu(group.id),
+        )
+    await callback.answer("گروه ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("groupstart:"))
+async def group_start_menu_callback(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    action = parts[1]
+    group_id = int(parts[2])
+    async with session_factory() as session:
+        group = await session.get(Group, group_id)
+        if not group or not group.is_active:
+            await callback.answer("این گروه هنوز ثبت نشده است.", show_alert=True)
+            return
+        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("این بخش فقط برای مدیران گروه است.", show_alert=True)
+            return
+        if action == "root":
+            await callback.message.edit_text(
+                f"مدیریت ربات در گروه «{group.title}»",
+                reply_markup=group_start_menu(group.id),
+            )
+        elif action == "close":
+            await callback.message.delete()
+        elif action == "help":
+            await callback.message.edit_text(
+                "راهنمای مدیریت ربات\n\n"
+                "از «بازی جدید» برای ساخت لابی استفاده کنید.\n"
+                "بازی‌ها بر اساس ظرفیت سناریو مدیریت می‌شوند.",
+                reply_markup=group_start_menu(group.id),
+            )
+        elif action == "history":
+            from app.handlers.menu import game_history_text
+            await callback.message.edit_text(
+                await game_history_text(session, group),
+                reply_markup=group_start_menu(group.id),
+            )
+        elif action == "new":
+            from app.handlers.menu import render_new_game_menu
+            await callback.message.edit_text(
+                await render_new_game_menu(session, group),
+                reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_menu"]).new_game_menu(group.id),
+            )
+    await callback.answer()
