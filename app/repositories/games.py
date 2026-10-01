@@ -310,6 +310,7 @@ class GameRepository:
             return False
         if source.is_reserved or not destination.is_reserved:
             return False
+        old_reserve_position = destination.reserve_position
         destination.is_reserved = False
         destination.reserve_position = None
         destination.seat = source.seat
@@ -321,7 +322,7 @@ class GameRepository:
         await update(GamePlayer).where(
             GamePlayer.game_id == game.id,
             GamePlayer.is_reserved.is_(True),
-            GamePlayer.reserve_position > destination.reserve_position,
+            GamePlayer.reserve_position > old_reserve_position,
         ).values(reserve_position=GamePlayer.reserve_position - 1)
         await session.commit()
         return True
