@@ -2,6 +2,7 @@ from aiogram import Router
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
 import json
+import asyncio
 
 from app.db.models import Game, Group, User, Scenario, GameEvent
 from app.db.session import session_factory
@@ -16,6 +17,15 @@ from app.services.gameplay import (
     submit_vote,
     submit_challenge,
     resolve_challenge,
+    start_day_turns,
+    request_challenge,
+    pending_challenge_requests,
+    attach_challenge_request_message,
+    choose_challenge,
+    select_challenge_placement,
+    auto_place_challenge_after,
+    current_turn,
+    next_turn,
 )
 from app.handlers.keyboards import (
     day_keyboard,
@@ -23,9 +33,14 @@ from app.handlers.keyboards import (
     vote_keyboard,
     challenge_keyboard,
     challenge_response_keyboard,
+    day_turn_keyboard,
+    challenge_requests_keyboard,
+    challenge_placement_keyboard,
 )
 
 router = Router(name="gameplay")
+
+_challenge_tasks = {}
 
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
@@ -140,17 +155,186 @@ async def night_callback(callback: CallbackQuery):
                 await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)) if not resolved["winner"] else None)
         await callback.answer("اقدام شب ثبت شد.")
 
-@router.callback_query(lambda c: c.data and c.data.startswith("day:challenge:"))
-async def day_challenge_handler(callback: CallbackQuery):
+@router.callback_query(lambda c: c.data and c.data.startswith("turn:request_challenge:"))
+async def turn_request_challenge_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
     async with session_factory() as session:
         game = await _load(session, key)
-        if not game or game.phase != "day":
-            await callback.answer("الان مرحله روز نیست.", show_alert=True)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        players = await alive_players(session, game.id)
-        await callback.message.edit_reply_markup(reply_markup=challenge_keyboard(game.game_key, players))
-        await callback.answer("هدف چالش را انتخاب کنید.")
+        try:
+            result = await submit_challenge(session, game, actor)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        turn_owner = await session.get(User, result["turn_user_id"])
+        requests = await pending_challenge_requests(session, game)
+        request_rows = []
+        for event, data in requests:
+            requester = await session.get(User, int(data["requester_id"]))
+            if requester:
+                data["requester_name"] = requester.display_name or requester.first_name
+                event.payload = json.dumps(data, ensure_ascii=False)
+                request_rows.append((event, data))
+        await session.commit()
+        if not turn_owner:
+            await callback.answer("صاحب نوبت پیدا نشد.", show_alert=True)
+            return
+        try:
+            msg = await callback.bot.send_message(
+                turn_owner.telegram_id,
+                f"درخواست چالش در نوبت شما\n\n{actor.display_name or actor.first_name} درخواست چالش داده است.",
+                reply_markup=challenge_requests_keyboard(game.game_key, request_rows),
+            )
+            await attach_challenge_request_message(session, result["event_id"], turn_owner.telegram_id, msg.message_id)
+        except Exception:
+            await callback.answer("درخواست ثبت شد؛ صاحب نوبت باید قبلاً ربات را در خصوصی /start کرده باشد.", show_alert=True)
+            return
+        await callback.answer("درخواست چالش ارسال شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
+async def challenge_grant_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 4 or not callback.from_user:
+        return
+    _, _, key, event_id = parts
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            return
+        try:
+            result = await choose_challenge(session, game, actor, int(event_id))
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        for req_event, req_data in result["requests"]:
+            chat_id = req_data.get("chat_id")
+            message_id = req_data.get("message_id")
+            requester = await session.get(User, int(req_data["requester_id"]))
+            name = requester.display_name or requester.first_name if requester else "بازیکن"
+            if chat_id and message_id:
+                try:
+                    if req_event.id == result["request_event_id"]:
+                        await callback.bot.edit_message_text(
+                            f"چالش به {name} داده شد.\n\nزمان اجرا را انتخاب کنید:",
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            reply_markup=challenge_placement_keyboard(game.game_key, req_event.id),
+                        )
+                    else:
+                        await callback.bot.edit_message_text(
+                            f"درخواست چالش {name} رد شد؛ چالش به بازیکن دیگری داده شد.",
+                            chat_id=chat_id,
+                            message_id=message_id,
+                        )
+                except Exception:
+                    pass
+        await callback.answer("چالش داده شد.")
+        async def auto_after():
+            await asyncio.sleep(20)
+            async with session_factory() as timer_session:
+                timer_game = await _load(timer_session, key)
+                if not timer_game:
+                    return
+                try:
+                    placed = await auto_place_challenge_after(timer_session, timer_game, result["request_event_id"])
+                except ValueError:
+                    return
+                if placed:
+                    chat_id = await _group_chat_id(timer_session, timer_game)
+                    req = await timer_session.get(User, result["requester_id"])
+                    if chat_id and req:
+                        await callback.bot.send_message(
+                            chat_id,
+                            f"زمان انتخاب نشد؛ چالش {req.display_name or req.first_name} بعد از صحبت اجرا می‌شود.",
+                        )
+        task = asyncio.create_task(auto_after())
+        _challenge_tasks[result["request_event_id"]] = task
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("challenge:place:"))
+async def challenge_place_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 5 or not callback.from_user:
+        return
+    _, _, key, event_id, placement = parts
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            return
+        try:
+            result = await select_challenge_placement(session, game, actor, int(event_id), placement)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        task = _challenge_tasks.pop(int(event_id), None)
+        if task:
+            task.cancel()
+        requester = await session.get(User, result["requester_id"])
+        name = requester.display_name or requester.first_name if requester else "بازیکن"
+        chat_id = await _group_chat_id(session, game)
+        await callback.message.edit_text(
+            f"چالش {name}: {'قبل از صحبت' if result['placement'] == 'before' else 'بعد از صحبت'} انتخاب شد."
+        )
+        if chat_id:
+            if result["placement"] == "before":
+                await callback.bot.send_message(chat_id, f"چالش {name} قبل از ادامه صحبت اجرا می‌شود.",
+                                                 reply_markup=day_turn_keyboard(game.game_key, False))
+            else:
+                await callback.bot.send_message(chat_id, f"چالش {name} بعد از پایان این نوبت اجرا می‌شود.")
+        await callback.answer("زمان چالش ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("turn:next:"))
+async def next_turn_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            return
+        turn = await current_turn(session, game.id)
+        if not turn or int(turn.get("user_id", -1)) != actor.id:
+            await callback.answer("فقط صاحب نوبت فعلی می‌تواند نکست ترن بزند.", show_alert=True)
+            return
+        try:
+            result = await next_turn(session, game)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        chat_id = await _group_chat_id(session, game)
+        if not chat_id:
+            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
+            return
+        if result["kind"] == "finished_day":
+            await callback.bot.send_message(
+                chat_id,
+                "نوبت‌های اصلی این دور تمام شد. اکنون رأی‌گیری را می‌توانید شروع کنید.",
+                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+            )
+        else:
+            user = await session.get(User, result["user_id"])
+            name = user.display_name or user.first_name if user else "بازیکن"
+            kind = "چالش" if result["kind"] == "challenge" else "اصلی"
+            await callback.bot.send_message(
+                chat_id,
+                f"نوبت {kind} {name} شروع شد.",
+                reply_markup=day_turn_keyboard(game.game_key, result["kind"] == "main"),
+            )
+        await callback.answer("نکست ترن انجام شد.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
@@ -171,6 +355,7 @@ async def day_vote_handler(callback: CallbackQuery):
             reply_markup=vote_keyboard(game.game_key, players),
         )
         await callback.answer("رأی‌گیری شروع شد.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote:"))
 async def vote_handler(callback: CallbackQuery):
@@ -193,8 +378,9 @@ async def vote_handler(callback: CallbackQuery):
             await callback.answer("رأی شما ثبت شد.")
             return
         if result["winner"]:
-            text = f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
-            await callback.message.edit_text(text)
+            await callback.message.edit_text(
+                f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
+            )
         else:
             if result["eliminated"]:
                 text = f"رأی‌گیری تمام شد. {result['eliminated'].display_name} حذف شد."
@@ -203,62 +389,3 @@ async def vote_handler(callback: CallbackQuery):
             await callback.message.edit_text(text + "\n\nشب بعد آغاز شد.")
             await _send_night_menus(callback.bot, session, game)
         await callback.answer("رأی ثبت شد.")
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("challenge:"))
-async def challenge_callback(callback: CallbackQuery):
-    parts = callback.data.split(":")
-    if len(parts) == 3 and parts[1] != "accept" and parts[1] != "reject":
-        _, key, target_id = parts
-        async with session_factory() as session:
-            game = await _load(session, key)
-            actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-            if not game or not actor:
-                await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
-                return
-            try:
-                await submit_challenge(session, game, actor, int(target_id))
-            except (ValueError, TypeError) as exc:
-                await callback.answer(str(exc), show_alert=True)
-                return
-            target = (await session.execute(select(User).where(User.id == int(target_id)))).scalar_one_or_none()
-            if target:
-                event = (await session.execute(select(GameEvent).where(
-                    GameEvent.game_id == game.id, GameEvent.event_type == "challenge"
-                ).order_by(GameEvent.id.desc()))).scalars().first()
-                if event:
-                    await callback.bot.send_message(
-                        target.telegram_id,
-                        f"بازیکن {actor.display_name} شما را به چالش دعوت کرده است.",
-                        reply_markup=challenge_response_keyboard(game.game_key, event.id),
-                    )
-            await callback.answer("چالش ثبت شد.")
-            return
-
-    if len(parts) != 4:
-        return
-    _, decision, key, event_id = parts
-    async with session_factory() as session:
-        game = await _load(session, key)
-        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
-            return
-        event = await session.get(GameEvent, int(event_id))
-        if not event:
-            await callback.answer("چالش پیدا نشد.", show_alert=True)
-            return
-        data = json.loads(event.payload or "{}")
-        if data.get("target_user_id") != actor.id:
-            await callback.answer("فقط هدف چالش می‌تواند پاسخ دهد.", show_alert=True)
-            return
-        try:
-            data = await resolve_challenge(session, game, event.id, decision == "accept")
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        chat_id = await _group_chat_id(session, game)
-        if chat_id:
-            status = "پذیرفت" if decision == "accept" else "رد کرد"
-            await callback.bot.send_message(chat_id, f"چالش بازیکن {data['challenger_id']} توسط هدف {status}.")
-        await callback.answer("پاسخ چالش ثبت شد.")
