@@ -9,6 +9,13 @@ from app.db.models import Group, GroupSettings, User
 class GroupRepository:
     @staticmethod
     async def upsert_from_chat(session: AsyncSession, chat: Chat) -> Group:
+        # A Telegram group/supergroup Chat ID is the only valid source for
+        # groups.telegram_id. Internal groups.id values must never enter here.
+        if chat.type not in ("group", "supergroup"):
+            raise ValueError("Only Telegram group/supergroup chats can be stored in groups.")
+        if not isinstance(chat.id, int) or chat.id >= 0:
+            raise ValueError("Invalid Telegram group chat ID.")
+
         result = await session.execute(select(Group).where(Group.telegram_id == chat.id))
         group = result.scalar_one_or_none()
         if group is None:
