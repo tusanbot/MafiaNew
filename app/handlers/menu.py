@@ -629,7 +629,13 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         if action == "challenge":
-            game.challenge_enabled = not game.challenge_enabled
+            if not game.challenge_enabled:
+                game.challenge_enabled = True
+                game.challenge_mode = "limited"
+            elif game.challenge_mode == "limited":
+                game.challenge_mode = "free"
+            else:
+                game.challenge_enabled = False
         elif action == "next_host":
             game.next_host_enabled = not game.next_host_enabled
         elif action == "next_player":
