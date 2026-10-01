@@ -17,7 +17,7 @@ def test_achievement_keys_are_unique():
 
 def test_detailed_user_stats_columns_exist():
     from sqlalchemy import inspect
-    from app.db.models import User, UserRoleStat
+    from app.db.models import User, UserRoleStat, Scenario, ScenarioRole
     user_columns = {column.key for column in inspect(User).columns}
     assert {
         "kills", "saves", "investigations", "investigation_hits",
@@ -25,7 +25,11 @@ def test_detailed_user_stats_columns_exist():
         "kicks", "games_survived", "win_streak", "best_win_streak",
     } <= user_columns
     role_columns = {column.key for column in inspect(UserRoleStat).columns}
+    scenario_columns = {column.key for column in inspect(Scenario).columns}
     assert {"games", "wins", "kills", "saves", "investigations", "investigation_hits"} <= role_columns
+    assert {"description", "challenge_mode", "challenge_limit"} <= scenario_columns
+    scenario_role_columns = {column.key for column in inspect(ScenarioRole).columns}
+    assert {"scenario_id", "role_id", "count", "position"} <= scenario_role_columns
 
 
 def test_rank_progress():
