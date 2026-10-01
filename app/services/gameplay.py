@@ -693,37 +693,21 @@ async def resolve_challenge(session, game, challenge_event_id: int, accepted: bo
 
 
 async def send_game_result_notifications(bot, session, game) -> None:
-    event = await session.scalar(select(GameEvent).where(
-        GameEvent.game_id == game.id,
-        GameEvent.event_type == "stats_recorded",
-    ).order_by(GameEvent.id.desc()))
+    event = await session.scalar(select(GameEvent).where(GameEvent.game_id == game.id, GameEvent.event_type == "stats_recorded").order_by(GameEvent.id.desc()))
     if not event:
         return
     data = _payload(event)
     for uid_text, report in (data.get("reports") or {}).items():
         user = await session.get(User, int(uid_text))
-        if not user or not user.notify_game_result:
+        if not user:
             continue
         stats = report.get("stats") or {}
-        lines = [
-            "📊 گزارش عملکرد بازی",
-            "",
-            "🏆 برد" if stats.get("won") else "نتیجه: این بازی را نبردید",
-            f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}",
-            f"⭐ امتیاز فعلی: {report.get('score_after', user.score)}",
-            "",
-            f"🎯 شات: {stats.get('kills', 0)}",
-            f"🩺 نجات: {stats.get('saves', 0)}",
-            f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}",
-            f"🎯 رأی درست: {stats.get('correct_votes', 0)}",
-            f"⚔️ چالش پذیرفته: {stats.get('accepted_challenges', 0)}",
-            f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد",
-            f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}",
-            "",
-            f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30",
-            f"🏅 رتبه: {report.get('rank_after', '')}",
-        ]
+        lines = []
+        if user.notify_game_result:
+            lines = ["📊 گزارش عملکرد بازی", "", "🏆 برد" if stats.get("won") else "نتیجه: این بازی را نبردید", f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}", f"⭐ امتیاز فعلی: {report.get('score_after', user.score)}", "", f"🎯 شات: {stats.get('kills', 0)}", f"🩺 نجات: {stats.get('saves', 0)}", f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}", f"🎯 رأی درست: {stats.get('correct_votes', 0)}", f"⚔️ چالش پذیرفته: {stats.get('accepted_challenges', 0)}", f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد", f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}", "", f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30", f"🏅 رتبه: {report.get('rank_after', '')}"]
         if report.get("rank_after") != report.get("rank_before") and user.notify_rank_changes:
+            if not lines:
+                lines = ["🏆 تغییر رتبه"]
             lines.append(f"🎉 ارتقای رتبه: {report.get('rank_before')} ← {report.get('rank_after')}")
         earned = report.get("achievements") or []
         if earned and user.notify_achievements:
@@ -733,7 +717,11 @@ async def send_game_result_notifications(bot, session, game) -> None:
                 if achievement:
                     names.append(f"{achievement.icon} {achievement.name_fa} (+{achievement.points})")
             if names:
+                if not lines:
+                    lines = ["🏅 دستاوردهای جدید"]
                 lines.extend(["", "🏅 دستاوردهای جدید:", *names])
+        if not lines:
+            continue
         try:
             await bot.send_message(user.telegram_id, "\n".join(lines))
         except Exception:
