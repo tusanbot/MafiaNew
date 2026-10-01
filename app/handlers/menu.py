@@ -94,7 +94,7 @@ async def group_management_games(callback: CallbackQuery) -> None:
         else:
             await callback.message.edit_text(
                 "گروه موردنظر را برای مدیریت بازی انتخاب کنید:",
-                reply_markup=group_list_keyboard(groups),
+                reply_markup=group_list_keyboard(groups, "games"),
             )
     await callback.answer()
 
@@ -113,7 +113,7 @@ async def group_management_locks(callback: CallbackQuery) -> None:
         else:
             await callback.message.edit_text(
                 "گروه موردنظر را برای تنظیم قفل‌ها انتخاب کنید:",
-                reply_markup=group_list_keyboard(groups),
+                reply_markup=group_list_keyboard(groups, "locks"),
             )
     await callback.answer()
 
@@ -122,16 +122,31 @@ async def group_management_locks(callback: CallbackQuery) -> None:
 async def select_group(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    group_id = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    purpose = parts[2] if len(parts) == 4 else "games"
+    group_id = int(parts[-1])
     async with session_factory() as session:
         group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
         if not group:
             await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
             return
-        await callback.message.edit_text(
-            f"گروه: {group.title or group.telegram_id}\n\nبخش موردنظر را انتخاب کنید.",
-            reply_markup=group_game_menu(group.id),
-        )
+        if purpose == "locks":
+            settings = (await session.execute(
+                select(GroupSettings).where(GroupSettings.group_id == group.id)
+            )).scalar_one_or_none()
+            if settings is None:
+                settings = GroupSettings(group_id=group.id)
+                session.add(settings)
+                await session.commit()
+            await callback.message.edit_text(
+                f"قفل‌های گروه «{group.title or group.telegram_id}»",
+                reply_markup=group_lock_keyboard(group.id, settings),
+            )
+        else:
+            await callback.message.edit_text(
+                f"گروه: {group.title or group.telegram_id}\n\nبخش موردنظر را انتخاب کنید.",
+                reply_markup=group_game_menu(group.id),
+            )
     await callback.answer()
 
 
