@@ -12,8 +12,7 @@ from app.repositories.users import UserRepository
 from app.services.game import render_lobby, role_messages, gregorian_to_jalali
 from app.services.roles import assign_roles
 from app.services.gameplay import choose_leader, start_round
-from app.handlers.keyboards import leader_selection_keyboard
-from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2
+from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2, leader_settings_keyboard
 from app.utils.text import tg_name, tg_plain_name
 
 router = Router(name="game")
@@ -236,23 +235,26 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 failed.append(telegram_id)
 
         try:
-            players_now = await GameRepository.players(session, game.id)
+            await callback.message.delete()
+        except Exception:
+            pass
+        failed = list(dict.fromkeys(failed))
+        try:
             await callback.bot.send_message(
-                host.telegram_id,
-                group_list + "\n\n👑 انتخاب سردست\nسردست به‌صورت دستی یا خودکار انتخاب می‌شود:",
-                reply_markup=leader_selection_keyboard(game.game_key, players_now),
-                parse_mode="HTML",
+                callback.message.chat.id,
+                "🎭 نقش‌ها پخش شد.\n\n👑 انتخاب سردست\n⚙️ تنظیمات بازی\n▶️ شروع دور",
+                reply_markup=leader_settings_keyboard(game.game_key, game),
             )
         except Exception:
-            failed.append(host.telegram_id)
-
-        failed = list(dict.fromkeys(failed))
+            pass
         if failed:
-            await callback.message.answer(
-                f"نقش‌ها برای {sent} بازیکن ارسال شد. ارسال خصوصی برای {len(failed)} نفر ناموفق بود؛ آن افراد باید ابتدا ربات را در PV /start کنند."
-            )
-        else:
-            await callback.message.answer("نقش همه بازیکنان در PV ارسال شد.")
+            try:
+                await callback.bot.send_message(
+                    callback.message.chat.id,
+                    f"ارسال نقش برای {sent} بازیکن موفق بود؛ PV {len(failed)} بازیکن در دسترس نبود.",
+                )
+            except Exception:
+                pass
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:"))
