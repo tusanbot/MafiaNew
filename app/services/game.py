@@ -44,6 +44,9 @@ async def create_game(
     turn_color: str = "پیش‌فرض",
     challenge_color: str = "پیش‌فرض",
     reserve_enabled: bool = True,
+    turn_seconds: int | None = None,
+    challenge_seconds: int | None = None,
+    extra_challenge_seconds: int | None = None,
 ):
     key = uuid4().hex[:12]
     return await GameRepository.create(
@@ -57,6 +60,9 @@ async def create_game(
         turn_color=turn_color,
         challenge_color=challenge_color,
         reserve_enabled=reserve_enabled,
+        turn_seconds=turn_seconds if turn_seconds is not None else getattr(scenario, "turn_seconds", 120),
+        challenge_seconds=challenge_seconds if challenge_seconds is not None else getattr(scenario, "challenge_seconds", 60),
+        extra_challenge_seconds=extra_challenge_seconds if extra_challenge_seconds is not None else getattr(scenario, "extra_challenge_seconds", 60),
     )
 
 
