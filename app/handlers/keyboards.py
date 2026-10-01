@@ -136,6 +136,7 @@ def player_replace_destination_keyboard(group_id: int, source_id: int, reserves)
 def game_features_menu(
     group_id: int,
     challenge_enabled: bool = True,
+    challenge_mode: str = "limited",
     next_host_enabled: bool = True,
     next_player_enabled: bool = True,
     next_auto_enabled: bool = False,
@@ -145,7 +146,7 @@ def game_features_menu(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=f"{'🟢' if challenge_enabled else '⚪'} محدودیت چالش",
+        text=f"{'🟢' if challenge_enabled else '⚪'} چالش: {"آزاد" if challenge_mode == "free" else "محدود" if challenge_enabled else "غیرفعال"}",
         callback_data=f"gameadmin:feature:{group_id}:challenge",
     ))
     builder.row(InlineKeyboardButton(
