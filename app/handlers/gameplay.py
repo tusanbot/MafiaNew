@@ -330,12 +330,26 @@ async def _public_status_roster(session, game) -> str:
     except (TypeError, ValueError):
         emoji_settings = {}
     rows = await all_players(session, game.id)
+    leader_id = None
+    leader_event = await session.scalar(
+        select(GameEvent).where(
+            GameEvent.game_id == game.id,
+            GameEvent.event_type == "leader_selected",
+        ).order_by(GameEvent.id.desc())
+    )
+    if leader_event:
+        try:
+            leader_id = int(json.loads(leader_event.payload or "{}").get("leader_user_id"))
+        except (TypeError, ValueError):
+            leader_id = None
     lines = ["👥 لیست بازیکنان حاضر در بازی", ""]
     for player, user, _role in rows:
         if player.is_reserved:
             continue
         name = tg_name(user.display_name or user.first_name or user.username or "بازیکن")
         marks = []
+        if user.id == leader_id:
+            marks.append("👑")
         if player.alive:
             if player.silence_until_round is not None and emoji_settings.get("silence", True):
                 marks.append("🔇")
