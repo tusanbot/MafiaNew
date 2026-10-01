@@ -7,7 +7,7 @@ def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> N
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=callback_data))
 
 
-def main_menu() -> InlineKeyboardMarkup:
+def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="مدیریت گروه", callback_data="menu:group_management"))
     builder.row(
@@ -18,6 +18,8 @@ def main_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="پروفایل", callback_data="menu:profile"),
         InlineKeyboardButton(text="رتبه بندی", callback_data="menu:ranking"),
     )
+    if show_admin:
+        builder.row(InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin"))
     _back(builder, "menu:root")
     return builder.as_markup()
 
