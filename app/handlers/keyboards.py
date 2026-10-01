@@ -18,6 +18,7 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="پروفایل", callback_data="menu:profile"),
         InlineKeyboardButton(text="رتبه بندی", callback_data="menu:ranking"),
     )
+    builder.row(InlineKeyboardButton(text="🏅 دستاوردها", callback_data="profile:achievements"))
     if show_admin:
         builder.row(InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin"))
     _back(builder, "menu:root")
