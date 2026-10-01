@@ -31,7 +31,8 @@ class GameEngine:
     def transition(state: GameState, target: GameEnginePhase) -> GameState:
         if target not in ALLOWED[state.phase]:
             raise TransitionError(f"transition {state.phase.value} -> {target.value} is not allowed")
+        previous = state.phase
         state.phase = target
-        if target == GameEnginePhase.NIGHT and state.phase != GameEnginePhase.SETUP:
+        if target == GameEnginePhase.NIGHT and previous != GameEnginePhase.SETUP:
             state.round_no += 1
         return state
