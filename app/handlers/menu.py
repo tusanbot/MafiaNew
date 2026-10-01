@@ -89,7 +89,7 @@ async def _selected_group(session, bot, user_id: int, group_id: int) -> Group | 
 
 
 def _emoji_settings(game) -> dict:
-    defaults = {"death": True, "kick": True, "faceoff": True, "slaughter": True, "challenge": True, "silence": True, "extra_turn": True, "warning": True}
+    defaults = {"death": True, "kick": True, "slaughter": True, "challenge": True, "silence": True, "extra_turn": True, "warning": True}
     try:
         value = json.loads(game.emoji_settings or "{}")
         defaults.update({k: bool(v) for k, v in value.items() if k in defaults})
@@ -106,8 +106,6 @@ def _player_label(player, user, emojis: dict) -> str:
             marks.append("💀")
         elif not player.alive and player.exit_type == "kick" and emojis.get("kick", True):
             marks.append("⛔")
-        elif not player.alive and player.exit_type == "faceoff" and emojis.get("faceoff", True):
-            marks.append("🎭")
         elif not player.alive and player.exit_type == "slaughter" and emojis.get("slaughter", True):
             marks.append("🩸")
         if player.alive and player.silence_until_round is not None and emojis.get("silence", True):
@@ -473,7 +471,12 @@ async def player_management(callback: CallbackQuery) -> None:
             if player.is_reserved:
                 lines.append(f"رزرو {player.reserve_position}. {tg_name(user.display_name or user.first_name)} — رزرو")
             else:
-                status = "زنده" if player.alive else (player.exit_type or "حذف‌شده")
+                status = "زنده" if player.alive else {
+                    "death": "کشته",
+                    "kick": "کیک",
+                    "slaughter": "سلاخی",
+                    "faceoff": "حذف‌شده",
+                }.get(player.exit_type, "حذف‌شده")
                 lines.append(f"{player.seat}. {tg_name(_player_label(player, user, emojis))} — {status}")
         await callback.message.edit_text(
             "مدیریت بازیکنان\n\n" + ("\n".join(lines) if lines else "بازیکنی در بازی نیست.") +
