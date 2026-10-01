@@ -1052,6 +1052,73 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
         )
     await callback.answer("تنظیم ذخیره شد.")
 
+@router.callback_query(lambda c: c.data.startswith("gameadmin:time:"))
+async def game_time_menu(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("تنظیم زمان نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, kind = parts
+    group_id = int(group_raw)
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        current = {
+            "turn": game.turn_seconds,
+            "challenge": game.challenge_seconds,
+            "extra_challenge": game.extra_challenge_seconds,
+        }.get(kind)
+        if current is None:
+            await callback.answer("نوع زمان نامعتبر است.", show_alert=True)
+            return
+        from app.handlers.keyboards import duration_keyboard
+        await callback.message.edit_text(
+            "انتخاب زمان " + {"turn": "نوبت", "challenge": "چالش", "extra_challenge": "چالش اضافه"}[kind],
+            reply_markup=duration_keyboard(
+                "gameadmin", group.id, kind, current,
+                f"gameadmin:features:{group.id}",
+            ),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:set_time:"))
+async def game_set_time(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("تنظیم زمان نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, kind, value_raw = parts
+    group_id, value = int(group_raw), int(value_raw)
+    if kind not in {"turn", "challenge", "extra_challenge"} or not 15 <= value <= 600:
+        await callback.answer("مقدار زمان نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        setattr(game, {"turn": "turn_seconds", "challenge": "challenge_seconds", "extra_challenge": "extra_challenge_seconds"}[kind], value)
+        await session.commit()
+        from app.handlers.keyboards import game_features_menu
+        await callback.message.edit_text(
+            "تنظیمات بازی",
+            reply_markup=game_features_menu(
+                group.id, game.challenge_enabled, game.challenge_mode, game.next_host_enabled,
+                game.next_player_enabled, game.next_auto_enabled, game.auto_silence_warnings,
+                game.auto_kick_warnings, game.turn_seconds, game.challenge_seconds,
+                game.extra_challenge_seconds,
+            ),
+        )
+    await callback.answer("زمان ذخیره شد.")
+
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:extra:"))
 async def game_extra_handler(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
