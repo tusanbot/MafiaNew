@@ -1829,3 +1829,73 @@ async def scenario_roles_done(callback: CallbackQuery, state: FSMContext) -> Non
     await state.clear()
     await callback.message.edit_text("✅ سناریو با موفقیت ذخیره شد.", reply_markup=scenario_management_menu())
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:edit:"))
+async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+        if not scenario:
+            await callback.answer("سناریو پیدا نشد.", show_alert=True)
+            return
+        counts = await _scenario_form_roles(session, sid)
+    await state.clear()
+    await state.set_state(ScenarioAdminState.name)
+    await state.update_data(
+        mode="edit",
+        edit_id=sid,
+        role_counts=counts,
+        current_name=scenario.name_fa,
+        current_description=scenario.description,
+        current_min=scenario.min_players,
+        current_max=scenario.max_players,
+        challenge_mode=scenario.challenge_mode,
+    )
+    await callback.message.edit_text(f"✏️ ویرایش «{scenario.name_fa}»\n\nنام جدید را ارسال کنید یا - برای بدون تغییر:")
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:delete:"))
+async def scenario_delete_confirm_start(callback: CallbackQuery) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+    if not scenario:
+        await callback.answer("سناریو پیدا نشد.", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"⚠️ حذف سناریو «{scenario.name_fa}»\n\nترکیب نقش‌های آن نیز حذف می‌شود. ادامه می‌دهید؟",
+        reply_markup=scenario_delete_confirm_keyboard(sid),
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:delete_confirm:"))
+async def scenario_delete_confirm(callback: CallbackQuery) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+        if not scenario:
+            await callback.answer("سناریو پیدا نشد.", show_alert=True)
+            return
+        active = await session.scalar(
+            select(Game.id).where(
+                Game.scenario_id == sid,
+                Game.status.in_(["waiting", "draft", "running"]),
+            ).limit(1)
+        )
+        if active:
+            await callback.answer("این سناریو در یک بازی فعال استفاده می‌شود و فعلاً قابل حذف نیست.", show_alert=True)
+            return
+        await session.delete(scenario)
+        await session.commit()
+    await callback.message.edit_text("🗑 سناریو حذف شد.", reply_markup=scenario_management_menu())
+    await callback.answer()
