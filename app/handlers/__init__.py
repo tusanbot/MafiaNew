@@ -9,11 +9,11 @@ from app.handlers.text_commands import router as text_commands_router
 
 def register_handlers(dispatcher: Dispatcher) -> None:
     dispatcher.include_router(common_router)
+    # Exact-match text commands are placed before broad group guards, while
+    # their own handlers are restricted by chat/state and never use partial text.
+    dispatcher.include_router(text_commands_router)
     dispatcher.include_router(profile_router)
     dispatcher.include_router(menu_router)
     dispatcher.include_router(group_router)
     dispatcher.include_router(game_router)
     dispatcher.include_router(gameplay_router)
-    # Exact-match text commands are registered last so they never override
-    # existing FSM, profile, menu, game, or gameplay handlers.
-    dispatcher.include_router(text_commands_router)
