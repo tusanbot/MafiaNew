@@ -134,6 +134,10 @@ class Game(Base):
 
 class GamePlayer(Base):
     __tablename__ = "game_players"
+    __table_args__ = (
+        UniqueConstraint("game_id", "user_id", name="uq_game_player_user"),
+        UniqueConstraint("game_id", "seat", name="uq_game_player_seat"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
@@ -159,6 +163,9 @@ class GameEvent(Base):
 
 class Vote(Base):
     __tablename__ = "votes"
+    __table_args__ = (
+        UniqueConstraint("game_id", "voter_user_id", "round_no", name="uq_vote_per_round"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     voter_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))

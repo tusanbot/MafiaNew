@@ -14,6 +14,8 @@ from app.services.gameplay import (
     current_round,
     resolve_night,
     start_match,
+    choose_leader,
+    start_round,
     start_voting,
     submit_night_action,
     submit_vote,
@@ -148,6 +150,18 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
     task = asyncio.create_task(runner())
     _turn_tasks[game_key] = task
 
+def _leader_selection_keyboard(game_key: str, assignments):
+    from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+
+    rows = [[InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}")]]
+    for player, _role, user in assignments:
+        rows.append([InlineKeyboardButton(
+            text=f"👤 {player.seat:02d} - {tg_name(user.display_name or user.first_name or 'بازیکن')}",
+            callback_data=f"leader:select:{game_key}:{user.id}",
+        )])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
 async def _group_chat_id(session, game):
     group = await session.get(Group, game.group_id)
     return group.telegram_id if group else None
@@ -227,8 +241,10 @@ async def start_match_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         await callback.message.edit_text(
-            f"بازی شروع شد.\nسناریو: {scenario.name_fa}\nبازیکنان: {len(assignments)}\n"
-            "نقش‌ها خصوصی ارسال شدند. شب اول آغاز شد."
+            f"بازی آماده شد.\nسناریو: {scenario.name_fa}\nبازیکنان: {len(assignments)}\n\n"
+            "نقش‌ها خصوصی ارسال شدند.\n"
+            "اکنون سردست باید انتخاب شود؛ انتخاب می‌تواند دستی یا خودکار باشد.",
+            reply_markup=_leader_selection_keyboard(game.game_key, assignments),
         )
         for _, role, user in assignments:
             try:
@@ -238,8 +254,53 @@ async def start_match_handler(callback: CallbackQuery):
                 )
             except Exception:
                 pass
-        await _send_night_menus(callback.bot, session, game)
-        await callback.answer("بازی شروع شد.")
+        await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:"))
+async def leader_selection_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) not in (3, 4) or not callback.from_user or not callback.message:
+        return
+    mode, key = parts[1], parts[2]
+    async with session_factory() as session:
+        game = await _load(session, key)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id)
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند سردست را انتخاب کند.", show_alert=True)
+            return
+        try:
+            leader_id = None if mode == "auto" else int(parts[3])
+            selected = await choose_leader(session, game, leader_id)
+            await start_round(session, game)
+            await session.refresh(game)
+            leader = await session.get(User, selected["leader_user_id"])
+            leader_name = tg_name(leader.display_name or leader.first_name or "بازیکن") if leader else "بازیکن"
+            msg = (
+                f"👑 سردست: {leader_name}\n\n"
+                "دور اول آغاز شد.\n"
+                "نوبت‌های صحبت فعال شدند."
+            )
+            await callback.message.edit_text(msg)
+            chat_id = await _group_chat_id(session, game)
+            if chat_id:
+                turn = await current_turn(session, game.id)
+                speaker = await session.get(User, int(turn["user_id"])) if turn else None
+                speaker_name = tg_name(speaker.display_name or speaker.first_name or "بازیکن") if speaker else "بازیکن"
+                roster = await _public_status_roster(session, game)
+                turn_msg = await callback.bot.send_message(
+                    chat_id,
+                    f"{roster}\n\n🗣 نوبت صحبت {speaker_name}\n\n"
+                    f"⏱ {_duration_text(_turn_duration(game, 'main'))} فرصت صحبت داری",
+                    reply_markup=_day_keyboard(game, True),
+                )
+                await _schedule_auto_next(callback.bot, game.game_key, chat_id, turn_msg.message_id)
+            await callback.answer("سردست انتخاب شد و دور شروع شد.")
+        except (ValueError, TypeError) as exc:
+            await callback.answer(str(exc), show_alert=True)
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("night:"))
 async def night_callback(callback: CallbackQuery):

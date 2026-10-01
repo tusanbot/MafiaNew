@@ -43,10 +43,20 @@ async def all_players(session, game_id: int):
     return list(result.all())
 
 async def start_match(session: AsyncSession, game: Game):
+    """Deal roles and enter the explicit setup phase.
+
+    Leader selection is deliberately a separate step.  The old implementation
+    jumped directly to NIGHT, which bypassed the configured leader/start-round
+    flow and made the first day inconsistent with later rounds.
+    """
+    if game.status != "waiting":
+        raise ValueError("بازی در وضعیت شروع نیست.")
     assignments = await assign_roles(session, game)
     game.status = "running"
-    game.phase = GameEnginePhase.NIGHT.value
+    game.phase = GameEnginePhase.SETUP.value
+    game.started_at = game.started_at or datetime.now(timezone.utc)
     await _event(session, game, "round_started", {"round_no": 1})
+    await _event(session, game, "setup_started", {"round_no": 1})
     await session.commit()
     return assignments
 
