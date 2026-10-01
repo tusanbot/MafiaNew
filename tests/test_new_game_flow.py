@@ -80,12 +80,6 @@ def test_host_callback_shape_matches_handler() -> None:
     assert int(parts[3]) == host_id
 
 def test_host_callback_shape_matches_handler() -> None:
-    group_id, host_id = 123, 456789
-    callback_data = f"newgame:sethost:{group_id}:{host_id}"
-    parts = callback_data.split(":")
-    assert len(parts) == 4
-    assert parts[0:2] == ["newgame", "sethost"]
-    assert int(parts[2]) == group_id
     assert int(parts[3]) == host_id
 
 
@@ -132,3 +126,21 @@ def test_main_menu_can_expose_admin_panel() -> None:
     from app.handlers.keyboards import main_menu
     callbacks = _callbacks(main_menu(show_admin=True))
     assert "menu:admin" in callbacks
+
+
+def test_gameplay_timing_defaults_are_persisted_on_models() -> None:
+    from app.db.models import Game, Scenario
+
+    game_defaults = {c.key: c.default.arg for c in Game.__table__.columns
+                     if c.key in {"turn_seconds", "challenge_seconds", "extra_challenge_seconds"}}
+    scenario_defaults = {c.key: c.default.arg for c in Scenario.__table__.columns
+                         if c.key in {"turn_seconds", "challenge_seconds", "extra_challenge_seconds"}}
+    assert game_defaults == {"turn_seconds": 120, "challenge_seconds": 60, "extra_challenge_seconds": 60}
+    assert scenario_defaults == {"turn_seconds": 120, "challenge_seconds": 60, "extra_challenge_seconds": 60}
+
+
+def test_leader_callback_shapes() -> None:
+    assert "leader:auto:abc123".split(":") == ["leader", "auto", "abc123"]
+    parts = "leader:select:abc123:456".split(":")
+    assert parts[:3] == ["leader", "select", "abc123"]
+    assert int(parts[3]) == 456
