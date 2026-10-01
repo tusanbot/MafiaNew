@@ -157,8 +157,10 @@ def game_features_menu(
     back_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    challenge_label = "آزاد" if challenge_mode == "free" and challenge_enabled else "محدود" if challenge_enabled else "غیرفعال"
+    challenge_mark = "🟢" if challenge_enabled else "⚪"
     builder.row(InlineKeyboardButton(
-        text=f"{'🟢' if challenge_enabled else '⚪'} چالش: {"آزاد" if challenge_mode == "free" else "محدود" if challenge_enabled else "غیرفعال"}",
+        text=f"{challenge_mark} چالش: {challenge_label}",
         callback_data=f"gameadmin:feature:{group_id}:challenge",
     ))
     builder.row(InlineKeyboardButton(
