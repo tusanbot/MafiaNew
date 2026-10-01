@@ -264,7 +264,16 @@ async def finalize_game(session, game, winner):
             elif role.team == "independent":
                 user.independent_wins += 1
     newly_earned = await record_game_result(session, game.id, winner)
-    await _event(session, game, "stats_recorded", {"winner": winner, "new_achievements": {str(k): [a.key for a in v] for k, v in newly_earned.items()}})
+    await _event(session, game, "stats_recorded", {
+        "winner": winner,
+        "reports": {
+            str(user_id): {
+                **{k: v for k, v in report.items() if k != "achievements"},
+                "achievements": [a.key for a in report.get("achievements", [])],
+            }
+            for user_id, report in newly_earned.items()
+        },
+    })
 
 
 def _scenario_challenge_mode(game) -> str:
