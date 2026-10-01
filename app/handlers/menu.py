@@ -484,8 +484,11 @@ async def player_target_action(callback: CallbackQuery) -> None:
             return
 
         if action == "replace":
-            if game.status != "waiting":
-                await callback.answer("جایگزینی فقط قبل از شروع بازی انجام می‌شود.", show_alert=True)
+            if game.status not in ("waiting", "running"):
+                await callback.answer("جایگزینی در این وضعیت بازی ممکن نیست.", show_alert=True)
+                return
+            if not target.alive:
+                await callback.answer("بازیکن مبدا باید زنده باشد.", show_alert=True)
                 return
             reserves = await GameRepository.reserves(session, game.id)
             await callback.message.edit_text(
@@ -623,7 +626,7 @@ async def player_replace_to(callback: CallbackQuery) -> None:
         group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
         game = await GameRepository.get_active(session, group.id) if group else None
         if not game or game.status != "waiting":
-            await callback.answer("جایگزینی فقط قبل از شروع بازی ممکن است.", show_alert=True)
+            await callback.answer("جایگزینی در این وضعیت بازی ممکن نیست.", show_alert=True)
             return
         source = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == source_id))).scalar_one_or_none()
         dest = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == dest_id))).scalar_one_or_none()
@@ -632,7 +635,6 @@ async def player_replace_to(callback: CallbackQuery) -> None:
             await callback.answer("بازیکن مبدا یا مقصد معتبر نیست.", show_alert=True)
             return
         seat = source.seat
-        role_id = source.role_id
         ok = await GameRepository.replace_player(session, game, source, dest)
         if not ok:
             await callback.answer("عملیات جایگزینی انجام نشد.", show_alert=True)
