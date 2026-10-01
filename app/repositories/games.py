@@ -17,10 +17,13 @@ class GameRepository:
 
     @staticmethod
     async def get_draft(session: AsyncSession, group_id: int, host_user_id: int | None = None) -> Game | None:
-        query = select(Game).where(Game.group_id == group_id, Game.status == "draft")
-        if host_user_id is not None:
-            query = query.where(Game.host_user_id == host_user_id)
-        result = await session.execute(query.order_by(Game.id.desc()))
+        # A draft belongs to the group, not to the current host selection.
+        # The host can be changed while configuring the same draft.
+        result = await session.execute(
+            select(Game)
+            .where(Game.group_id == group_id, Game.status == "draft")
+            .order_by(Game.id.desc())
+        )
         return result.scalars().first()
 
     @staticmethod
