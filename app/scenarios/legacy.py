@@ -57,3 +57,7 @@ S("classic_12","کلاسیک 12",("mason","cowboy","mafia_chief","doctor","sabot
 S("classic_13","کلاسیک 13",("mason","cowboy","mafia_chief","novice","doctor","saboteur","sniper","bartender","spy","priest","gunner","natasha","invulnerable")),
 )
 ROLE_DEFINITIONS=tuple(ROLES.values())
+
+
+def get_scenario(scenario_id: str) -> ScenarioDefinition | None:
+    return next((scenario for scenario in SCENARIOS if scenario.id == scenario_id), None)
