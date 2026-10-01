@@ -794,12 +794,16 @@ async def new_game_challenge_color(callback: CallbackQuery) -> None:
 async def _set_new_game_color(callback: CallbackQuery, kind: str) -> None:
     if not callback.message or not callback.from_user:
         return
-    parts = callback.data.split(":", 4)
-    if len(parts) != 5:
-        await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+    parts = callback.data.split(":", 3)
+    if len(parts) != 4 or parts[0] != "newgame" or parts[1] not in {"set_turn_color", "set_challenge_color"}:
+        await callback.answer("تنظیم رنگ نامعتبر است.", show_alert=True)
         return
-    group_id = int(parts[3])
-    value = parts[4]
+    _, _, group_raw, value = parts
+    try:
+        group_id = int(group_raw)
+    except ValueError:
+        await callback.answer("شناسه گروه نامعتبر است.", show_alert=True)
+        return
     allowed = {"پیش‌فرض", "قرمز", "آبی", "سبز", "زرد", "بنفش"}
     if value not in allowed:
         await callback.answer("رنگ نامعتبر است.", show_alert=True)
