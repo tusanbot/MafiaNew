@@ -320,7 +320,6 @@ def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🗳 رأی‌گیری", callback_data=f"day:vote:{game_key}"),
         InlineKeyboardButton(text="🌙 شروع فاز شب", callback_data=f"day:night:{game_key}"),
     )
-    builder.row(InlineKeyboardButton(text="🏁 اتمام بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
 
