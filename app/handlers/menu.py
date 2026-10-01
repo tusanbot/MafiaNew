@@ -1837,7 +1837,7 @@ async def scenario_create_start(callback: CallbackQuery, state: FSMContext) -> N
         return
     await state.clear()
     await state.set_state(ScenarioAdminState.name)
-    await state.update_data(mode="create", role_counts={})
+    await state.update_data(mode="create")
     await callback.message.edit_text("➕ ایجاد سناریو\n\nنام سناریو را ارسال کنید:")
     await callback.answer()
 
@@ -1900,8 +1900,8 @@ async def scenario_form_description(message: Message, state: FSMContext) -> None
     if value == "-" and data.get("edit_id"):
         value = data.get("current_description", "")
     await state.update_data(description=value)
-    await state.set_state(ScenarioAdminState.min_players)
-    await message.answer("حداقل تعداد بازیکنان را ارسال کنید:")
+    await state.set_state(ScenarioAdminState.turn_time)
+    await message.answer("زمان هر نوبت را وارد کنید (مثلاً 02:00 یا 120). پیش‌فرض: 02:00")
 
 @router.message(ScenarioAdminState.min_players)
 async def scenario_form_min(message: Message, state: FSMContext) -> None:
