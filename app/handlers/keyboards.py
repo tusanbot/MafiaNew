@@ -56,3 +56,15 @@ def continue_night_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
     return builder.as_markup()
+
+
+def challenge_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
+    return player_target_keyboard("challenge", game_key, players)
+
+def challenge_response_keyboard(game_key: str, event_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="پذیرش چالش", callback_data=f"challenge:accept:{game_key}:{event_id}"),
+        InlineKeyboardButton(text="رد چالش", callback_data=f"challenge:reject:{game_key}:{event_id}"),
+    )
+    return builder.as_markup()
