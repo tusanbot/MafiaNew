@@ -1010,8 +1010,11 @@ async def render_new_game_menu(session, group, user_id: int | None = None):
         "ایجاد بازی\n\n"
         f"سناریو: {scenario.name_fa if scenario else 'انتخاب نشده'}\n"
         f"گرداننده: {host.display_name if host else 'انتخاب نشده'}\n"
-        f"رزرو: {'فعال' if draft.reserve_enabled else 'غیرفعال'}\n"
-        f"بازی خودکار: {'فعال' if draft.auto_play else 'غیرفعال'}"
+        f"چالش: {'فعال' if draft.challenge_enabled else 'غیرفعال'}\n"
+        f"نکست گرداننده: {'فعال' if draft.next_host_enabled else 'غیرفعال'}\n"
+        f"نکست بازیکن: {'فعال' if draft.next_player_enabled else 'غیرفعال'}\n"
+        f"نکست خودکار: {'فعال' if draft.next_auto_enabled else 'غیرفعال'}\n"
+        f"بازی خودکار شب: {'فعال' if draft.auto_play else 'غیرفعال'}"
     )
 
 
@@ -1155,26 +1158,79 @@ async def new_game_settings(callback: CallbackQuery) -> None:
         draft = await _ensure_draft(session, group, callback.from_user.id)
         await callback.message.edit_text(
             "تنظیمات بازی",
-            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_settings_keyboard"]).new_game_settings_keyboard(group.id, draft.reserve_enabled if draft else True),
+            reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_settings_keyboard"]).new_game_settings_keyboard(
+                group.id,
+                draft.challenge_enabled if draft else True,
+                draft.next_host_enabled if draft else True,
+                draft.next_player_enabled if draft else True,
+                draft.next_auto_enabled if draft else False,
+            ),
         )
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_reserve:"))
-async def toggle_draft_reserve(callback: CallbackQuery) -> None:
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_challenge:"))
+async def toggle_draft_challenge(callback: CallbackQuery) -> None:
     group_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
         group = await _require_group_admin(callback, session, group_id)
-        if not group:
-            return
+        if not group: return
         draft = await _ensure_draft(session, group, callback.from_user.id)
-        if not draft:
-            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
-            return
-        draft.reserve_enabled = not draft.reserve_enabled
+        draft.challenge_enabled = not draft.challenge_enabled
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_settings_keyboard"]).new_game_settings_keyboard(group.id, draft.reserve_enabled))
-    await callback.answer()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
+            group.id, draft.challenge_enabled, draft.next_host_enabled,
+            draft.next_player_enabled, draft.next_auto_enabled))
+    await callback.answer("وضعیت چالش تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_host_next:"))
+async def toggle_draft_host_next(callback: CallbackQuery) -> None:
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group: return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        draft.next_host_enabled = not draft.next_host_enabled
+        await session.commit()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
+            group.id, draft.challenge_enabled, draft.next_host_enabled,
+            draft.next_player_enabled, draft.next_auto_enabled))
+    await callback.answer("نکست گرداننده تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_player_next:"))
+async def toggle_draft_player_next(callback: CallbackQuery) -> None:
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group: return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        draft.next_player_enabled = not draft.next_player_enabled
+        await session.commit()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
+            group.id, draft.challenge_enabled, draft.next_host_enabled,
+            draft.next_player_enabled, draft.next_auto_enabled))
+    await callback.answer("نکست بازیکن تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:toggle_auto_next:"))
+async def toggle_draft_auto_next(callback: CallbackQuery) -> None:
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group: return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        draft.next_auto_enabled = not draft.next_auto_enabled
+        await session.commit()
+        from app.handlers.keyboards import new_game_settings_keyboard
+        await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
+            group.id, draft.challenge_enabled, draft.next_host_enabled,
+            draft.next_player_enabled, draft.next_auto_enabled))
+    await callback.answer("نکست خودکار تغییر کرد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:extras:"))
