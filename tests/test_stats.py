@@ -1,4 +1,4 @@
-from app.services.stats import rank_for_score, ACHIEVEMENTS
+from app.services.stats import rank_for_score, rank_progress, performance_score, ACHIEVEMENTS
 
 
 def test_rank_progression():
@@ -26,3 +26,24 @@ def test_detailed_user_stats_columns_exist():
     } <= user_columns
     role_columns = {column.key for column in inspect(UserRoleStat).columns}
     assert {"games", "wins", "kills", "saves", "investigations", "investigation_hits"} <= role_columns
+
+
+def test_rank_progress():
+    assert rank_progress(0) == ("تازه‌وارد", 100, 100)
+    assert rank_progress(100) == ("بازیکن", 250, 150)
+    assert rank_progress(250) == ("بازیکن باتجربه", 500, 250)
+    assert rank_progress(500) == ("بازیکن حرفه‌ای", 1000, 500)
+    assert rank_progress(2500) == ("افسانه مافیا", None, 0)
+
+
+def test_performance_score_is_weighted_and_capped():
+    assert performance_score(
+        kills=1, saves=1, investigation_hits=1,
+        correct_votes=2, accepted_challenges=1,
+        faceoff_wins=1, survived=True,
+    ) == 30
+    assert performance_score(
+        kills=0, saves=0, investigation_hits=0,
+        correct_votes=0, accepted_challenges=0,
+        faceoff_wins=0, survived=True,
+    ) == 3
