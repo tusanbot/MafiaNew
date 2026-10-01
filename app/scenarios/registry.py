@@ -14,6 +14,10 @@ class ScenarioDefinition:
     min_players: int
     max_players: int
     roles: tuple[RoleDefinition, ...] = ()
+    challenge_mode: str = "limited"
+    challenge_limit: int | None = 1
+    role_keys: tuple[str, ...] = ()
+    settings: tuple[tuple[str, str], ...] = ()
 
 class ScenarioRegistry:
     def __init__(self) -> None:
