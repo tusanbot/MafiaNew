@@ -116,25 +116,6 @@ async def text_role(message: Message, state: FSMContext) -> None:
     await message.answer(f"🎭 نقش شما\n\nنقش: {role.name_fa}\nساید: {side}")
 
 
-@router.message(_exact("جایگزین"))
-async def text_reserve(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user or await state.get_state():
-        return
-    async with session_factory() as session:
-        game = await _active_game(session, message)
-        user = await _user(session, message)
-        if not game or game.status != "waiting":
-            await message.answer("در حال حاضر لابی بازی فعالی برای جایگزین وجود ندارد.")
-            return
-        player = await GameRepository.join_reserve(session, game, user)
-        if not player:
-            await message.answer("فعلاً امکان ثبت جایگزین وجود ندارد؛ یا ظرفیت اصلی هنوز تکمیل نشده است.")
-            return
-        name = tg_name(user.display_name or user.first_name or "بازیکن")
-        position = player.reserve_position
-    await message.answer(f"🔁 {name} در جایگاه جایگزین {position} ثبت شد.")
-
-
 @router.message(_exact("لابی"))
 async def text_lobby(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"} or await state.get_state():
