@@ -155,9 +155,9 @@ async def achievements_callback(callback: CallbackQuery) -> None:
     async with session_factory() as session:
         user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not user:
-            await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=main_menu())
+            await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=profile_menu())
         else:
-            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu())
+            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=profile_menu())
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:score")
