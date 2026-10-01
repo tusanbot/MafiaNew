@@ -1333,7 +1333,7 @@ async def new_game_create(callback: CallbackQuery) -> None:
         await session.commit()
         from app.handlers.keyboards import lobby_keyboard_v2
         text, _ = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, draft)
-        await callback.message.edit_text(text, reply_markup=lobby_keyboard_v2(draft.game_key, scenario, await GameRepository.players(session, draft.id), await GameRepository.reserves(session, draft.id), is_host=callback.from_user.id == host.telegram_id, can_deal=False, reserve_enabled=draft.reserve_enabled))
+        await callback.message.edit_text(text, reply_markup=lobby_keyboard_v2(draft.game_key, scenario, await GameRepository.players(session, draft.id), await GameRepository.reserves(session, draft.id), is_host=callback.from_user.id == host.telegram_id, can_deal=False, reserve_enabled=draft.reserve_enabled, training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url))
     await callback.answer("لابی بازی ایجاد شد.")
 
 
