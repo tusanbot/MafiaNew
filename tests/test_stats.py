@@ -22,7 +22,7 @@ def test_detailed_user_stats_columns_exist():
     assert {
         "kills", "saves", "investigations", "investigation_hits",
         "correct_votes", "challenges_accepted", "faceoffs", "faceoff_wins",
-        "kicks", "games_survived", "win_streak", "best_win_streak", "tags",
+        "kicks", "games_survived", "win_streak", "best_win_streak", "tags", "notify_game_result", "notify_achievements", "notify_rank_changes", "notify_challenges", "notify_turns",
     } <= user_columns
     role_columns = {column.key for column in inspect(UserRoleStat).columns}
     scenario_columns = {column.key for column in inspect(Scenario).columns}
