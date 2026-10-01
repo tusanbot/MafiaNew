@@ -127,7 +127,7 @@ async def role_messages(session: AsyncSession, game, assignments):
     group_list = header + "\n".join(list_lines) + "\n◤◢◣◥◤◢◣◥◤◢◣◥\n\n༄"
 
     player_messages = []
-    for seat, name, role_name, team in rows:
+    for seat, name, role_name, team, description, telegram_id in rows:
         explanation = description or "توضیح این نقش در سناریو ثبت نشده است."
         player_messages.append(
             (telegram_id,
