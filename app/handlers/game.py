@@ -8,6 +8,8 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import render_lobby, role_messages
 from app.services.roles import assign_roles
+from app.services.gameplay import choose_leader
+from app.handlers.keyboards import leader_selection_keyboard
 from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2
 
 router = Router(name="game")
@@ -213,7 +215,12 @@ async def deal_roles(callback: CallbackQuery) -> None:
             except Exception:
                 failed.append(telegram_id)
         try:
-            await callback.bot.send_message(host.telegram_id, group_list)
+            players_now = await GameRepository.players(session, game.id)
+            await callback.bot.send_message(
+                host.telegram_id,
+                group_list + "\n\n👑 انتخاب سردست\nسردست به‌صورت دستی یا خودکار انتخاب می‌شود:",
+                reply_markup=leader_selection_keyboard(game.game_key, players_now),
+            )
         except Exception:
             failed.append(host.telegram_id)
         failed = list(dict.fromkeys(failed))
@@ -225,6 +232,62 @@ async def deal_roles(callback: CallbackQuery) -> None:
             await callback.message.answer("نقش همه بازیکنان در PV ارسال شد.")
     await callback.answer("نقش‌ها پخش شدند.")
 
+
+@router.callback_query(lambda c: c.data and c.data.startswith("leader:"))
+async def leader_selection_handler(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) < 3 or not callback.from_user:
+        return
+    key = parts[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        if not game or game.status != "running" or game.phase != "setup":
+            await callback.answer("مرحله انتخاب سردست تمام شده است.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند سردست را انتخاب کند.", show_alert=True)
+            return
+        leader_id = None
+        if parts[1] == "manual":
+            if len(parts) != 4:
+                await callback.answer("انتخاب سردست نامعتبر است.", show_alert=True)
+                return
+            try:
+                leader_id = int(parts[3])
+            except ValueError:
+                await callback.answer("بازیکن نامعتبر است.", show_alert=True)
+                return
+        elif parts[1] != "auto":
+            await callback.answer("نوع انتخاب سردست نامعتبر است.", show_alert=True)
+            return
+        try:
+            result = await choose_leader(session, game, leader_id)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        leader = await session.get(User, result["leader_user_id"])
+        if group and leader:
+            players = await GameRepository.players(session, game.id)
+            names = []
+            for player, user in players:
+                marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
+                names.append(f"{marker} {player.seat:02d}. {user.display_name or user.first_name or 'بازیکن'}")
+            from app.handlers.keyboards import day_turn_keyboard
+            turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+            await callback.bot.send_message(
+                group.telegram_id,
+                f"👑 سردست: {leader.display_name or leader.first_name or 'بازیکن'}\n"
+                f"🎯 دور {result['round_no']} آغاز شد.\n\n"
+                f"👥 بازیکنان حاضر در بازی\n" + "\n".join(names),
+                reply_markup=day_turn_keyboard(
+                    game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                    game.turn_color, game.challenge_color, True,
+                    bool(turn and turn.get("kind") != "extra"),
+                ),
+            )
+        await callback.answer("سردست انتخاب شد و دور آغاز شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:lobby:"))
 async def lobby_game_management(callback: CallbackQuery) -> None:
