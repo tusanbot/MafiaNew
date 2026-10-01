@@ -76,14 +76,14 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
     now = datetime.now(ZoneInfo("Asia/Tehran"))
     jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
     lines = [
-        f"༄",
-        f"📓 بازی شماره : {game.id}",
+        "\u200f༄",
+        f"\u200f📓 بازی شماره : {game.id}",
         "",
-        f"⏱ زمان : {now:%H:%M}",
-        f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}",
-        f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}",
+        f"\u200f⏱ زمان : {now:%H:%M}",
+        f"\u200f📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}",
+        f"\u200f🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}",
         "",
-        f"بازیکنان اصلی : {len(players)}/{max_players}",
+        f"\u200fبازیکنان اصلی : {len(players)}/{max_players}",
         "",
     ]
     for seat in range(1, max_players + 1):
@@ -93,9 +93,9 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
             name = tg_name(user.display_name or user.first_name or str(user.telegram_id))
             lines.append(f'{seat:02d}. <a href="tg://user?id={user.telegram_id}">{name}</a>')
         else:
-            lines.append(f"{seat:02d}. — خالی —")
+            lines.append(f"\u200f{seat:02d}. — خالی —")
     if reserves:
-        lines.extend(["", "لیست رزرو:"])
+        lines.extend(["", "\u200fلیست رزرو:"])
         for p, u in reserves:
             name = tg_name(u.display_name or u.first_name or str(u.telegram_id))
             lines.append(f'{p.reserve_position}. <a href="tg://user?id={u.telegram_id}">{name}</a>')
