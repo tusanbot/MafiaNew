@@ -750,3 +750,37 @@ async def group_start_history(callback: CallbackQuery) -> None:
             return
         await callback.message.edit_text(await game_history_text(session, group), reply_markup=__import__("app.handlers.keyboards", fromlist=["group_start_menu"]).group_start_menu(group.id))
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:turn_color:"))
+async def draft_turn_color(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    colors = ["پیش‌فرض", "سبز", "آبی", "بنفش", "قرمز", "طلایی"]
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        draft.turn_color = colors[(colors.index(draft.turn_color) + 1) % len(colors)] if draft.turn_color in colors else colors[0]
+        await session.commit()
+        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
+    await callback.answer("رنگ نوبت تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:challenge_color:"))
+async def draft_challenge_color(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    colors = ["پیش‌فرض", "سبز", "آبی", "بنفش", "قرمز", "طلایی"]
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        draft.challenge_color = colors[(colors.index(draft.challenge_color) + 1) % len(colors)] if draft.challenge_color in colors else colors[0]
+        await session.commit()
+        await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
+    await callback.answer("رنگ چالش تغییر کرد.")
