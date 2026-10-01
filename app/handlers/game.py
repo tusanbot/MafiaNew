@@ -8,7 +8,7 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import render_lobby, role_messages
 from app.services.roles import assign_roles
-from app.handlers.keyboards import lobby_keyboard_v2
+from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2
 
 router = Router(name="game")
 
@@ -35,6 +35,35 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
             reserve_enabled=game.reserve_enabled,
         ),
     )
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("groupadmin:lobby:"))
+async def group_management_from_lobby(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    game_key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, game_key)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        if not group:
+            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
+            return
+        try:
+            member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+            if member.status not in ("creator", "administrator"):
+                await callback.answer("فقط مدیر گروه می‌تواند وارد مدیریت گروه شود.", show_alert=True)
+                return
+        except Exception:
+            await callback.answer("دسترسی مدیریت گروه تأیید نشد.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            f"مدیریت گروه «{group.title or group.telegram_id}»\n\nبخش موردنظر را انتخاب کنید.",
+            reply_markup=group_management_menu(f"groupadmin:lobby:{game.game_key}"),
+        )
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("game:join:"))
