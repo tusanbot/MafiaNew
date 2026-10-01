@@ -31,10 +31,31 @@ def gregorian_to_jalali(year: int, month: int, day: int) -> tuple[int, int, int]
     return jy, jm, jd
 
 
-async def create_game(session: AsyncSession, group, scenario: Scenario, host: User, status: str = "waiting", **settings):
+async def create_game(
+    session: AsyncSession,
+    group,
+    scenario: Scenario,
+    host: User,
+    status: str = "waiting",
+    *,
+    auto_play: bool = False,
+    turn_color: str = "پیش‌فرض",
+    challenge_color: str = "پیش‌فرض",
+    reserve_enabled: bool = True,
+):
     key = uuid4().hex[:12]
-    from app.repositories.games import GameRepository
-    return await GameRepository.create(session, group, scenario, host, key, status=status, **settings)
+    return await GameRepository.create(
+        session,
+        group,
+        scenario,
+        host,
+        key,
+        status=status,
+        auto_play=auto_play,
+        turn_color=turn_color,
+        challenge_color=challenge_color,
+        reserve_enabled=reserve_enabled,
+    )
 
 
 async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
