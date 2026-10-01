@@ -34,8 +34,14 @@ RANKS = (
 async def ensure_achievements(session: AsyncSession) -> None:
     existing = {x.key: x for x in (await session.execute(select(Achievement))).scalars().all()}
     for key, name, desc, icon, points in ACHIEVEMENTS:
-        if key not in existing:
+        achievement = existing.get(key)
+        if achievement is None:
             session.add(Achievement(key=key, name_fa=name, description=desc, icon=icon, points=points))
+        else:
+            achievement.name_fa = name
+            achievement.description = desc
+            achievement.icon = icon
+            achievement.points = points
     await session.flush()
 
 
