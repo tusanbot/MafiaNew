@@ -285,9 +285,11 @@ def scenario_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def player_target_keyboard(prefix: str, game_key: str, players) -> InlineKeyboardMarkup:
+def player_target_keyboard(prefix: str, game_key: str, players, exclude_user_id: int | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for player, user, *rest in players:
+        if exclude_user_id is not None and user.id == exclude_user_id:
+            continue
         builder.row(InlineKeyboardButton(
             text=f"{player.seat}. {user.display_name or user.first_name}",
             callback_data=f"{prefix}:{game_key}:{user.id}",
@@ -295,8 +297,14 @@ def player_target_keyboard(prefix: str, game_key: str, players) -> InlineKeyboar
     return builder.as_markup()
 
 
-def night_action_keyboard(game_key: str, action_type: str, players) -> InlineKeyboardMarkup:
-    return player_target_keyboard(f"night:{action_type}", game_key, players)
+def night_action_keyboard(
+    game_key: str,
+    action_type: str,
+    players,
+    actor_user_id: int | None = None,
+) -> InlineKeyboardMarkup:
+    exclude = actor_user_id if action_type == "mafia_kill" else None
+    return player_target_keyboard(f"night:{action_type}", game_key, players, exclude_user_id=exclude)
 
 
 def vote_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
