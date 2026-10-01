@@ -21,13 +21,13 @@ class GameRepository:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str, **settings) -> Game:
+    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str, status: str = "waiting", **settings) -> Game:
         game = Game(
             game_key=game_key,
             group_id=group.id,
             scenario_id=scenario.id,
             host_user_id=host.id,
-            status="waiting",
+            status=status,
             phase="lobby",
             auto_play=bool(settings.get("auto_play", False)),
             turn_color=settings.get("turn_color", "پیش‌فرض"),
