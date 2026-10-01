@@ -119,6 +119,37 @@ def _player_label(player, user, emojis: dict) -> str:
     return f"{' '.join(marks)} {name}".strip()
 
 
+async def _public_status_roster(session, game) -> str:
+    rows = await __import__("app.services.gameplay", fromlist=["all_players"]).all_players(session, game.id)
+    emojis = _emoji_settings(game)
+    lines = ["👥 لیست بازیکنان حاضر در بازی", ""]
+    for player, user, _role in rows:
+        name = tg_name(user.display_name or user.first_name or user.username or "بازیکن")
+        if player.is_reserved:
+            continue
+        marks = []
+        if player.alive:
+            if player.silence_until_round is not None and emojis.get("silence", True):
+                marks.append("🔇")
+            if player.extra_turn_round is not None and emojis.get("extra_turn", True):
+                marks.append("➕")
+            if player.warning_count and emojis.get("warning", True):
+                marks.append(f"⚠️{player.warning_count}")
+            state = "زنده"
+        else:
+            if player.exit_type == "death" and emojis.get("death", True):
+                marks.append("💀")
+            elif player.exit_type == "kick" and emojis.get("kick", True):
+                marks.append("⛔")
+            elif player.exit_type == "slaughter" and emojis.get("slaughter", True):
+                marks.append("🩸")
+            # Face-off is deliberately never exposed in the public roster.
+            state = "حذف‌شده"
+        marker = " ".join(marks)
+        lines.append(f"{player.seat:02d}. {marker} {name} — {state}".strip())
+    return "\n".join(lines)
+
+
 @router.callback_query(lambda c: c.data == "menu:admin")
 async def menu_admin(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -621,8 +652,12 @@ async def player_target_action(callback: CallbackQuery) -> None:
         else:
             round_no = await current_round(session, game.id)
             if action == "silence":
-                target.silence_until_round = round_no
-                event_type, message = "silence", "بازیکن تا پایان این دور سکوت شد."
+                event_type, message = "silence", "بازیکن برای شروع روز بعد ساکت شد و وضعیت در لیست روز اعمال می‌شود."
+                if game.phase == "night":
+                    from app.services.gameplay import queue_pending_status_action
+                    await queue_pending_status_action(session, game, "silence", target_id, round_no, actor.id if actor else None)
+                else:
+                    target.silence_until_round = round_no
             elif action == "extra_turn":
                 target.extra_turn_round = round_no
                 queue_event = (await session.execute(
@@ -638,11 +673,27 @@ async def player_target_action(callback: CallbackQuery) -> None:
                     queue_event.payload = json.dumps(queue_data, ensure_ascii=False)
                 event_type, message = "extra_turn_granted", "ترن اضافه برای پایان این دور ثبت شد."
             elif action == "kick":
-                target.alive, target.exit_type = False, "kick"
-                event_type, message = "player_kicked", "بازیکن کیک شد و امکان تولد ندارد."
+                event_type, message = "player_kicked", (
+                    "بازیکن کیک شد و امکان تولد ندارد."
+                    if game.phase != "night"
+                    else "کیک برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
+                )
+                if game.phase == "night":
+                    from app.services.gameplay import queue_pending_status_action
+                    await queue_pending_status_action(session, game, "kick", target_id, round_no, actor.id if actor else None)
+                else:
+                    target.alive, target.exit_type = False, "kick"
             elif action == "slaughter":
-                target.alive, target.exit_type = False, "slaughter"
-                event_type, message = "slaughter", "بازیکن سلاخی شد و امکان تولد ندارد."
+                event_type, message = "slaughter", (
+                    "بازیکن سلاخی شد و امکان تولد ندارد."
+                    if game.phase != "night"
+                    else "سلاخی برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
+                )
+                if game.phase == "night":
+                    from app.services.gameplay import queue_pending_status_action
+                    await queue_pending_status_action(session, game, "slaughter", target_id, round_no, actor.id if actor else None)
+                else:
+                    target.alive, target.exit_type = False, "slaughter"
             elif action == "faceoff":
                 await callback.message.edit_text(
                     f"بازیکن مبدا: {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن مقصد را انتخاب کنید:",
@@ -653,20 +704,30 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 await callback.answer()
                 return
             elif action == "warning":
-                target.warning_count += 1
-                penalty = min(target.warning_count, 5)
-                target_user.score -= penalty
-                event_type, message = "warning", f"تذکر {target.warning_count} ثبت شد؛ {penalty}- امتیاز."
-                if target.warning_count >= 3:
-                    target_vote = {"vote_blocked": True}
-                    if game.auto_silence_warnings and target.warning_count >= 4:
-                        target.silence_until_round = round_no + 1
-                        target_vote["auto_silence"] = True
-                    if game.auto_kick_warnings and target.warning_count >= 5:
-                        target.alive, target.exit_type = False, "kick"
-                        target_vote["auto_kick"] = True
+                if game.phase == "night":
+                    from app.services.gameplay import queue_pending_status_action
+                    next_warning = target.warning_count + 1
+                    await queue_pending_status_action(
+                        session, game, "warning", target_id, round_no,
+                        actor.id if actor else None, warning_count=next_warning,
+                    )
+                    event_type, message = "warning", "تذکر برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
+                    target_vote = {"pending": True}
                 else:
-                    target_vote = {}
+                    target.warning_count += 1
+                    penalty = min(target.warning_count, 5)
+                    target_user.score -= penalty
+                    event_type, message = "warning", f"تذکر {target.warning_count} ثبت شد؛ {penalty}- امتیاز."
+                    if target.warning_count >= 3:
+                        target_vote = {"vote_blocked": True}
+                        if game.auto_silence_warnings and target.warning_count >= 4:
+                            target.silence_until_round = round_no + 1
+                            target_vote["auto_silence"] = True
+                        if game.auto_kick_warnings and target.warning_count >= 5:
+                            target.alive, target.exit_type = False, "kick"
+                            target_vote["auto_kick"] = True
+                    else:
+                        target_vote = {}
             else:
                 await callback.answer("عملیات نامعتبر است.", show_alert=True)
                 return
@@ -675,6 +736,14 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 payload.update(target_vote)
             session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False)))
             await session.commit()
+            if game.phase in {"day", "voting"} and action in {"silence", "kick", "slaughter", "warning"}:
+                try:
+                    await callback.bot.send_message(
+                        group.telegram_id,
+                        await _public_status_roster(session, game),
+                    )
+                except Exception:
+                    pass
         game_winner = None
         if action in {"remove", "kick", "slaughter", "birthday"} and game.status == "running":
             from app.services.gameplay import check_winner, finalize_game
@@ -726,10 +795,6 @@ async def faceoff_to(callback: CallbackQuery) -> None:
             await finalize_game(session, game, game_winner)
             await session.commit()
         source_user, dest_user = await session.get(User, source_id), await session.get(User, dest_id)
-        await callback.bot.send_message(
-            group.telegram_id,
-            f"فیس‌آف انجام شد: نقش {tg_name(source_user.display_name or source_user.first_name)} و {tg_name(dest_user.display_name or dest_user.first_name)} جابه‌جا شد."
-        )
         if game_winner:
             label = {"mafia": "مافیا", "citizen": "شهروند"}.get(game_winner, game_winner)
             await callback.bot.send_message(group.telegram_id, f"🏁 بازی به پایان رسید. برنده: {label}")
