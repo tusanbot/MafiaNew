@@ -84,9 +84,10 @@ async def role_messages(session: AsyncSession, game, assignments):
     scenario_name = scenario.name_fa if scenario else "نامشخص"
     host_name = host.display_name if host else "نامشخص"
 
+    team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
     rows = []
     for player, role, user in assignments:
-        rows.append((player.seat, user.display_name or user.first_name or "بازیکن", role.name_fa, role.team))
+        rows.append((player.seat, user.display_name or user.first_name or "بازیکن", role.name_fa, team_names.get(role.team, role.team), role.description, user.telegram_id))
 
     header = (
         f"༄\n"
@@ -99,18 +100,15 @@ async def role_messages(session: AsyncSession, game, assignments):
         f"◤◢◣◥◤◢◣◥◤◢◣◥\n"
     )
     list_lines = []
-    for seat, name, role_name, team in rows:
+    for seat, name, role_name, team, description, telegram_id in rows:
         list_lines.append(f"{seat:02d} {name} — {role_name} — {team}")
     group_list = header + "\n".join(list_lines) + "\n◤◢◣◥◤◢◣◥◤◢◣◥\n\n༄"
 
     player_messages = []
     for seat, name, role_name, team in rows:
-        explanation = next(
-            (role.description for _, role, user in assignments if user.display_name == name and role.name_fa == role_name),
-            "توضیح این نقش در سناریو ثبت نشده است.",
-        )
+        explanation = description or "توضیح این نقش در سناریو ثبت نشده است."
         player_messages.append(
-            (next(user.telegram_id for player, role, user in assignments if player.seat == seat),
+            (telegram_id,
              f"༄\n"
              f"📓 بازی شماره : {game.id}\n\n"
              f"⏱ زمان : {now:%H:%M}\n"
