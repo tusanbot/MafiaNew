@@ -3,7 +3,7 @@ from aiogram.types import CallbackQuery
 from sqlalchemy import desc, func, select
 import json
 
-from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Scenario, User
+from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, Scenario, User, Vote
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
@@ -602,6 +602,109 @@ async def player_replace_to(callback: CallbackQuery) -> None:
         await callback.bot.send_message(chat_id, f"جایگزینی انجام شد: {source_user.display_name or source_user.first_name} ← {dest_user.display_name or dest_user.first_name}\nصندلی: {seat}")
         await callback.message.edit_text("جایگزینی با موفقیت انجام شد.", reply_markup=player_management_menu(group.id))
     await callback.answer("جایگزینی انجام شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:cancel_confirm:"))
+async def cancel_game_confirm(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        await session.execute(Vote.__table__.delete().where(Vote.game_id == game.id))
+        await session.execute(GameEvent.__table__.delete().where(GameEvent.game_id == game.id))
+        await session.execute(GamePlayer.__table__.delete().where(GamePlayer.game_id == game.id))
+        await session.delete(game)
+        await session.commit()
+        await callback.message.edit_text("بازی به‌طور کامل لغو و اطلاعات آن پاک شد.", reply_markup=group_game_menu(group.id))
+    await callback.answer("بازی لغو شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:finish_result:"))
+async def finish_game_result(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("نتیجه نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, winner = parts
+    group_id = int(group_raw)
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game or game.status != "running":
+            await callback.answer("بازی در حال اجرا پیدا نشد.", show_alert=True)
+            return
+        from app.services.gameplay import finalize_game
+        try:
+            await finalize_game(session, game, winner)
+            await session.commit()
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        rows = await session.execute(
+            select(GamePlayer, User, Role)
+            .outerjoin(Role, Role.id == GamePlayer.role_id)
+            .join(User, User.id == GamePlayer.user_id)
+            .where(GamePlayer.game_id == game.id)
+            .order_by(GamePlayer.seat)
+        )
+        labels = {"citizen": "برد شهروند", "mafia": "برد مافیا", "independent": "برد مستقل", "citizen_independent": "برد شهروند/مستقل", "draw": "مساوی"}
+        lines = [f"پایان بازی — {labels.get(winner, winner)}", ""]
+        for player, user, role in rows.all():
+            state = "زنده" if player.alive else player.exit_type or "حذف‌شده"
+            lines.append(f"{player.seat}. {user.display_name or user.first_name} — {role.name_fa if role else 'بدون نقش'} — {state}")
+        await callback.message.edit_text("\n".join(lines), reply_markup=group_game_menu(group.id))
+    await callback.answer("نتیجه بازی ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:emoji:"))
+async def emoji_management(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        from app.handlers.keyboards import emoji_management_menu
+        await callback.message.edit_text("مدیریت اموجی‌های وضعیت بازیکنان و بازی", reply_markup=emoji_management_menu(group.id, _emoji_settings(game)))
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:emoji_toggle:"))
+async def emoji_toggle(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("تنظیم اموجی نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, key = parts
+    group_id = int(group_raw)
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        settings = _emoji_settings(game)
+        if key not in settings:
+            await callback.answer("اموجی نامعتبر است.", show_alert=True)
+            return
+        settings[key] = not settings[key]
+        game.emoji_settings = json.dumps(settings, ensure_ascii=False)
+        await session.commit()
+        from app.handlers.keyboards import emoji_management_menu
+        await callback.message.edit_text("مدیریت اموجی‌های وضعیت بازیکنان و بازی", reply_markup=emoji_management_menu(group.id, settings))
+    await callback.answer("تنظیم اموجی ذخیره شد.")
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:feature:"))
