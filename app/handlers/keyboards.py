@@ -446,6 +446,7 @@ def new_game_settings_keyboard(
     next_host_enabled: bool = True,
     next_player_enabled: bool = True,
     next_auto_enabled: bool = False,
+    auto_play: bool = False,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
@@ -466,9 +467,12 @@ def new_game_settings_keyboard(
         text=f"⏱ نکست خودکار: {'فعال' if next_auto_enabled else 'غیرفعال'}",
         callback_data=f"newgame:toggle_auto_next:{group_id}",
     ))
+    builder.row(InlineKeyboardButton(
+        text=f"🤖 بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
+        callback_data=f"newgame:toggle_auto:{group_id}",
+    ))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
-
 
 def new_game_color_keyboard(group_id: int, kind: str, current: str = "پیش‌فرض") -> InlineKeyboardMarkup:
     options = ("پیش‌فرض", "قرمز", "آبی", "سبز", "زرد", "بنفش")
@@ -487,32 +491,25 @@ def new_game_color_keyboard(group_id: int, kind: str, current: str = "پیش‌�
 
 def new_game_extras_keyboard(
     group_id: int,
-    auto_play: bool = False,
     turn_color: str = "پیش‌فرض",
     challenge_color: str = "پیش‌فرض",
+    emoji_enabled: bool = True,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(
-            text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
-            callback_data=f"newgame:toggle_auto:{group_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=f"رنگ نوبت: {turn_color}",
-            callback_data=f"newgame:turn_color:{group_id}",
-        )
-    )
-    builder.row(
-        InlineKeyboardButton(
-            text=f"رنگ چالش: {challenge_color}",
-            callback_data=f"newgame:challenge_color:{group_id}",
-        )
-    )
+    builder.row(InlineKeyboardButton(
+        text=f"🎨 رنگ نوبت: {turn_color}",
+        callback_data=f"newgame:turn_color:{group_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"⚔️ رنگ چالش: {challenge_color}",
+        callback_data=f"newgame:challenge_color:{group_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🙂 اموجی: {'فعال' if emoji_enabled else 'غیرفعال'}",
+        callback_data=f"newgame:toggle_emoji:{group_id}",
+    ))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
-
 
 def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True, training_url: str | None = None, telegram_training_url: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
