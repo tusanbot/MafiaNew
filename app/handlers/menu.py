@@ -1417,6 +1417,9 @@ async def new_game_settings(callback: CallbackQuery) -> None:
                 draft.next_player_enabled if draft else True,
                 draft.next_auto_enabled if draft else False,
                 draft.auto_play if draft else False,
+                draft.turn_seconds if draft else 120,
+                draft.challenge_seconds if draft else 60,
+                draft.extra_challenge_seconds if draft else 60,
             ),
         )
     await callback.answer()
@@ -1434,7 +1437,7 @@ async def toggle_draft_challenge(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play, draft.turn_seconds, draft.challenge_seconds, draft.extra_challenge_seconds))
     await callback.answer("وضعیت چالش تغییر کرد.")
 
 
