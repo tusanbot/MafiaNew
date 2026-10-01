@@ -198,7 +198,6 @@ def emoji_management_menu(group_id: int, settings: dict, back_callback: str | No
     labels = {
         "death": "مرگ",
         "kick": "کیک",
-        "faceoff": "فیس آف",
         "slaughter": "سلاخی",
         "challenge": "چالش",
         "silence": "سکوت",
@@ -521,6 +520,9 @@ def new_game_settings_keyboard(
     next_player_enabled: bool = True,
     next_auto_enabled: bool = False,
     auto_play: bool = False,
+    turn_seconds: int = 120,
+    challenge_seconds: int = 60,
+    extra_challenge_seconds: int = 60,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
@@ -545,7 +547,27 @@ def new_game_settings_keyboard(
         text=f"🤖 بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
         callback_data=f"newgame:toggle_auto:{group_id}",
     ))
+    builder.row(
+        InlineKeyboardButton(text=f"🗣 نوبت: {turn_seconds // 60:02d}:{turn_seconds % 60:02d}", callback_data=f"newgame:time:{group_id}:turn"),
+        InlineKeyboardButton(text=f"⚔️ چالش: {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"newgame:time:{group_id}:challenge"),
+    )
+    builder.row(InlineKeyboardButton(
+        text=f"➕ چالش اضافه: {extra_challenge_seconds // 60:02d}:{extra_challenge_seconds % 60:02d}",
+        callback_data=f"newgame:time:{group_id}:extra_challenge",
+    ))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+    return builder.as_markup()
+
+def duration_keyboard(prefix: str, group_id: int, kind: str, current: int, back_callback: str) -> InlineKeyboardMarkup:
+    options = (30, 60, 90, 120, 180, 240, 300)
+    builder = InlineKeyboardBuilder()
+    for value in options:
+        marker = "✓ " if value == current else ""
+        builder.row(InlineKeyboardButton(
+            text=f"{marker}{value // 60:02d}:{value % 60:02d}",
+            callback_data=f"{prefix}:set_time:{group_id}:{kind}:{value}",
+        ))
+    _back(builder, back_callback)
     return builder.as_markup()
 
 def new_game_color_keyboard(group_id: int, kind: str, current: str = "پیش‌فرض") -> InlineKeyboardMarkup:
