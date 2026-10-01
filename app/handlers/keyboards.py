@@ -238,9 +238,11 @@ def group_start_menu(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def registration_keyboard(chat_id: int) -> InlineKeyboardMarkup:
+def registration_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="ثبت گروه در ربات", callback_data=f"groupreg:register:{chat_id}"))
+    # The callback message itself is the authoritative Telegram chat.
+    # Never embed groups.id or any other internal identifier in this callback.
+    builder.row(InlineKeyboardButton(text="ثبت گروه در ربات", callback_data="groupreg:register"))
     return builder.as_markup()
 
 
