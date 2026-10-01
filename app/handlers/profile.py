@@ -7,7 +7,7 @@ from app.db.models import User
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu
 from app.services.profile import sync_telegram_user
-from app.services.stats import leaderboard, rank_for_score, user_achievements
+from app.services.stats import achievement_progress, leaderboard, rank_for_score, user_achievements
 from app.utils.text import tg_name
 
 router = Router(name="profile")
@@ -92,6 +92,17 @@ async def ranking_callback(callback: CallbackQuery) -> None:
         await _render_ranking(callback, session, kind)
     await callback.answer()
 
+async def _achievements_text(session, user: User) -> str:
+    rows = await achievement_progress(session, user)
+    lines = ["🏅 دستاوردها", f"تعداد کسب‌شده: {user.achievements_count}", ""]
+    for achievement, earned, current, target in rows:
+        if earned:
+            lines.append(f"{achievement.icon} {achievement.name_fa}  ✓  +{achievement.points}")
+        else:
+            progress = f"{current}/{target}" if target is not None else str(current)
+            lines.append(f"🔒 {achievement.name_fa}  —  {progress}\n   {achievement.description}")
+    return "\n".join(lines)
+
 @router.message(Command("achievements"))
 async def achievements_command(message: Message) -> None:
     if message.chat.type != "private" or not message.from_user:
@@ -101,11 +112,7 @@ async def achievements_command(message: Message) -> None:
         if not user:
             await message.answer("هنوز پروفایلی برای شما ثبت نشده است.")
             return
-        achievements = await user_achievements(session, user.id)
-        if not achievements:
-            await message.answer("🏅 هنوز دستاوردی کسب نکرده‌اید.")
-            return
-        await message.answer("🏅 دستاوردهای شما\n\n" + "\n".join(f"{a.icon} {a.name_fa} — +{a.points}" for a in achievements))
+        await message.answer(await _achievements_text(session, user), reply_markup=main_menu())
 
 @router.callback_query(lambda c: c.data == "profile:achievements")
 async def achievements_callback(callback: CallbackQuery) -> None:
@@ -113,7 +120,8 @@ async def achievements_callback(callback: CallbackQuery) -> None:
         return
     async with session_factory() as session:
         user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        achievements = await user_achievements(session, user.id) if user else []
-        text = "🏅 دستاوردهای شما\n\n" + ("\n".join(f"{a.icon} {a.name_fa} — +{a.points}\n{a.description}" for a in achievements) if achievements else "هنوز دستاوردی کسب نکرده‌اید.")
-        await callback.message.edit_text(text, reply_markup=main_menu())
+        if not user:
+            await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=main_menu())
+        else:
+            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu())
     await callback.answer()
