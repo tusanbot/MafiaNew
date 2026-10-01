@@ -1,4 +1,5 @@
 from datetime import datetime
+from html import escape
 from zoneinfo import ZoneInfo
 from uuid import uuid4
 
@@ -82,13 +83,15 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
         item = next(((p, u) for p, u in players if p.seat == seat), None)
         if item:
             _, user = item
-            lines.append(f"{seat:02d}. {user.display_name or user.first_name or user.telegram_id}")
+            name = escape(user.display_name or user.first_name or str(user.telegram_id))
+            lines.append(f'{seat:02d}. <a href="tg://user?id={user.telegram_id}">{name}</a>')
         else:
             lines.append(f"{seat:02d}. — خالی —")
     if reserves:
         lines.extend(["", "لیست رزرو:"])
         for p, u in reserves:
-            lines.append(f"{p.reserve_position}. {u.display_name or u.first_name or u.telegram_id}")
+            name = escape(u.display_name or u.first_name or str(u.telegram_id))
+            lines.append(f'{p.reserve_position}. <a href="tg://user?id={u.telegram_id}">{name}</a>')
     lines.extend([
         "",
         f"حداقل نفرات شروع: {min_players}",
@@ -123,7 +126,7 @@ async def role_messages(session: AsyncSession, game, assignments):
     )
     list_lines = []
     for seat, name, role_name, team, description, telegram_id in rows:
-        list_lines.append(f"{seat:02d} **{name}** — {role_name} --------- {team}")
+        list_lines.append(f'<a href="tg://user?id={telegram_id}">{escape(name)}</a> — {escape(role_name)} --------- {escape(team)}')
     group_list = header + "\n".join(list_lines) + "\n◤◢◣◥◤◢◣◥◤◢◣◥\n\n༄"
 
     player_messages = []
