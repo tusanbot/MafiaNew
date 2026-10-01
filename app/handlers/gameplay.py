@@ -2,13 +2,11 @@ from aiogram import Router
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
 
-from app.db.models import Game, Group, Role, User
+from app.db.models import Game, Group, User, Scenario
 from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.services.gameplay import (
     alive_players,
-    all_players,
-    check_winner,
     current_round,
     resolve_night,
     start_match,
@@ -17,7 +15,6 @@ from app.services.gameplay import (
     submit_vote,
 )
 from app.handlers.keyboards import (
-    continue_night_keyboard,
     day_keyboard,
     night_action_keyboard,
     vote_keyboard,
@@ -41,7 +38,7 @@ async def _send_night_menus(bot, session, game):
         try:
             await bot.send_message(
                 user.telegram_id,
-                f"شب بازی {game.game_key}نقش: {role.name_fa}اقدام خود را انتخاب کن:",
+                f"شب بازی {game.game_key}\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
                 reply_markup=night_action_keyboard(game.game_key, action, players),
             )
         except Exception:
@@ -62,7 +59,6 @@ async def start_match_handler(callback: CallbackQuery):
             await callback.answer("فقط سازنده بازی می‌تواند شروع کند.", show_alert=True)
             return
         players = await GameRepository.players(session, game.id)
-        from app.db.models import Scenario
         scenario = await session.get(Scenario, game.scenario_id)
         if not scenario or len(players) < scenario.min_players:
             await callback.answer("تعداد بازیکنان کافی نیست.", show_alert=True)
@@ -73,14 +69,14 @@ async def start_match_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         await callback.message.edit_text(
-            f"بازی {game.game_key} شروع شد.سناریو: {scenario.name_fa}بازیکنان: {len(assignments)}"
+            f"بازی {game.game_key} شروع شد.\nسناریو: {scenario.name_fa}\nبازیکنان: {len(assignments)}"
             "نقش‌ها خصوصی ارسال شدند. شب اول آغاز شد."
         )
         for _, role, user in assignments:
             try:
                 await callback.bot.send_message(
                     user.telegram_id,
-                    f"نقش شما در بازی {game.game_key}نقش: {role.name_fa}تیم: {role.team}{role.description}",
+                    f"نقش شما در بازی {game.game_key}\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
                 )
             except Exception:
                 pass
@@ -154,7 +150,7 @@ async def day_vote_handler(callback: CallbackQuery):
             return
         players = await alive_players(session, game.id)
         await callback.message.edit_text(
-            f"رأی‌گیری دور {await __import__('app.services.gameplay', fromlist=['current_round']).current_round(session, game.id)}هدف را انتخاب کنید:",
+            f"رأی‌گیری دور {await current_round(session, game.id)}\n\nهدف را انتخاب کنید:",
             reply_markup=vote_keyboard(game.game_key, players),
         )
         await callback.answer("رأی‌گیری شروع شد.")
@@ -187,6 +183,6 @@ async def vote_handler(callback: CallbackQuery):
                 text = f"رأی‌گیری تمام شد. {result['eliminated'].display_name} حذف شد."
             else:
                 text = "رأی‌گیری مساوی شد و کسی حذف نشد."
-            await callback.message.edit_text(text + "شب بعد آغاز شد.")
+            await callback.message.edit_text(text + "\n\nشب بعد آغاز شد.")
             await _send_night_menus(callback.bot, session, game)
         await callback.answer("رأی ثبت شد.")
