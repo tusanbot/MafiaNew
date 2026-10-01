@@ -547,10 +547,17 @@ async def day_finish_handler(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
     async with session_factory() as session:
         game = await _load(session, key)
-        if not game:
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند رأی‌گیری را شروع کند.", show_alert=True)
             return
         try:
             await start_voting(session, game)
@@ -559,7 +566,7 @@ async def day_vote_handler(callback: CallbackQuery):
             return
         players = await alive_players(session, game.id)
         await callback.message.edit_text(
-            f"رأی‌گیری دور {await current_round(session, game.id)}\n\nهدف را انتخاب کنید:",
+            f"🗳 رأی‌گیری دور {await current_round(session, game.id)}\n\nهر بازیکن زنده یک رأی دارد. هدف را انتخاب کنید:",
             reply_markup=vote_keyboard(game.game_key, players),
         )
         await callback.answer("رأی‌گیری شروع شد.")
@@ -585,15 +592,35 @@ async def vote_handler(callback: CallbackQuery):
         if not result["resolved"]:
             await callback.answer("رأی شما ثبت شد.")
             return
+
         if result["winner"]:
+            winner_label = {
+                "mafia": "مافیا",
+                "citizen": "شهروند",
+                "independent": "مستقل",
+                "citizen_independent": "شهروند و مستقل",
+                "draw": "مساوی",
+            }.get(result["winner"], result["winner"])
             await callback.message.edit_text(
-                f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
+                f"🏁 بازی تمام شد.\n\nبرنده: {winner_label}\n\n"
+                "آمار و نتیجه نهایی ثبت شد."
             )
         else:
             if result["eliminated"]:
-                text = f"رأی‌گیری تمام شد. {result['eliminated'].display_name} حذف شد."
+                name = tg_name(result["eliminated"].display_name or result["eliminated"].first_name)
+                text = f"🗳 رأی‌گیری تمام شد.\n\nبازیکن {name} حذف شد."
             else:
-                text = "رأی‌گیری مساوی شد و کسی حذف نشد."
-            await callback.message.edit_text(text + "\n\nشب بعد آغاز شد.")
-            await _send_night_menus(callback.bot, session, game)
+                text = "🗳 رأی‌گیری تمام شد.\n\nرأی‌گیری مساوی شد و کسی حذف نشد."
+            text += "\n\n🌙 شب بعد آغاز شد."
+            await callback.message.edit_text(text)
+            if game.auto_play:
+                await _send_night_menus(callback.bot, session, game)
+            else:
+                host = await session.get(User, game.host_user_id) if game.host_user_id else None
+                if host:
+                    await callback.bot.send_message(
+                        callback.message.chat.id,
+                        "🌙 فاز شب آغاز شد. اقدامات شب در PV بازیکنان فعال است و گرداننده می‌تواند حل شب را اجرا کند.",
+                        reply_markup=continue_night_keyboard(game.game_key),
+                    )
         await callback.answer("رأی ثبت شد.")
