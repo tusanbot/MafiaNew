@@ -104,7 +104,7 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
         f"حداقل نفرات شروع: {min_players}",
         "با انتخاب صندلی می‌توانید صندلی خود را تغییر دهید.",
     ])
-    return "\n".join(lines), len(players) >= max_players
+    return "\n".join("\u200f" + line for line in lines), len(players) >= max_players
 
 
 async def role_messages(session: AsyncSession, game, assignments):
