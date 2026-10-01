@@ -8,7 +8,7 @@ from app.db.models import Group, Scenario, User
 from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
-from app.services.game import render_lobby, role_messages
+from app.services.game import render_lobby, role_messages, gregorian_to_jalali
 from app.services.roles import assign_roles
 from app.services.gameplay import choose_leader, start_round
 from app.handlers.keyboards import leader_selection_keyboard
@@ -348,10 +348,12 @@ async def round_start_handler(callback: CallbackQuery) -> None:
                 f"{role.name_fa if role else 'نامشخص'} --------- "
                 f"{team_names.get(role.team, role.team) if role else 'نامشخص'}"
             )
+        now_tehran = datetime.now(ZoneInfo("Asia/Tehran"))
+        jy, jm, jd = gregorian_to_jalali(now_tehran.year, now_tehran.month, now_tehran.day)
         roster = (
             f"༄\n📓 بازی شماره : {game.id}\n\n"
-            f"⏱ زمان : {datetime.now(ZoneInfo('Asia/Tehran')):%H:%M}\n"
-            f"📆 تاریخ : {(datetime.now(ZoneInfo('Asia/Tehran'))).date()}\n"
+            f"⏱ زمان : {now_tehran:%H:%M}\n"
+            f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
             f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}\n"
             f"👮‍♂ گرداننده : {leader.display_name if leader else 'بازیکن'}\n\n"
             "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
