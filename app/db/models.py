@@ -74,6 +74,11 @@ class Game(Base):
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"))
     scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id"))
     host_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    # Game creation settings persisted by migration 0005.
+    auto_play: Mapped[bool] = mapped_column(Boolean, default=False)
+    turn_color: Mapped[str] = mapped_column(String(50), default="پیش‌فرض")
+    challenge_color: Mapped[str] = mapped_column(String(50), default="پیش‌فرض")
+    reserve_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     status: Mapped[str] = mapped_column(String(30), default="waiting")
     phase: Mapped[str] = mapped_column(String(30), default="lobby")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
