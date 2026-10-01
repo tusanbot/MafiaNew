@@ -15,7 +15,6 @@ from app.services.gameplay import (
     start_voting,
     submit_night_action,
     submit_vote,
-    submit_challenge,
     resolve_challenge,
     start_day_turns,
     request_challenge,
@@ -31,8 +30,6 @@ from app.handlers.keyboards import (
     day_keyboard,
     night_action_keyboard,
     vote_keyboard,
-    challenge_keyboard,
-    challenge_response_keyboard,
     day_turn_keyboard,
     challenge_requests_keyboard,
     challenge_placement_keyboard,
@@ -181,7 +178,7 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
         try:
-            result = await submit_challenge(session, game, actor)
+            result = await request_challenge(session, game, actor)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
