@@ -128,7 +128,14 @@ async def night_callback(callback: CallbackQuery):
             else:
                 text = "روز آغاز شد.\nاین شب حذف نداشت."
             if chat_id:
-                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)) if not result["winner"] else None)
+                if not result["winner"]:
+                    await start_day_turns(session, game)
+                    turn = await current_turn(session, game.id)
+                    speaker = await session.get(User, int(turn["user_id"])) if turn else None
+                    name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
+                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=day_turn_keyboard(game.game_key, True))
+                else:
+                    await callback.bot.send_message(chat_id, text)
             await callback.answer("شب بررسی شد.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
@@ -152,7 +159,14 @@ async def night_callback(callback: CallbackQuery):
             else:
                 text = "روز آغاز شد. این شب حذف نداشت."
             if chat_id:
-                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)) if not resolved["winner"] else None)
+                if not resolved["winner"]:
+                    await start_day_turns(session, game)
+                    turn = await current_turn(session, game.id)
+                    speaker = await session.get(User, int(turn["user_id"])) if turn else None
+                    name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
+                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=day_turn_keyboard(game.game_key, True))
+                else:
+                    await callback.bot.send_message(chat_id, text)
         await callback.answer("اقدام شب ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("turn:request_challenge:"))
