@@ -89,8 +89,16 @@ async def reserve_game(callback: CallbackQuery) -> None:
 async def change_or_take_seat(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
         return
-    _, _, game_key, seat_raw = callback.data.split(":")
-    seat = int(seat_raw)
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست صندلی نامعتبر است.", show_alert=True)
+        return
+    _, _, game_key, seat_raw = parts
+    try:
+        seat = int(seat_raw)
+    except ValueError:
+        await callback.answer("شماره صندلی نامعتبر است.", show_alert=True)
+        return
     async with session_factory() as session:
         game = await _load_game(session, game_key)
         if not game or game.status != "waiting":
@@ -102,31 +110,12 @@ async def change_or_take_seat(callback: CallbackQuery) -> None:
             callback.from_user.first_name or "",
             callback.from_user.last_name,
         )
-        current = await session.execute(
-            select(__import__("app.db.models", fromlist=["GamePlayer"]).GamePlayer)
-            .where(
-                __import__("app.db.models", fromlist=["GamePlayer"]).GamePlayer.game_id == game.id,
-                __import__("app.db.models", fromlist=["GamePlayer"]).GamePlayer.user_id == user.id,
-            )
-        )
-        player = current.scalar_one_or_none()
+        player = await GameRepository.join_at_seat(session, game, user, seat)
         if player is None:
-            joined = await GameRepository.join(session, game, user)
-            if joined is None:
-                await callback.answer("ابتدا وارد بازی شوید یا از رزرو استفاده کنید.", show_alert=True)
-                return
-            player = joined
-        if player.is_reserved:
-            await callback.answer("بازیکن رزروی تا زمان جایگزینی صندلی ندارد.", show_alert=True)
-            return
-        if player.seat == seat:
-            await callback.answer("این صندلی همین حالا برای شماست.")
-            return
-        if not await GameRepository.change_seat(session, game, user, seat):
-            await callback.answer("این صندلی اشغال است یا قابل انتخاب نیست.", show_alert=True)
+            await callback.answer("این صندلی اشغال است، یا برای شما قابل انتخاب نیست.", show_alert=True)
             return
         await _render(callback, session, game, user.id)
-        await callback.answer(f"صندلی {seat} برای شما ثبت شد.")
+        await callback.answer(f"صندلی {player.seat} برای شما ثبت شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("game:leave:"))
