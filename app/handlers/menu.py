@@ -19,12 +19,16 @@ from app.handlers.keyboards import (
     player_target_management_keyboard,
     ranking_menu,
     scenario_keyboard,
+    admin_panel_menu,
+    admin_scenario_keyboard,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import create_game
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round
+from app.config import get_settings
+from app.utils.text import tg_name
 
 router = Router(name="menu")
 
@@ -97,6 +101,80 @@ def _player_label(player, user, emojis: dict) -> str:
         if player.warning_count and emojis.get("warning", True):
             marks.append(f"⚠️{player.warning_count}")
     return f"{' '.join(marks)} {name}".strip()
+
+
+@router.callback_query(lambda c: c.data == "menu:admin")
+async def menu_admin(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی پنل مدیریت مجاز نیست.", show_alert=True)
+        return
+    await callback.message.edit_text("🛠 پنل مدیریت ربات\n\nبخش موردنظر را انتخاب کنید.", reply_markup=admin_panel_menu())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("admin:"))
+async def admin_panel_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی پنل مدیریت مجاز نیست.", show_alert=True)
+        return
+    action = callback.data.split(":", 1)[1]
+    async with session_factory() as session:
+        if action == "dashboard":
+            users = await session.scalar(select(func.count(User.id))) or 0
+            groups = await session.scalar(select(func.count(Group.id)).where(Group.is_active.is_(True))) or 0
+            active_games = await session.scalar(select(func.count(Game.id)).where(Game.status.in_(["waiting", "draft", "running"]))) or 0
+            finished_games = await session.scalar(select(func.count(Game.id)).where(Game.status == "finished")) or 0
+            scenarios = await session.scalar(select(func.count(Scenario.id)).where(Scenario.enabled.is_(True))) or 0
+            text = ("🛠 داشبورد مدیریت\n\n"
+                    f"👤 کاربران: {users}\n"
+                    f"👥 گروه‌های فعال: {groups}\n"
+                    f"🎮 بازی‌های فعال: {active_games}\n"
+                    f"🏁 بازی‌های تمام‌شده: {finished_games}\n"
+                    f"🎭 سناریوهای فعال: {scenarios}")
+            await callback.message.edit_text(text, reply_markup=admin_panel_menu())
+        elif action == "groups":
+            rows = (await session.execute(select(Group).order_by(desc(Group.updated_at)).limit(20))).scalars().all()
+            lines = ["👥 گروه‌های ثبت‌شده", ""]
+            lines.extend(f"{i}. {g.title or g.telegram_id} — {'فعال' if g.is_active else 'غیرفعال'}" for i, g in enumerate(rows, 1))
+            await callback.message.edit_text("\n".join(lines) if rows else "هنوز گروهی ثبت نشده است.", reply_markup=admin_panel_menu())
+        elif action == "scenarios":
+            scenarios = (await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all()
+            await callback.message.edit_text("🎭 مدیریت سناریوها\n\nوضعیت هر سناریو را انتخاب کنید.", reply_markup=admin_scenario_keyboard(scenarios))
+        elif action == "scenario_toggle":
+            pass
+        elif action == "games":
+            rows = (await session.execute(select(Game, Scenario).join(Scenario, Scenario.id == Game.scenario_id).order_by(desc(Game.id)).limit(15))).all()
+            lines = ["🎮 بازی‌های اخیر", ""]
+            for game, scenario in rows:
+                lines.append(f"#{game.id} — {scenario.name_fa} — {game.status} / {game.phase}")
+            await callback.message.edit_text("\n".join(lines) if rows else "بازی‌ای ثبت نشده است.", reply_markup=admin_panel_menu())
+        elif action == "settings":
+            settings = get_settings()
+            await callback.message.edit_text(
+                "⚙️ تنظیمات ربات\n\n"
+                f"حالت اجرا: {'Webhook' if settings.webhook_mode else 'Polling'}\n"
+                f"سطح لاگ: {settings.log_level}\n"
+                f"تعداد مدیران ربات: {len(settings.admin_id_set)}",
+                reply_markup=admin_panel_menu(),
+            )
+        elif action.startswith("scenario_toggle:"):
+            scenario_id = int(action.split(":", 1)[1])
+            scenario = await session.get(Scenario, scenario_id)
+            if not scenario:
+                await callback.answer("سناریو پیدا نشد.", show_alert=True)
+                return
+            scenario.enabled = not scenario.enabled
+            await session.commit()
+            scenarios = (await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all()
+            await callback.message.edit_text("🎭 مدیریت سناریوها\n\nوضعیت هر سناریو را انتخاب کنید.", reply_markup=admin_scenario_keyboard(scenarios))
+        else:
+            await callback.answer("بخش مدیریت ناشناخته است.", show_alert=True)
+            return
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data == "menu:root")
