@@ -280,7 +280,7 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             f"👑 سردست به‌صورت خودکار انتخاب شد: {tg_name(leader.display_name or leader.first_name or 'بازیکن') if leader else 'بازیکن'}\n\n"
             "⚙️ تنظیمات بازی را بررسی کنید و سپس «شروع دور» را بزنید.",
-            reply_markup=leader_settings_keyboard(game.game_key, game),
+            reply_markup=leader_settings_keyboard(game.game_key, game, True),
         )
         await callback.answer("سردست انتخاب شد.")
 
