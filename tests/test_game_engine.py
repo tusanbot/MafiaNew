@@ -9,4 +9,4 @@ def test_valid_transition():
 def test_invalid_transition():
     state = GameState(GameEnginePhase.SETUP)
     with pytest.raises(TransitionError):
-        GameEngine.transition(state, GameEnginePhase.DAY)
+        GameEngine.transition(state, GameEnginePhase.VOTING)
