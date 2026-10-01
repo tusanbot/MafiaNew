@@ -59,3 +59,13 @@ def test_game_settings_schema_defaults_are_present() -> None:
         "challenge_color": "پیش‌فرض",
         "reserve_enabled": True,
     }
+
+
+def test_scenario_callback_shape_matches_handler() -> None:
+    group_id, scenario_id = 123, 7
+    callback_data = f"newgame:setscenario:{group_id}:{scenario_id}"
+    parts = callback_data.split(":")
+    assert len(parts) == 4
+    assert parts[0:2] == ["newgame", "setscenario"]
+    assert int(parts[2]) == group_id
+    assert int(parts[3]) == scenario_id
