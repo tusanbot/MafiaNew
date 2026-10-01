@@ -58,6 +58,83 @@ async def set_phase(session: AsyncSession, game: Game, target: GameEnginePhase):
     await _event(session, game, "phase_changed", {"to": target.value, "round_no": round_no})
     await session.commit()
 
+async def queue_pending_status_action(session, game, action: str, target_user_id: int, round_no: int, actor_user_id: int | None = None, warning_count: int | None = None):
+    """Queue a night status change so players only see it when the new day list is created."""
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type == "pending_status_action",
+    ).order_by(GameEvent.id.desc()))
+    for event in result.scalars():
+        data = _payload(event)
+        if (
+            data.get("round_no") == round_no
+            and data.get("action") == action
+            and data.get("target_user_id") == target_user_id
+            and not data.get("applied")
+        ):
+            return event
+    payload = {
+        "round_no": round_no,
+        "action": action,
+        "target_user_id": target_user_id,
+        "applied": False,
+    }
+    if warning_count is not None:
+        payload["warning_count"] = warning_count
+    return await _event(session, game, "pending_status_action", payload, actor_user_id)
+
+
+async def apply_pending_status_actions(session, game, round_no: int | None = None):
+    """Apply status changes queued during night, immediately before the new day list."""
+    if round_no is None:
+        round_no = await current_round(session, game.id)
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type == "pending_status_action",
+    ).order_by(GameEvent.id.asc()))
+    applied = []
+    for event in result.scalars():
+        data = _payload(event)
+        if data.get("round_no") != round_no or data.get("applied"):
+            continue
+        target_id = int(data.get("target_user_id", 0))
+        target = (await session.execute(select(GamePlayer).where(
+            GamePlayer.game_id == game.id, GamePlayer.user_id == target_id
+        ))).scalar_one_or_none()
+        if not target:
+            data["applied"] = True
+            event.payload = json.dumps(data, ensure_ascii=False)
+            continue
+        action = data.get("action")
+        if action == "silence":
+            target.silence_until_round = round_no
+        elif action in {"death", "kick", "slaughter"}:
+            target.alive = False
+            target.exit_type = action
+        elif action == "warning":
+            target.warning_count += 1
+            penalty = min(target.warning_count, 5)
+            target_user = await session.get(User, target_id)
+            if target_user:
+                target_user.score -= penalty
+            if target.warning_count >= 3:
+                if game.auto_silence_warnings and target.warning_count >= 4:
+                    target.silence_until_round = round_no + 1
+                if game.auto_kick_warnings and target.warning_count >= 5:
+                    target.alive = False
+                    target.exit_type = "kick"
+        else:
+            data["applied"] = True
+            event.payload = json.dumps(data, ensure_ascii=False)
+            continue
+        data["applied"] = True
+        data["applied_at"] = datetime.now(timezone.utc).isoformat()
+        event.payload = json.dumps(data, ensure_ascii=False)
+        applied.append({"action": action, "target_user_id": target_id})
+    await session.flush()
+    return applied
+
+
 async def submit_night_action(session, game, actor, action_type, target_user_id):
     if game.status != "running" or game.phase != "night":
         raise ValueError("الان زمان اقدام شب نیست.")
@@ -126,12 +203,15 @@ async def resolve_night(session, game):
             GamePlayer.game_id == game.id, GamePlayer.user_id == killed_id, GamePlayer.alive.is_(True)
         ))).first()
         if row:
-            row[0].alive = False
-            row[0].exit_type = "death"
-            eliminated = row[1]
+            await queue_pending_status_action(
+                session, game, "death", killed_id, round_no,
+            )
     await _event(session, game, "night_resolved",
-                 {"round_no": round_no, "killed_user_id": eliminated.id if eliminated else None,
+                 {"round_no": round_no, "killed_user_id": killed_id if killed_id and killed_id != saved_id else None,
                   "saved": bool(killed_id and killed_id == saved_id)})
+    await apply_pending_status_actions(session, game, round_no)
+    if killed_id and killed_id != saved_id:
+        eliminated = await session.get(User, killed_id)
     winner = await check_winner(session, game.id)
     if winner:
         await finalize_game(session, game, winner)
