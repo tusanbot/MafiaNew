@@ -13,6 +13,11 @@ ACHIEVEMENTS = (
     ("independent_master", "مستقل کارکشته", "کسب ۵ برد با تیم مستقل", "🟣", 40),
     ("challenge_10", "چالش‌گر", "ثبت ۱۰ چالش", "⚔️", 25),
     ("challenge_50", "چالش‌گر حرفه‌ای", "ثبت ۵۰ چالش", "🔥", 75),
+    ("first_kill", "اولین شکار", "ثبت اولین کشت موفق", "🗡", 20),
+    ("first_save", "نجات‌بخش", "ثبت اولین نجات موفق", "🩺", 20),
+    ("first_investigation", "کارآگاه موفق", "اولین تحقیق موفق علیه مافیا", "🔎", 20),
+    ("ten_correct_votes", "رأی‌زن دقیق", "ثبت ۱۰ رأی درست علیه مافیا", "🎯", 40),
+    ("three_win_streak", "فرم برد", "کسب ۳ برد متوالی", "🔥", 30),
 )
 
 RANKS = (
@@ -64,6 +69,11 @@ async def update_user_progress(session: AsyncSession, user: User) -> list[Achiev
         "independent_master": user.independent_wins >= 5,
         "challenge_10": user.challenges >= 10,
         "challenge_50": user.challenges >= 50,
+        "first_kill": user.kills >= 1,
+        "first_save": user.saves >= 1,
+        "first_investigation": user.investigation_hits >= 1,
+        "ten_correct_votes": user.correct_votes >= 10,
+        "three_win_streak": user.best_win_streak >= 3,
     }
     for key, ok in checks.items():
         if ok and await _award(session, user, achievements[key]):
@@ -188,6 +198,11 @@ async def achievement_progress(session: AsyncSession, user: User) -> list[tuple[
         "independent_master": (user.independent_wins, 5),
         "challenge_10": (user.challenges, 10),
         "challenge_50": (user.challenges, 50),
+        "first_kill": (user.kills, 1),
+        "first_save": (user.saves, 1),
+        "first_investigation": (user.investigation_hits, 1),
+        "ten_correct_votes": (user.correct_votes, 10),
+        "three_win_streak": (user.best_win_streak, 3),
     }
     rows = []
     for key, *_ in ACHIEVEMENTS:
