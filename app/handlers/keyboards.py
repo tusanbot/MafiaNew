@@ -590,7 +590,6 @@ def new_game_emoji_menu(group_id: int, settings: dict) -> InlineKeyboardMarkup:
     labels = {
         "death": "مرگ",
         "kick": "کیک",
-        "faceoff": "فیس‌آف",
         "slaughter": "سلاخی",
         "challenge": "چالش",
         "silence": "سکوت",
