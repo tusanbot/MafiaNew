@@ -205,6 +205,7 @@ async def submit_vote(session, game, voter, target_user_id):
         ))).first()
         if row:
             row[0].alive = False
+            row[0].exit_type = "death"
             eliminated = row[1]
     await _event(session, game, "voting_resolved",
                  {"round_no": round_no, "eliminated_user_id": eliminated.id if eliminated else None, "tie": len(leaders) != 1})
