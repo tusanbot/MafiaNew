@@ -808,8 +808,8 @@ async def faceoff_to(callback: CallbackQuery) -> None:
         if game_winner:
             label = {"mafia": "مافیا", "citizen": "شهروند"}.get(game_winner, game_winner)
             await callback.bot.send_message(group.telegram_id, f"🏁 بازی به پایان رسید. برنده: {label}")
-        await callback.message.edit_text("فیس‌آف با موفقیت انجام شد.", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
-    await callback.answer("فیس‌آف انجام شد.")
+        await callback.message.edit_text("عملیات بازیکن انجام شد.", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
+    await callback.answer("عملیات انجام شد.")
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:player_replace_to:"))
