@@ -1182,7 +1182,7 @@ async def toggle_draft_challenge(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
     await callback.answer("وضعیت چالش تغییر کرد.")
 
 
