@@ -291,15 +291,18 @@ def new_game_extras_keyboard(group_id: int, auto_play: bool = False, turn_color:
 
 def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    buttons = []
     for seat in range(1, scenario.max_players + 1):
-        occupied = next((p for p, u in players if p.seat == seat), None)
-        if occupied:
-            label = f"صندلی {seat} ✓"
-            data = f"lobby:seat:{game_key}:{seat}"
+        item = next(((p, u) for p, u in players if p.seat == seat), None)
+        if item:
+            _, user = item
+            name = (user.display_name or user.first_name or str(seat))[:12]
+            label = f"{seat:02d} {name}"
         else:
-            label = f"صندلی {seat}"
-            data = f"lobby:seat:{game_key}:{seat}"
-        builder.row(InlineKeyboardButton(text=label, callback_data=data))
+            label = f"{seat:02d} —"
+        buttons.append(InlineKeyboardButton(text=label, callback_data=f"lobby:seat:{game_key}:{seat}"))
+    for i in range(0, len(buttons), 2):
+        builder.row(*buttons[i:i+2])
     if len(players) >= scenario.max_players:
         builder.row(InlineKeyboardButton(text="رزرو", callback_data=f"lobby:reserve:{game_key}"))
     builder.row(
