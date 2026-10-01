@@ -1734,3 +1734,98 @@ async def scenario_form_max(message: Message, state: FSMContext) -> None:
     await state.update_data(max_players=n)
     await state.set_state(ScenarioAdminState.challenge)
     await message.answer("تنظیم چالش را انتخاب کنید:", reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))))
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":challenge:" in c.data)
+async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    parts = callback.data.split(":")
+    mode = parts[1]
+    value = parts[3]
+    data = await state.get_data()
+    if value == "unchanged":
+        value = data.get("challenge_mode", "limited")
+    await state.update_data(challenge_mode=value, challenge_limit=(1 if value == "limited" else None))
+    async with session_factory() as session:
+        roles = list((await session.execute(select(Role).order_by(Role.team, Role.name_fa))).scalars().all())
+    await state.set_state(ScenarioAdminState.roles)
+    counts = {int(k): int(v) for k, v in (data.get("role_counts") or {}).items()}
+    await state.update_data(role_counts=counts)
+    await callback.message.edit_text(
+        "🎭 نقش‌های سناریو را انتخاب کنید. هر بار لمس نقش تعداد آن را تا ۵ افزایش می‌دهد؛ لمس بعدی از صفر شروع می‌کند.",
+        reply_markup=scenario_role_keyboard(roles, counts, mode),
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":role:" in c.data)
+async def scenario_role_toggle(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    parts = callback.data.split(":")
+    mode = parts[1]
+    role_id = int(parts[3])
+    data = await state.get_data()
+    counts = {int(k): int(v) for k, v in (data.get("role_counts") or {}).items()}
+    counts[role_id] = (counts.get(role_id, 0) + 1) % 6
+    if counts[role_id] == 0:
+        counts.pop(role_id, None)
+    await state.update_data(role_counts=counts)
+    async with session_factory() as session:
+        roles = list((await session.execute(select(Role).order_by(Role.team, Role.name_fa))).scalars().all())
+    await callback.message.edit_reply_markup(reply_markup=scenario_role_keyboard(roles, counts, mode))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.endswith(":roles_done"))
+async def scenario_roles_done(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    data = await state.get_data()
+    counts = {int(k): int(v) for k, v in (data.get("role_counts") or {}).items()}
+    total = sum(counts.values())
+    if not counts:
+        await callback.answer("حداقل یک نقش انتخاب کنید.", show_alert=True)
+        return
+    if total != int(data.get("max_players", total)):
+        await callback.answer(f"تعداد نقش‌ها باید دقیقاً {data.get('max_players')} باشد؛ اکنون {total} نقش انتخاب شده.", show_alert=True)
+        return
+    edit_id = data.get("edit_id")
+    async with session_factory() as session:
+        if edit_id:
+            scenario = await session.get(Scenario, int(edit_id))
+            if not scenario:
+                await state.clear()
+                await callback.answer("سناریو پیدا نشد.", show_alert=True)
+                return
+            scenario.name_fa = data["name"]
+            scenario.description = data.get("description", "")
+            scenario.min_players = int(data["min_players"])
+            scenario.max_players = int(data["max_players"])
+            scenario.challenge_mode = data.get("challenge_mode", "limited")
+            scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
+            old = list((await session.execute(select(ScenarioRole).where(ScenarioRole.scenario_id == scenario.id))).scalars().all())
+            for row in old:
+                await session.delete(row)
+        else:
+            key = "custom_" + uuid4().hex[:12]
+            scenario = Scenario(
+                key=key,
+                name_fa=data["name"],
+                description=data.get("description", ""),
+                min_players=int(data["min_players"]),
+                max_players=int(data["max_players"]),
+                enabled=True,
+                challenge_mode=data.get("challenge_mode", "limited"),
+                challenge_limit=1 if data.get("challenge_mode") == "limited" else None,
+            )
+            session.add(scenario)
+            await session.flush()
+        for pos, (role_id, count) in enumerate(counts.items()):
+            session.add(ScenarioRole(scenario_id=scenario.id, role_id=role_id, count=count, position=pos))
+        await session.commit()
+    await state.clear()
+    await callback.message.edit_text("✅ سناریو با موفقیت ذخیره شد.", reply_markup=scenario_management_menu())
+    await callback.answer()
