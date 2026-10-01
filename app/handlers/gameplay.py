@@ -248,6 +248,10 @@ async def challenge_grant_handler(callback: CallbackQuery):
                         )
                 except Exception:
                     pass
+        chat_id = await _group_chat_id(session, game)
+        requester = await session.get(User, result["requester_id"])
+        if chat_id and requester:
+            await callback.bot.send_message(chat_id, f"{actor.display_name or actor.first_name} به {requester.display_name or requester.first_name} چالش داد. زمان اجرای چالش در حال تعیین است.")
         await callback.answer("چالش داده شد.")
         async def auto_after():
             await asyncio.sleep(20)
