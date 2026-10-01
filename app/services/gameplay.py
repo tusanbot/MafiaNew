@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario
+from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario, Achievement
 from app.core.game.engine import GameEngine, GameEnginePhase, GameState
 from app.services.roles import assign_roles
 from app.services.stats import record_game_result
