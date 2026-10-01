@@ -407,13 +407,14 @@ def leader_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def leader_settings_keyboard(game_key: str, game) -> InlineKeyboardMarkup:
+def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     challenge = "فعال" if game.challenge_enabled else "غیرفعال"
     host_next = "فعال" if game.next_host_enabled else "غیرفعال"
     player_next = "فعال" if game.next_player_enabled else "غیرفعال"
     auto_next = "فعال" if game.next_auto_enabled else "غیرفعال"
-    builder.row(InlineKeyboardButton(text="👑 انتخاب سردست: خودکار", callback_data=f"leader:auto:{game_key}"))
+    if not leader_selected:
+        builder.row(InlineKeyboardButton(text="👑 انتخاب سردست: خودکار", callback_data=f"leader:auto:{game_key}"))
     builder.row(InlineKeyboardButton(text=f"⚔️ چالش: {challenge}", callback_data=f"round:toggle_challenge:{game_key}"))
     builder.row(
         InlineKeyboardButton(text=f"🎛 نکست گرداننده: {host_next}", callback_data=f"round:toggle_host_next:{game_key}"),
