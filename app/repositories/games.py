@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Game, GamePlayer, Group, Scenario, User
+
 
 class GameRepository:
     @staticmethod
@@ -20,7 +21,7 @@ class GameRepository:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str) -> Game:
+    async def create(session: AsyncSession, group: Group, scenario: Scenario, host: User, game_key: str, **settings) -> Game:
         game = Game(
             game_key=game_key,
             group_id=group.id,
@@ -28,6 +29,10 @@ class GameRepository:
             host_user_id=host.id,
             status="waiting",
             phase="lobby",
+            auto_play=bool(settings.get("auto_play", False)),
+            turn_color=settings.get("turn_color", "پیش‌فرض"),
+            challenge_color=settings.get("challenge_color", "پیش‌فرض"),
+            reserve_enabled=bool(settings.get("reserve_enabled", True)),
         )
         session.add(game)
         await session.commit()
@@ -35,12 +40,25 @@ class GameRepository:
         return game
 
     @staticmethod
-    async def players(session: AsyncSession, game_id: int) -> list[tuple[GamePlayer, User]]:
-        result = await session.execute(
+    async def players(session: AsyncSession, game_id: int, include_reserve: bool = False) -> list[tuple[GamePlayer, User]]:
+        query = (
             select(GamePlayer, User)
             .join(User, User.id == GamePlayer.user_id)
             .where(GamePlayer.game_id == game_id)
-            .order_by(GamePlayer.seat)
+            .order_by(GamePlayer.is_reserved, GamePlayer.seat, GamePlayer.reserve_position)
+        )
+        if not include_reserve:
+            query = query.where(GamePlayer.is_reserved.is_(False))
+        result = await session.execute(query)
+        return list(result.all())
+
+    @staticmethod
+    async def reserves(session: AsyncSession, game_id: int) -> list[tuple[GamePlayer, User]]:
+        result = await session.execute(
+            select(GamePlayer, User)
+            .join(User, User.id == GamePlayer.user_id)
+            .where(GamePlayer.game_id == game_id, GamePlayer.is_reserved.is_(True))
+            .order_by(GamePlayer.reserve_position)
         )
         return list(result.all())
 
@@ -51,28 +69,115 @@ class GameRepository:
         existing = await session.execute(
             select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
         )
-        if existing.scalar_one_or_none() is not None:
+        old = existing.scalar_one_or_none()
+        if old is not None:
+            if old.is_reserved:
+                return old
             return None
         scenario = await session.get(Scenario, game.scenario_id)
         if scenario is None:
             return None
-        result = await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id))
+        result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(False))
+        )
         players = list(result.scalars())
         if len(players) >= scenario.max_players:
-            return None
+            if not game.reserve_enabled:
+                return None
+            reserve_result = await session.execute(
+                select(GamePlayer.reserve_position)
+                .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
+                .order_by(GamePlayer.reserve_position.desc())
+            )
+            last = reserve_result.scalar_one_or_none()
+            player = GamePlayer(
+                game_id=game.id,
+                user_id=user.id,
+                seat=0,
+                is_reserved=True,
+                reserve_position=(last or 0) + 1,
+            )
+            session.add(player)
+            await session.commit()
+            await session.refresh(player)
+            return player
         used_seats = {player.seat for player in players}
         seat = next((n for n in range(1, scenario.max_players + 1) if n not in used_seats), None)
         if seat is None:
             return None
-        player = GamePlayer(game_id=game.id, user_id=user.id, seat=seat)
+        player = GamePlayer(game_id=game.id, user_id=user.id, seat=seat, is_reserved=False)
         session.add(player)
         await session.commit()
         await session.refresh(player)
         return player
 
     @staticmethod
-    async def leave(session: AsyncSession, game: Game, user: User) -> bool:
+    async def leave(session: AsyncSession, game: Game, user: User) -> tuple[bool, GamePlayer | None]:
         if game.status != "waiting":
+            return False, None
+        result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+        )
+        player = result.scalar_one_or_none()
+        if player is None:
+            return False, None
+        was_reserved = player.is_reserved
+        await session.delete(player)
+        await session.flush()
+
+        promoted = None
+        if not was_reserved:
+            reserve_result = await session.execute(
+                select(GamePlayer)
+                .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
+                .order_by(GamePlayer.reserve_position)
+                .limit(1)
+            )
+            promoted = reserve_result.scalar_one_or_none()
+            if promoted:
+                promoted.is_reserved = False
+                promoted.reserve_position = None
+                promoted.seat = player.seat
+                await session.execute(
+                    update(GamePlayer)
+                    .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
+                    .values(reserve_position=GamePlayer.reserve_position - 1)
+                )
+        else:
+            await session.execute(
+                update(GamePlayer)
+                .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True), GamePlayer.reserve_position > player.reserve_position)
+                .values(reserve_position=GamePlayer.reserve_position - 1)
+            )
+        await session.commit()
+        return True, promoted
+
+    @staticmethod
+    async def change_seat(session: AsyncSession, game: Game, user: User, seat: int) -> bool:
+        if game.status != "waiting":
+            return False
+        scenario = await session.get(Scenario, game.scenario_id)
+        if scenario is None or seat < 1 or seat > scenario.max_players:
+            return False
+        result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+        )
+        player = result.scalar_one_or_none()
+        if player is None or player.is_reserved:
+            return False
+        target = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(False), GamePlayer.seat == seat)
+        )
+        occupied = target.scalar_one_or_none()
+        if occupied is not None:
+            return False
+        player.seat = seat
+        await session.commit()
+        return True
+
+    @staticmethod
+    async def reserve(session: AsyncSession, game: Game, user: User) -> bool:
+        if game.status != "waiting" or not game.reserve_enabled:
             return False
         result = await session.execute(
             select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
@@ -80,7 +185,23 @@ class GameRepository:
         player = result.scalar_one_or_none()
         if player is None:
             return False
-        await session.delete(player)
+        if player.is_reserved:
+            return True
+        scenario = await session.get(Scenario, game.scenario_id)
+        count_result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(False))
+        )
+        if scenario is None or len(list(count_result.scalars())) < scenario.max_players:
+            return False
+        last_result = await session.execute(
+            select(GamePlayer.reserve_position)
+            .where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(True))
+            .order_by(GamePlayer.reserve_position.desc())
+        )
+        last = last_result.scalar_one_or_none()
+        player.is_reserved = True
+        player.reserve_position = (last or 0) + 1
+        player.seat = 0
         await session.commit()
         return True
 
