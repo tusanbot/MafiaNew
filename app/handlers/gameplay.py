@@ -598,6 +598,7 @@ async def vote_handler(callback: CallbackQuery):
             return
 
         if result["winner"]:
+            await send_game_result_notifications(callback.bot, session, game)
             winner_label = {
                 "mafia": "مافیا",
                 "citizen": "شهروند",
