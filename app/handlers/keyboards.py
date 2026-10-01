@@ -294,14 +294,16 @@ def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup
     _back(builder, "menu:scenarios")
     return builder.as_markup()
 
-def scenario_role_keyboard(roles, selected_ids: set[int] | None = None, action: str = "create") -> InlineKeyboardMarkup:
+def scenario_role_keyboard(roles, selected_ids: set[int] | dict[int, int] | None = None, action: str = "create") -> InlineKeyboardMarkup:
     selected_ids = selected_ids or set()
+    counts = selected_ids if isinstance(selected_ids, dict) else {x: 1 for x in selected_ids}
     builder = InlineKeyboardBuilder()
     for i in range(0, len(roles), 2):
         row = []
         for role in roles[i:i+2]:
-            mark = "✅" if role.id in selected_ids else "⬜"
-            row.append(InlineKeyboardButton(text=f"{mark} {role.name_fa[:24]}", callback_data=f"scenario_admin:{action}:role:{role.id}"))
+            count = int(counts.get(role.id, 0))
+            mark = "⬜" if count == 0 else f"✅×{count}"
+            row.append(InlineKeyboardButton(text=f"{mark} {role.name_fa[:20]}", callback_data=f"scenario_admin:{action}:role:{role.id}"))
         builder.row(*row)
     builder.row(InlineKeyboardButton(text="ادامه", callback_data=f"scenario_admin:{action}:roles_done"))
     builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
