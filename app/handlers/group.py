@@ -1,10 +1,10 @@
 from aiogram import Router
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.types import Message
 from sqlalchemy import select
 
 from app.db.session import session_factory
-from app.db.models import Scenario
+from app.db.models import Scenario, GroupSettings
 from app.repositories.games import GameRepository
 from app.repositories.groups import GroupRepository
 from app.repositories.users import UserRepository
@@ -65,3 +65,67 @@ async def new_game_handler(message: Message) -> None:
 @router.message(Command("mafia"))
 async def mafia_menu_handler(message: Message) -> None:
     await message.answer("برای ساخت بازی در گروه، /newgame را اجرا کنید.")
+
+
+@router.message(Command("gamelocks"))
+async def game_locks_handler(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup") or not await is_group_admin(message):
+        return
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        if not group:
+            await message.answer("ابتدا یک بازی بسازید یا گروه را با /newgame ثبت کنید.")
+            return
+        settings = (await session.execute(
+            select(GroupSettings).where(GroupSettings.group_id == group.id)
+        )).scalar_one_or_none()
+        if not settings:
+            settings = GroupSettings(group_id=group.id)
+            session.add(settings)
+            await session.commit()
+        await message.answer(
+            "تنظیمات قفل بازی:
+"
+            f"قفل چت: {'فعال' if settings.chat_lock else 'غیرفعال'}
+"
+            f"قفل شب: {'فعال' if settings.night_lock else 'غیرفعال'}
+"
+            f"قفل نوبت: {'فعال' if settings.turn_lock else 'غیرفعال'}
+
+"
+            "برای تغییر: /chatlock on|off ، /nightlock on|off ، /turnlock on|off"
+        )
+
+async def _set_lock(message: Message, field: str, value: str) -> None:
+    if message.chat.type not in ("group", "supergroup") or not await is_group_admin(message):
+        return
+    enabled = value.lower() in ("on", "1", "true", "فعال")
+    if value.lower() not in ("on", "off", "1", "0", "true", "false", "فعال", "غیرفعال"):
+        await message.answer("مقدار باید on یا off باشد.")
+        return
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        if not group:
+            await message.answer("گروه ثبت نشده است.")
+            return
+        settings = (await session.execute(
+            select(GroupSettings).where(GroupSettings.group_id == group.id)
+        )).scalar_one_or_none()
+        if not settings:
+            settings = GroupSettings(group_id=group.id)
+            session.add(settings)
+        setattr(settings, field, enabled)
+        await session.commit()
+    await message.answer(f"تنظیم {'فعال' if enabled else 'غیرفعال'} شد.")
+
+@router.message(Command("chatlock"))
+async def chat_lock_handler(message: Message, command: CommandObject) -> None:
+    await _set_lock(message, "chat_lock", command.args or "")
+
+@router.message(Command("nightlock"))
+async def night_lock_handler(message: Message, command: CommandObject) -> None:
+    await _set_lock(message, "night_lock", command.args or "")
+
+@router.message(Command("turnlock"))
+async def turn_lock_handler(message: Message, command: CommandObject) -> None:
+    await _set_lock(message, "turn_lock", command.args or "")
