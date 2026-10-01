@@ -276,7 +276,7 @@ async def game_info(callback: CallbackQuery) -> None:
             return
         game = await GameRepository.get_active(session, group.id)
         if not game:
-            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"))
+            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=active_game_menu(group.id))
         else:
             scenario = await session.get(Scenario, game.scenario_id)
             players = await GameRepository.players(session, game.id)
@@ -291,7 +291,7 @@ async def game_info(callback: CallbackQuery) -> None:
                 f"وضعیت: {game.status}\nمرحله: {game.phase}\n"
                 f"گرداننده: {host.display_name if host else 'نامشخص'}\n\n"
                 f"بازیکنان:\n{player_lines}",
-                reply_markup=active_game_menu(group.id),
+                reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
             )
     await callback.answer()
 
@@ -343,8 +343,8 @@ async def game_features(callback: CallbackQuery) -> None:
         scenario = await session.get(Scenario, game.scenario_id)
         challenge = scenario.challenge_mode if scenario else "limited"
         await callback.message.edit_text(
-            f"امکانات بازی\n\nسناریو: {scenario.name_fa if scenario else 'نامشخص'}",
-            reply_markup=game_features_menu(group.id, challenge_mode=challenge),
+            f"تنظیمات بازی\n\nسناریو: {scenario.name_fa if scenario else 'نامشخص'}",
+            reply_markup=game_features_menu(group.id, challenge_mode=challenge, back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
 
@@ -359,10 +359,23 @@ async def game_extras(callback: CallbackQuery) -> None:
         if not group:
             await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
             return
+        game = await GameRepository.get_active(session, group.id)
+        if not game:
+            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=group_game_menu(group.id))
+            await callback.answer()
+            return
         await callback.message.edit_text(
             "امکانات اضافی بازی\n\n"
-            "ساختار این بخش آماده توسعه است؛ تنظیمات زمان‌بندی و ظاهر بازی در همین بخش اضافه می‌شوند.",
-            reply_markup=game_extras_menu(group.id, game.auto_play, game.turn_color, game.challenge_color, back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
+            f"بازی خودکار: {'فعال' if game.auto_play else 'غیرفعال'}\n"
+            f"رنگ نوبت: {game.turn_color}\n"
+            f"رنگ چالش: {game.challenge_color}",
+            reply_markup=game_extras_menu(
+                group.id,
+                game.auto_play,
+                game.turn_color,
+                game.challenge_color,
+                back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
+            ),
         )
     await callback.answer()
 
