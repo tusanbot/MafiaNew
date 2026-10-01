@@ -1658,3 +1658,79 @@ async def scenario_admin_cancel(callback: CallbackQuery, state: FSMContext) -> N
     await state.clear()
     await callback.message.edit_text("🎭 مدیریت سناریوها", reply_markup=scenario_management_menu())
     await callback.answer()
+
+
+@router.message(ScenarioAdminState.name)
+async def scenario_form_name(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user or message.from_user.id not in get_settings().admin_id_set:
+        return
+    value = (message.text or "").strip()
+    data = await state.get_data()
+    if value == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=scenario_management_menu())
+        return
+    if value == "-" and data.get("edit_id"):
+        value = data.get("current_name", "")
+    if not 2 <= len(value) <= 80:
+        await message.answer("نام سناریو باید بین ۲ تا ۸۰ کاراکتر باشد.")
+        return
+    await state.update_data(name=value)
+    await state.set_state(ScenarioAdminState.description)
+    await message.answer("توضیحات سناریو را ارسال کنید. برای بدون تغییر در ویرایش، - بفرستید:")
+
+@router.message(ScenarioAdminState.description)
+async def scenario_form_description(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private":
+        return
+    value = (message.text or "").strip()
+    data = await state.get_data()
+    if value == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=scenario_management_menu())
+        return
+    if value == "-" and data.get("edit_id"):
+        value = data.get("current_description", "")
+    await state.update_data(description=value)
+    await state.set_state(ScenarioAdminState.min_players)
+    await message.answer("حداقل تعداد بازیکنان را ارسال کنید:")
+
+@router.message(ScenarioAdminState.min_players)
+async def scenario_form_min(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private":
+        return
+    value = (message.text or "").strip()
+    data = await state.get_data()
+    if value == "-" and data.get("edit_id"):
+        value = str(data.get("current_min", 1))
+    try:
+        n = int(value)
+    except ValueError:
+        await message.answer("یک عدد معتبر وارد کنید.")
+        return
+    if n < 1:
+        await message.answer("حداقل بازیکن باید حداقل ۱ باشد.")
+        return
+    await state.update_data(min_players=n)
+    await state.set_state(ScenarioAdminState.max_players)
+    await message.answer("حداکثر تعداد بازیکنان را ارسال کنید:")
+
+@router.message(ScenarioAdminState.max_players)
+async def scenario_form_max(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private":
+        return
+    value = (message.text or "").strip()
+    data = await state.get_data()
+    if value == "-" and data.get("edit_id"):
+        value = str(data.get("current_max", data.get("min_players", 1)))
+    try:
+        n = int(value)
+    except ValueError:
+        await message.answer("یک عدد معتبر وارد کنید.")
+        return
+    if n < int(data.get("min_players", 1)):
+        await message.answer("حداکثر نمی‌تواند کمتر از حداقل باشد.")
+        return
+    await state.update_data(max_players=n)
+    await state.set_state(ScenarioAdminState.challenge)
+    await message.answer("تنظیم چالش را انتخاب کنید:", reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))))
