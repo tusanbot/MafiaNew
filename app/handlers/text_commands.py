@@ -3,7 +3,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select, func
 
-from app.db.models import GamePlayer, Role, User
+from app.db.models import Game, GamePlayer, Role, User
 from app.db.session import session_factory
 from app.handlers.keyboards import leader_choice_keyboard, leader_settings_keyboard
 from app.repositories.games import GameRepository
@@ -104,7 +104,7 @@ async def text_role(message: Message, state: FSMContext) -> None:
         if not player_row:
             await message.answer("در حال حاضر در بازی فعالی نیستید.")
             return
-        game = await GameRepository.get_by_key(session, (await session.get(__import__("app.db.models", fromlist=["Game"]).Game, player_row.game_id)).game_key)
+        game = await session.get(Game, player_row.game_id)
         role = await session.get(Role, player_row.role_id) if player_row.role_id else None
         if not game or game.status != "running":
             await message.answer("در حال حاضر در بازی فعالی نیستید.")
