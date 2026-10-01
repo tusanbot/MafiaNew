@@ -30,11 +30,13 @@ async def check_group_registration(bot, chat_id: int) -> GroupRegistrationCheck:
         member_count = 0
         problems.append("تعداد اعضای گروه قابل دریافت نیست.")
 
-    # Telegram Bot API does not expose a full member list to bots.
-    # Therefore we can verify at least 20 members other than the bot by requiring
-    # a total count of 21+, but cannot prove that every one of those accounts is human.
-    if member_count < 21:
-        problems.append(f"حداقل ۲۰ عضو دیگر لازم است؛ تعداد فعلی اعضای گروه: {member_count - 1 if member_count else 0}")
+    # Member-count restriction is temporarily disabled for testing groups.
+    # Keep reading the count for diagnostics, but do not block registration on it.
+    try:
+        member_count = await bot.get_chat_member_count(chat_id)
+    except Exception:
+        member_count = 0
+
 
     bot_is_admin = False
     try:
