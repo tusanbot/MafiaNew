@@ -1,5 +1,6 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from app.utils.text import tg_plain_name
 
 
 def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> None:
@@ -291,7 +292,7 @@ def player_target_keyboard(prefix: str, game_key: str, players, exclude_user_id:
         if exclude_user_id is not None and user.id == exclude_user_id:
             continue
         builder.row(InlineKeyboardButton(
-            text=f"{player.seat}. {user.display_name or user.first_name}",
+            text=f"{player.seat}. {tg_plain_name(user.display_name or user.first_name)}",
             callback_data=f"{prefix}:{game_key}:{user.id}",
         ))
     return builder.as_markup()
@@ -326,7 +327,7 @@ def leader_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}"))
     for player, user in players:
         name = user.display_name or user.first_name or user.username or str(user.telegram_id)
-        builder.row(InlineKeyboardButton(text=f"👤 {player.seat:02d}. {name[:42]}", callback_data=f"leader:manual:{game_key}:{user.id}"))
+        builder.row(InlineKeyboardButton(text=f"👤 {player.seat:02d}. {tg_plain_name(name[:42])}", callback_data=f"leader:manual:{game_key}:{user.id}"))
     return builder.as_markup()
 
 
@@ -388,7 +389,7 @@ def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup
     builder = InlineKeyboardBuilder()
     for event, data in requests:
         builder.row(InlineKeyboardButton(
-            text=f"تایید چالش {data.get('requester_name', 'بازیکن')}",
+            text=f"تایید چالش {tg_plain_name(data.get('requester_name', 'بازیکن'))}",
             callback_data=f"challenge:grant:{game_key}:{event.id}",
         ))
     return builder.as_markup()
@@ -443,7 +444,7 @@ def host_select_keyboard(group_id: int, admins) -> InlineKeyboardMarkup:
     for member in admins:
         user = member.user
         name = user.full_name or user.username or str(user.id)
-        builder.row(InlineKeyboardButton(text=name[:60], callback_data=f"newgame:sethost:{group_id}:{user.id}"))
+        builder.row(InlineKeyboardButton(text=tg_plain_name(name[:60]), callback_data=f"newgame:sethost:{group_id}:{user.id}"))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
