@@ -83,6 +83,7 @@ class Game(Base):
     reserve_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
+    challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     next_host_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_player_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
