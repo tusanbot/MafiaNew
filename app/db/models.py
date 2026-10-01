@@ -81,6 +81,7 @@ class Game(Base):
     challenge_color: Mapped[str] = mapped_column(String(50), default="پیش‌فرض")
     reserve_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
     next_host_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_player_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
