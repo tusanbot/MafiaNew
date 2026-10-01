@@ -258,7 +258,53 @@ def bot_settings_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="تنظیمات عمومی", callback_data="botsettings:general"))
     builder.row(InlineKeyboardButton(text="تنظیمات اعلان ها", callback_data="botsettings:notifications"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data="menu:root"))
+    _back(builder)
+    return builder.as_markup()
+
+def profile_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="امتیازات", callback_data="profile:score"),
+        InlineKeyboardButton(text="رتبه", callback_data="profile:rank"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="تغییر نام", callback_data="profile:name"),
+        InlineKeyboardButton(text="تگ‌ها", callback_data="profile:tags"),
+    )
+    builder.row(InlineKeyboardButton(text="🏅 دستاوردها", callback_data="profile:achievements"))
+    _back(builder)
+    return builder.as_markup()
+
+def scenario_management_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ ایجاد سناریو", callback_data="scenario_admin:create"))
+    builder.row(InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data="scenario_admin:edit"))
+    builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data="scenario_admin:delete"))
+    _back(builder)
+    return builder.as_markup()
+
+def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for scenario in scenarios:
+        state = "فعال" if scenario.enabled else "غیرفعال"
+        builder.row(InlineKeyboardButton(
+            text=f"{scenario.name_fa} — {state}",
+            callback_data=f"scenario_admin:{action}:{scenario.id}",
+        ))
+    _back(builder, "menu:scenarios")
+    return builder.as_markup()
+
+def scenario_role_keyboard(roles, selected_ids: set[int] | None = None, action: str = "create") -> InlineKeyboardMarkup:
+    selected_ids = selected_ids or set()
+    builder = InlineKeyboardBuilder()
+    for i in range(0, len(roles), 2):
+        row = []
+        for role in roles[i:i+2]:
+            mark = "✅" if role.id in selected_ids else "⬜"
+            row.append(InlineKeyboardButton(text=f"{mark} {role.name_fa[:24]}", callback_data=f"scenario_admin:{action}:role:{role.id}"))
+        builder.row(*row)
+    builder.row(InlineKeyboardButton(text="ادامه", callback_data=f"scenario_admin:{action}:roles_done"))
+    builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
 
 
