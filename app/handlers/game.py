@@ -193,6 +193,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
             await callback.bot.send_message(host.telegram_id, group_list)
         except Exception:
             failed.append(host.telegram_id)
+        failed = list(dict.fromkeys(failed))
         if failed:
             await callback.message.answer(
                 f"نقش‌ها برای {sent} بازیکن ارسال شد. ارسال خصوصی برای {len(failed)} نفر ناموفق بود؛ آن افراد باید ابتدا ربات را در PV /start کنند."
