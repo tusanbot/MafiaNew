@@ -44,6 +44,20 @@ def rank_for_score(score: int) -> str:
             rank = name
     return rank
 
+
+
+def rank_progress(score: int) -> tuple[str, int | None, int]:
+    """Return current rank, next threshold, and points remaining to it."""
+    current = RANKS[0][1]
+    next_threshold = None
+    for index, (minimum, name) in enumerate(RANKS):
+        if score >= minimum:
+            current = name
+            if index + 1 < len(RANKS):
+                next_threshold = RANKS[index + 1][0]
+    remaining = max(0, next_threshold - score) if next_threshold is not None else 0
+    return current, next_threshold, remaining
+
 async def _award(session: AsyncSession, user: User, achievement: Achievement) -> bool:
     exists = await session.scalar(select(UserAchievement.id).where(
         UserAchievement.user_id == user.id, UserAchievement.achievement_id == achievement.id
