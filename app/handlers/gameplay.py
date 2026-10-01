@@ -39,6 +39,10 @@ router = Router(name="gameplay")
 
 
 def _day_keyboard(game, current: bool = False):
+    try:
+        emoji_settings = json.loads(game.emoji_settings or "{}")
+    except (TypeError, ValueError):
+        emoji_settings = {}
     return day_turn_keyboard(
         game.game_key,
         current,
@@ -46,6 +50,7 @@ def _day_keyboard(game, current: bool = False):
         getattr(game, "turn_color_enabled", True),
         getattr(game, "turn_color", "پیش‌فرض"),
         getattr(game, "challenge_color", "پیش‌فرض"),
+        bool(emoji_settings.get("challenge", True)),
     )
 
 _challenge_tasks = {}\n_turn_tasks = {}\nTURN_SECONDS = 60
