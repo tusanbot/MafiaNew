@@ -84,15 +84,10 @@ async def game_locks_handler(message: Message) -> None:
             session.add(settings)
             await session.commit()
         await message.answer(
-            "تنظیمات قفل بازی:
-"
-            f"قفل چت: {'فعال' if settings.chat_lock else 'غیرفعال'}
-"
-            f"قفل شب: {'فعال' if settings.night_lock else 'غیرفعال'}
-"
-            f"قفل نوبت: {'فعال' if settings.turn_lock else 'غیرفعال'}
-
-"
+            "تنظیمات قفل بازی:\n"
+            f"قفل چت: {'فعال' if settings.chat_lock else 'غیرفعال'}\n"
+            f"قفل شب: {'فعال' if settings.night_lock else 'غیرفعال'}\n"
+            f"قفل نوبت: {'فعال' if settings.turn_lock else 'غیرفعال'}\n\n"
             "برای تغییر: /chatlock on|off ، /nightlock on|off ، /turnlock on|off"
         )
 
