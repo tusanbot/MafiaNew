@@ -516,15 +516,22 @@ async def game_history_text(session, group) -> str:
     return "\n".join(lines)
 
 
-async def _ensure_draft(session, group, user_id: int):
-    draft = await GameRepository.get_draft(session, group.id, user_id)
+async def _ensure_draft(session, group, telegram_user_id: int):
+    # Handler callbacks provide Telegram user IDs, while Game.user_id /
+    # Game.host_user_id are foreign keys to the internal users.id INTEGER.
+    # Never use a Telegram ID as a users.id lookup.
+    user = await UserRepository(session).get_by_telegram_id(telegram_user_id)
+    if user is None:
+        return None
+
+    draft = await GameRepository.get_draft(session, group.id, user.id)
     if draft:
         return draft
+
     scenario = (await session.execute(
         select(Scenario).where(Scenario.enabled.is_(True)).order_by(Scenario.id)
     )).scalars().first()
-    user = await session.get(User, user_id)
-    if not scenario or not user:
+    if not scenario:
         return None
     return await create_game(session, group, scenario, user, status="draft", reserve_enabled=True)
 
@@ -532,7 +539,11 @@ async def _ensure_draft(session, group, user_id: int):
 async def render_new_game_menu(session, group, user_id: int | None = None):
     if user_id is not None:
         await _ensure_draft(session, group, user_id)
-    draft = await GameRepository.get_draft(session, group.id, user_id)
+    internal_user_id = None
+    if user_id is not None:
+        user = await UserRepository(session).get_by_telegram_id(user_id)
+        internal_user_id = user.id if user else None
+    draft = await GameRepository.get_draft(session, group.id, internal_user_id)
     if not draft:
         return "امکان ایجاد پیش‌نویس بازی وجود ندارد."
     scenario = await session.get(Scenario, draft.scenario_id)
