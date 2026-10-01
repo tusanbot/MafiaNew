@@ -12,7 +12,6 @@ from app.services.game import render_lobby
 from app.services.gameplay import choose_leader, start_round, current_round, next_turn, _group_chat_id, _duration_text, _turn_duration, _schedule_auto_next, alive_players
 from app.services.profile import sync_telegram_user
 from app.services.stats import leaderboard, rank_for_score, rank_progress
-from app.db.models import GameEvent, GroupSettings
 import json
 from app.utils.text import tg_name
 
@@ -312,7 +311,6 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
                 await message.answer("این بازیکن قبلاً از بازی خارج شده است.")
                 return
             target.alive, target.exit_type = False, "kick"
-            target_user.kicks += 0
             event_type, response = "player_kicked", f"⛔ {tg_name(target_user.display_name or target_user.first_name)} از بازی کیک شد."
         elif command == "سکوت بازیکن":
             if not target.alive:
