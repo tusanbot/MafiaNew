@@ -64,38 +64,3 @@ async def leave_game(callback: CallbackQuery) -> None:
         text, can_start = await render_lobby(session, game)
         await callback.message.edit_text(text, reply_markup=lobby_keyboard(game.game_key, can_start))
         await callback.answer("از بازی خارج شدی.")
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("game:start:"))
-async def start_game(callback: CallbackQuery) -> None:
-    game_key = callback.data.split(":", 2)[2]
-    if not callback.from_user or not callback.message:
-        return
-    async with session_factory() as session:
-        game = await _load_game(session, game_key)
-        if not game:
-            await callback.answer("بازی پیدا نشد.", show_alert=True)
-            return
-        user = await UserRepository(session).upsert_from_telegram(
-            callback.from_user.id,
-            callback.from_user.username,
-            callback.from_user.first_name or "",
-            callback.from_user.last_name,
-        )
-        await session.flush()
-        if user.id != game.host_user_id:
-            await callback.answer("فقط سازنده بازی می‌تواند آن را شروع کند.", show_alert=True)
-            return
-        players = await GameRepository.players(session, game.id)
-        scenario = await session.get(Scenario, game.scenario_id)
-        if not scenario or len(players) < scenario.min_players:
-            await callback.answer("تعداد بازیکنان برای شروع کافی نیست.", show_alert=True)
-            return
-        await GameRepository.start(session, game)
-        await callback.message.edit_text(
-            f"بازی {game.game_key} شروع شد.\n\n"
-            f"سناریو: {scenario.name_fa}\n"
-            f"تعداد بازیکنان: {len(players)}\n\n"
-            "مرحله بعدی: تخصیص نقش‌ها."
-        )
-        await callback.answer("بازی شروع شد.")
