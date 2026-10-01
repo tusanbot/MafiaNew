@@ -21,11 +21,11 @@ def main_menu() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def group_management_menu() -> InlineKeyboardMarkup:
+def group_management_menu(back_callback: str = "menu:group_management") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="مدیریت بازی", callback_data="groupmgmt:games"))
     builder.row(InlineKeyboardButton(text="قفل گروه", callback_data="groupmgmt:locks"))
-    _back(builder)
+    _back(builder, back_callback)
     return builder.as_markup()
 
 
