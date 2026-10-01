@@ -113,7 +113,7 @@ async def night_callback(callback: CallbackQuery):
             else:
                 text = "روز آغاز شد.\nاین شب حذف نداشت."
             if chat_id:
-                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key) if not result["winner"] else None)
+                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)) if not result["winner"] else None)
             await callback.answer("شب بررسی شد.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
@@ -137,8 +137,20 @@ async def night_callback(callback: CallbackQuery):
             else:
                 text = "روز آغاز شد. این شب حذف نداشت."
             if chat_id:
-                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key) if not resolved["winner"] else None)
+                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)) if not resolved["winner"] else None)
         await callback.answer("اقدام شب ثبت شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("day:challenge:"))
+async def day_challenge_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key)
+        if not game or game.phase != "day":
+            await callback.answer("الان مرحله روز نیست.", show_alert=True)
+            return
+        players = await alive_players(session, game.id)
+        await callback.message.edit_reply_markup(reply_markup=challenge_keyboard(game.game_key, players))
+        await callback.answer("هدف چالش را انتخاب کنید.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
