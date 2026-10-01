@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Scenario, User
 from app.repositories.games import GameRepository
 
-async def create_game(session: AsyncSession, group, scenario: Scenario, host: User):
+async def create_game(session: AsyncSession, group, scenario: Scenario, host: User, status: str = "waiting", **settings):
     key = uuid4().hex[:12]
-    return await GameRepository.create(session, group, scenario, host, key)
+    return await GameRepository.create(session, group, scenario, host, key, status=status, **settings)
 
 async def render_lobby(session: AsyncSession, game) -> tuple[str, int]:
     players = await GameRepository.players(session, game.id)
