@@ -424,10 +424,10 @@ async def player_management(callback: CallbackQuery) -> None:
         lines = []
         for player, user in players:
             if player.is_reserved:
-                lines.append(f"رزرو {player.reserve_position}. {user.display_name or user.first_name} — رزرو")
+                lines.append(f"رزرو {player.reserve_position}. {tg_name(user.display_name or user.first_name)} — رزرو")
             else:
                 status = "زنده" if player.alive else (player.exit_type or "حذف‌شده")
-                lines.append(f"{player.seat}. {_player_label(player, user, emojis)} — {status}")
+                lines.append(f"{player.seat}. {tg_name(_player_label(player, user, emojis))} — {status}")
         await callback.message.edit_text(
             "مدیریت بازیکنان\n\n" + ("\n".join(lines) if lines else "بازیکنی در بازی نیست.") +
             "\n\nعملیات موردنظر را انتخاب کنید.",
@@ -570,7 +570,7 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 return
             reserves = await GameRepository.reserves(session, game.id)
             await callback.message.edit_text(
-                f"بازیکن مبدا: {target_user.display_name or target_user.first_name}\n\nبازیکن مقصد از لیست رزرو را انتخاب کنید:",
+                f"بازیکن مبدا: {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن مقصد از لیست رزرو را انتخاب کنید:",
                 reply_markup=__import__("app.handlers.keyboards", fromlist=["player_replace_destination_keyboard"]).player_replace_destination_keyboard(group.id, target_id, reserves),
             )
             await callback.answer()
@@ -629,7 +629,7 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 event_type, message = "slaughter", "بازیکن سلاخی شد و امکان تولد ندارد."
             elif action == "faceoff":
                 await callback.message.edit_text(
-                    f"بازیکن مبدا: {target_user.display_name or target_user.first_name}\n\nبازیکن مقصد را انتخاب کنید:",
+                    f"بازیکن مبدا: {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن مقصد را انتخاب کنید:",
                     reply_markup=__import__("app.handlers.keyboards", fromlist=["player_faceoff_destination_keyboard"]).player_faceoff_destination_keyboard(group.id, target_id, [
                         row for row in await GameRepository.players(session, game.id) if row[0].alive and row[0].user_id != target_id
                     ]),
@@ -749,7 +749,7 @@ async def player_replace_to(callback: CallbackQuery) -> None:
             await callback.answer("عملیات جایگزینی انجام نشد.", show_alert=True)
             return
         chat_id = group.telegram_id
-        await callback.bot.send_message(chat_id, f"جایگزینی انجام شد: {source_user.display_name or source_user.first_name} ← {dest_user.display_name or dest_user.first_name}\nصندلی: {seat}")
+        await callback.bot.send_message(chat_id, f"جایگزینی انجام شد: {tg_name(source_user.display_name or source_user.first_name)} ← {tg_name(dest_user.display_name or dest_user.first_name)}\nصندلی: {seat}")
         await callback.message.edit_text("جایگزینی با موفقیت انجام شد.", reply_markup=player_management_menu(group.id))
     await callback.answer("جایگزینی انجام شد.")
 
