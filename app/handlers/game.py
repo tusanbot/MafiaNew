@@ -284,6 +284,40 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         )
         await callback.answer("سردست انتخاب شد.")
 
+@router.callback_query(lambda c: c.data and c.data.startswith("round:settings:"))
+async def round_settings_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند تنظیمات بازی را تغییر دهد.", show_alert=True)
+            return
+        from app.handlers.keyboards import game_features_menu
+        await callback.message.edit_text(
+            "⚙️ تنظیمات بازی",
+            reply_markup=game_features_menu(
+                game.group_id,
+                game.challenge_enabled,
+                game.challenge_mode,
+                game.next_host_enabled,
+                game.next_player_enabled,
+                game.next_auto_enabled,
+                game.auto_silence_warnings,
+                game.auto_kick_warnings,
+                game.turn_seconds,
+                game.challenge_seconds,
+                game.extra_challenge_seconds,
+                back_callback=f"leader:back:{game.game_key}",
+            ),
+        )
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data and c.data.startswith("round:toggle_"))
 async def round_toggle_handler(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
