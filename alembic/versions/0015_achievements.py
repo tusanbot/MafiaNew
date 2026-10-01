@@ -9,7 +9,7 @@ depends_on = None
 
 def upgrade():
     bind = op.get_bind()
-    tables = {t["name"] for t in sa.inspect(bind).get_table_names()}
+    tables = set(sa.inspect(bind).get_table_names())
     if "achievements" not in tables:
         op.create_table(
             "achievements",
