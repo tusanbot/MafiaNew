@@ -317,19 +317,27 @@ def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
 
 def leader_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}")
-    )
+    builder.row(InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}"))
     for player, user in players:
         name = user.display_name or user.first_name or user.username or str(user.telegram_id)
-        builder.row(
-            InlineKeyboardButton(
-                text=f"👤 {player.seat:02d}. {name[:42]}",
-                callback_data=f"leader:manual:{game_key}:{user.id}",
-            )
-        )
+        builder.row(InlineKeyboardButton(text=f"👤 {player.seat:02d}. {name[:42]}", callback_data=f"leader:manual:{game_key}:{user.id}"))
     return builder.as_markup()
 
+
+def leader_settings_keyboard(game_key: str, game) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    challenge = "فعال" if game.challenge_enabled else "غیرفعال"
+    host_next = "فعال" if game.next_host_enabled else "غیرفعال"
+    player_next = "فعال" if game.next_player_enabled else "غیرفعال"
+    auto_next = "فعال" if game.next_auto_enabled else "غیرفعال"
+    builder.row(InlineKeyboardButton(text=f"⚔️ چالش: {challenge}", callback_data=f"round:toggle_challenge:{game_key}"))
+    builder.row(
+        InlineKeyboardButton(text=f"🎛 نکست گرداننده: {host_next}", callback_data=f"round:toggle_host_next:{game_key}"),
+        InlineKeyboardButton(text=f"⏭ نکست بازیکن: {player_next}", callback_data=f"round:toggle_player_next:{game_key}"),
+    )
+    builder.row(InlineKeyboardButton(text=f"⏱ نکست خودکار: {auto_next}", callback_data=f"round:toggle_auto_next:{game_key}"))
+    builder.row(InlineKeyboardButton(text="▶️ شروع دور", callback_data=f"round:start:{game_key}"))
+    return builder.as_markup()
 
 def continue_night_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
