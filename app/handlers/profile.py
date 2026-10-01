@@ -146,7 +146,7 @@ async def achievements_command(message: Message) -> None:
         if not user:
             await message.answer("هنوز پروفایلی برای شما ثبت نشده است.")
             return
-        await message.answer(await _achievements_text(session, user), reply_markup=main_menu())
+        await message.answer(await _achievements_text(session, user), reply_markup=profile_menu())
 
 @router.callback_query(lambda c: c.data == "profile:achievements")
 async def achievements_callback(callback: CallbackQuery) -> None:
