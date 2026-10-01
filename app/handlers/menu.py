@@ -780,6 +780,24 @@ async def finish_game_result(callback: CallbackQuery) -> None:
         if not game or game.status != "running":
             await callback.answer("بازی در حال اجرا پیدا نشد.", show_alert=True)
             return
+        # پایان دستی فقط پس از تکمیل یک دور فرد مجاز است؛ این کار از
+        # پایان تصادفی بازی وسط نوبت‌ها جلوگیری می‌کند.
+        latest_vote = (await session.execute(
+            select(GameEvent).where(
+                GameEvent.game_id == game.id,
+                GameEvent.event_type == "voting_resolved",
+            ).order_by(GameEvent.id.desc())
+        )).scalars().first()
+        if not latest_vote:
+            await callback.answer("هنوز هیچ دور کاملی برای اتمام بازی ثبت نشده است.", show_alert=True)
+            return
+        try:
+            completed_round = int(json.loads(latest_vote.payload or "{}").get("round_no", 0))
+        except (TypeError, ValueError):
+            completed_round = 0
+        if completed_round <= 0 or completed_round % 2 == 0:
+            await callback.answer("اتمام دستی فقط پس از تکمیل یک دور فرد امکان‌پذیر است.", show_alert=True)
+            return
         from app.services.gameplay import finalize_game
         try:
             await finalize_game(session, game, winner)
