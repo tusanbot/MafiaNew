@@ -531,6 +531,15 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 event_type, message = "silence", "بازیکن تا پایان این دور سکوت شد."
             elif action == "extra_turn":
                 target.extra_turn_round = round_no
+                queue_event = (await session.execute(
+                    select(GameEvent).where(GameEvent.game_id == game.id, GameEvent.event_type == "turn_queue").order_by(GameEvent.id.desc())
+                )).scalars().first()
+                if queue_event:
+                    queue_data = json.loads(queue_event.payload or "{}")
+                    queue_data.setdefault("queue", [])
+                    if target_id not in queue_data["queue"]:
+                        queue_data["queue"].append(target_id)
+                    queue_event.payload = json.dumps(queue_data, ensure_ascii=False)
                 event_type, message = "extra_turn_granted", "ترن اضافه برای پایان این دور ثبت شد."
             elif action == "kick":
                 target.alive, target.exit_type = False, "kick"
