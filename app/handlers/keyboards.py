@@ -158,6 +158,9 @@ def game_features_menu(
     next_auto_enabled: bool = False,
     auto_silence_warnings: bool = False,
     auto_kick_warnings: bool = False,
+    turn_seconds: int = 120,
+    challenge_seconds: int = 60,
+    extra_challenge_seconds: int = 60,
     back_callback: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
@@ -186,6 +189,14 @@ def game_features_menu(
     builder.row(InlineKeyboardButton(
         text=f"{'🟢' if auto_kick_warnings else '⚪'} کیک خودکار با تذکر پنجم",
         callback_data=f"gameadmin:feature:{group_id}:auto_kick",
+    ))
+    builder.row(
+        InlineKeyboardButton(text=f"🗣 نوبت {turn_seconds // 60:02d}:{turn_seconds % 60:02d}", callback_data=f"gameadmin:time:{group_id}:turn"),
+        InlineKeyboardButton(text=f"⚔️ چالش {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"gameadmin:time:{group_id}:challenge"),
+    )
+    builder.row(InlineKeyboardButton(
+        text=f"➕ چالش اضافه {extra_challenge_seconds // 60:02d}:{extra_challenge_seconds % 60:02d}",
+        callback_data=f"gameadmin:time:{group_id}:extra_challenge",
     ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
     builder.row(InlineKeyboardButton(text="لغو واقعی بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
