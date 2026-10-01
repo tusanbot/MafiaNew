@@ -32,6 +32,7 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
             reserves,
             is_host=bool(host and host.id == user_id),
             can_deal=full,
+            reserve_enabled=game.reserve_enabled,
         ),
     )
 
