@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario
@@ -141,8 +141,31 @@ async def resolve_night(session, game):
     return {"winner": None, "eliminated": eliminated, "saved": bool(killed_id and killed_id == saved_id)}
 
 async def start_voting(session, game):
-    if game.phase != "day": raise ValueError("الان مرحله روز نیست.")
+    if game.phase != "day":
+        raise ValueError("الان مرحله روز نیست.")
+    turn = await current_turn(session, game.id)
+    if not turn or turn.get("status") != "finished":
+        raise ValueError("تا پایان تمام نوبت‌های این دور امکان رأی‌گیری وجود ندارد.")
     round_no = await current_round(session, game.id)
+    queue = await _latest_turn_queue(session, game.id, round_no)
+    if not queue:
+        raise ValueError("صف نوبت‌های این دور پیدا نشد.")
+    queue_ids = list(queue.get("queue", []))
+    index = int(queue.get("index", -1))
+    alive_ids = {user.id for _, user, _ in await alive_players(session, game.id)}
+    remaining = [uid for uid in queue_ids[index + 1:] if uid in alive_ids]
+    if remaining:
+        raise ValueError("هنوز نوبت همه بازیکنان زنده تمام نشده است.")
+    pending_after = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type == "pending_after_challenge",
+    ))
+    if any(
+        _payload(event).get("round_no") == round_no
+        and _payload(event).get("status") in {"pending", "started"}
+        for event in pending_after.scalars()
+    ):
+        raise ValueError("هنوز چالش این دور اجرا نشده است.")
     game.phase = "voting"
     await _event(session, game, "phase_changed", {"to": "voting", "round_no": round_no})
     await session.commit()
@@ -435,7 +458,7 @@ async def select_challenge_placement(session, game, turn_owner: User, request_ev
         raise ValueError("ابتدا باید یک درخواست چالش انتخاب شود.")
     started = datetime.fromisoformat(turn["started_at"])
     now = datetime.now(timezone.utc)
-    from datetime import timedelta\n    if now - started >= timedelta(minutes=1):
+    if now - started >= timedelta(minutes=1):
         placement = "after"
     data["placement"] = placement
     data["placement_selected_at"] = now.isoformat()
