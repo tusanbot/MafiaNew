@@ -306,9 +306,9 @@ class GameRepository:
 
     @staticmethod
     async def replace_player(session: AsyncSession, game: Game, source: GamePlayer, destination: GamePlayer) -> bool:
-        if game.status != "waiting":
+        if game.status not in ("waiting", "running"):
             return False
-        if source.is_reserved or not destination.is_reserved:
+        if source.is_reserved or not destination.is_reserved or not source.alive:
             return False
         old_reserve_position = destination.reserve_position
         destination.is_reserved = False
@@ -317,13 +317,19 @@ class GameRepository:
         destination.role_id = source.role_id
         destination.alive = True
         destination.exit_type = None
-        await session.delete(source)
+        destination.warning_count = source.warning_count
+        if game.status == "waiting":
+            await session.delete(source)
+        else:
+            source.alive = False
+            source.exit_type = "replacement"
         await session.flush()
-        await update(GamePlayer).where(
-            GamePlayer.game_id == game.id,
-            GamePlayer.is_reserved.is_(True),
-            GamePlayer.reserve_position > old_reserve_position,
-        ).values(reserve_position=GamePlayer.reserve_position - 1)
+        if old_reserve_position is not None:
+            await session.execute(update(GamePlayer).where(
+                GamePlayer.game_id == game.id,
+                GamePlayer.is_reserved.is_(True),
+                GamePlayer.reserve_position > old_reserve_position,
+            ).values(reserve_position=GamePlayer.reserve_position - 1))
         await session.commit()
         return True
 
