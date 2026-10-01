@@ -455,7 +455,7 @@ def day_turn_keyboard(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if challenge_enabled and allow_challenge:
-        mark = ({"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "طلایی": "🟡"}.get(challenge_color, "🤏🏼") if turn_color_enabled else "") if challenge_emoji_enabled else ""
+        mark = ({"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "زرد": "🟡", "طلایی": "🟡"}.get(challenge_color, "🤏🏼") if turn_color_enabled else "") if challenge_emoji_enabled else ""
         builder.row(InlineKeyboardButton(text=f"🤏🏼 درخواست چالش".strip(), callback_data=f"turn:request_challenge:{game_key}"))
     if is_current_speaker:
         mark = {"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "طلایی": "🟡"}.get(turn_color, "🗣️") if turn_color_enabled else ""
