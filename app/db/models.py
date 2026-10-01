@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -71,6 +71,8 @@ class Game(Base):
     host_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     status: Mapped[str] = mapped_column(String(30), default="waiting")
     phase: Mapped[str] = mapped_column(String(30), default="lobby")
+    round_no: Mapped[int] = mapped_column(Integer, default=1)
+    stats_recorded: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -83,7 +85,7 @@ class GamePlayer(Base):
     seat: Mapped[int] = mapped_column(Integer)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"))
     alive: Mapped[bool] = mapped_column(Boolean, default=True)
-    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True, server_default=func.now()))
+    joined_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class GameEvent(Base):
     __tablename__ = "game_events"
@@ -94,6 +96,20 @@ class GameEvent(Base):
     payload: Mapped[str] = mapped_column(Text, default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
+class GameAction(Base):
+    __tablename__ = "game_actions"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
+    round_no: Mapped[int] = mapped_column(Integer)
+    phase: Mapped[str] = mapped_column(String(30))
+    actor_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action_type: Mapped[str] = mapped_column(String(40))
+    target_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("game_id", "round_no", "actor_user_id", "action_type", name="uq_game_action_actor_round_type"),
+    )
+
 class Vote(Base):
     __tablename__ = "votes"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -102,3 +118,6 @@ class Vote(Base):
     target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     round_no: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    __table_args__ = (
+        UniqueConstraint("game_id", "round_no", "voter_user_id", name="uq_vote_game_round_voter"),
+    )
