@@ -147,7 +147,20 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
                    (winner == "citizen" and role and role.team == "citizen") or
                    (winner == "independent" and role and role.team == "independent") or
                    (winner == "citizen_independent" and role and role.team in {"citizen", "independent"}))
-        user.score += 10 + (20 if winning else 0)
+        # Performance score: participation + result + measurable actions.
+        # A per-game cap prevents one unusually active game from dominating the leaderboard.
+        performance_score = min(
+            30,
+            kills[user.id] * 8
+            + saves[user.id] * 6
+            + investigation_hits[user.id] * 5
+            + correct_votes[user.id] * 2
+            + accepted_challenges[user.id] * 4
+            + faceoff_wins[user.id] * 6
+            + (3 if player.alive else 0)
+        )
+        result_score = 20 if winning else 0
+        user.score += 5 + result_score + performance_score
         user.win_streak = user.win_streak + 1 if winning else 0
         user.best_win_streak = max(user.best_win_streak, user.win_streak)
         user.kills += kills[user.id]; user.saves += saves[user.id]
