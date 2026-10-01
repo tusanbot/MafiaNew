@@ -304,29 +304,57 @@ async def is_user_silenced(session, game_id: int, user_id: int, round_no: int) -
     return False
 
 
-async def start_day_turns(session, game):
+async def choose_leader(session, game, leader_user_id: int | None = None):
+    if game.status != "running" or game.phase != "setup":
+        raise ValueError("مرحله انتخاب سردست فعال نیست.")
+    players = await alive_players(session, game.id)
+    if not players:
+        raise ValueError("بازیکن زنده‌ای برای انتخاب سردست وجود ندارد.")
+    alive_ids = {user.id for _, user, _ in players}
+    auto_selected = leader_user_id is None
+    if leader_user_id is None:
+        import secrets
+        leader_user_id = secrets.choice(sorted(alive_ids))
+    if leader_user_id not in alive_ids:
+        raise ValueError("سردست باید یکی از بازیکنان زنده باشد.")
+    game.phase = "day"
+    game.started_at = game.started_at or datetime.now(timezone.utc)
+    round_no = await current_round(session, game.id)
+    await _event(session, game, "leader_selected", {
+        "round_no": round_no, "leader_user_id": leader_user_id,
+        "mode": "auto" if auto_selected else "manual",
+    })
+    await start_day_turns(session, game, leader_user_id)
+    return {"leader_user_id": leader_user_id, "round_no": round_no, "kind": "main"}
+
+async def start_day_turns(session, game, first_user_id: int | None = None):
     if game.status != "running" or game.phase != "day":
         raise ValueError("مرحله روز فعال نیست.")
     round_no = await current_round(session, game.id)
     players = await alive_players(session, game.id)
-    queue = [user.id for _, user, _ in players]
-    if not queue:
+    if not players:
         raise ValueError("بازیکن زنده‌ای برای نوبت وجود ندارد.")
+    silent_ids = {user.id for player, user, _ in players if player.silence_until_round == round_no}
+    normal = [user.id for _, user, _ in players if user.id not in silent_ids]
+    if first_user_id in normal:
+        normal.remove(first_user_id)
+        normal.insert(0, first_user_id)
+    if not normal:
+        raise ValueError("همه بازیکنان زنده این دور ساکت هستند.")
+    extra_queue = [
+        user.id for player, user, _ in players
+        if player.extra_turn_round == round_no and user.id not in silent_ids
+    ]
     await _event(session, game, "turn_queue", {
-        "round_no": round_no,
-        "queue": queue,
-        "index": 0,
+        "round_no": round_no, "queue": normal, "extra_queue": extra_queue,
+        "index": 0, "extra_index": -1,
     })
     await _event(session, game, "turn_state", {
-        "round_no": round_no,
-        "kind": "main",
-        "user_id": queue[0],
-        "status": "active",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "index": 0,
+        "round_no": round_no, "kind": "main", "user_id": normal[0],
+        "status": "active", "started_at": datetime.now(timezone.utc).isoformat(), "index": 0,
     })
     await session.commit()
-    return queue[0]
+    return normal[0]
 
 
 async def _latest_turn_queue(session, game_id: int, round_no: int) -> dict | None:
@@ -382,6 +410,13 @@ async def request_challenge(session, game, requester: User):
         raise ValueError("فقط بازیکن زنده می‌تواند درخواست چالش بدهد.")
     if await is_user_silenced(session, game.id, requester.id, round_no):
         raise ValueError("بازیکن ساکت نمی‌تواند چالش بگیرد.")
+    requester_player = await session.scalar(select(GamePlayer).where(
+        GamePlayer.game_id == game.id, GamePlayer.user_id == requester.id
+    ))
+    if requester_player and requester_player.extra_turn_round == round_no:
+        raise ValueError("بازیکن دارای ترن اضافه نمی‌تواند چالش بگیرد.")
+    if turn.get("kind") == "extra":
+        raise ValueError("در ترن اضافه امکان چالش وجود ندارد.")
     if not game.challenge_enabled:
         raise ValueError("درخواست چالش در تنظیمات این بازی غیرفعال است.")
     mode = getattr(game, "challenge_mode", "limited")
@@ -533,22 +568,37 @@ async def _start_next_main_turn(session, game, round_no: int):
     if not queue:
         queue_ids = [user.id for _, user, _ in players]
         index = 0
+        extra_queue = []
+        extra_index = -1
     else:
         queue_ids = [uid for uid in queue.get("queue", []) if uid in alive_ids]
         index = int(queue.get("index", -1)) + 1
-    if index >= len(queue_ids):
-        return None
-    next_user = queue_ids[index]
-    await _event(session, game, "turn_queue", {"round_no": round_no, "queue": queue_ids, "index": index})
-    await _event(session, game, "turn_state", {
-        "round_no": round_no,
-        "kind": "main",
-        "user_id": next_user,
-        "status": "active",
-        "started_at": datetime.now(timezone.utc).isoformat(),
-        "index": index,
-    })
-    return next_user
+        extra_queue = [uid for uid in queue.get("extra_queue", []) if uid in alive_ids]
+        extra_index = int(queue.get("extra_index", -1))
+    if index < len(queue_ids):
+        next_user = queue_ids[index]
+        await _event(session, game, "turn_queue", {
+            "round_no": round_no, "queue": queue_ids, "index": index,
+            "extra_queue": extra_queue, "extra_index": extra_index,
+        })
+        await _event(session, game, "turn_state", {
+            "round_no": round_no, "kind": "main", "user_id": next_user,
+            "status": "active", "started_at": datetime.now(timezone.utc).isoformat(), "index": index,
+        })
+        return next_user
+    extra_index += 1
+    if extra_index < len(extra_queue):
+        next_user = extra_queue[extra_index]
+        await _event(session, game, "turn_queue", {
+            "round_no": round_no, "queue": queue_ids, "index": len(queue_ids) - 1,
+            "extra_queue": extra_queue, "extra_index": extra_index,
+        })
+        await _event(session, game, "turn_state", {
+            "round_no": round_no, "kind": "extra", "user_id": next_user,
+            "status": "active", "started_at": datetime.now(timezone.utc).isoformat(), "index": extra_index,
+        })
+        return next_user
+    return None
 
 
 async def next_turn(session, game):
