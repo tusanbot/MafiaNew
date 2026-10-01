@@ -570,7 +570,7 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         await session.commit()
         msg = await callback.bot.send_message(
             callback.message.chat.id,
-            f"درخواست چالش: {tg_name(actor.display_name or actor.first_name)}\n"
+            f"🤏🏼 درخواست چالش: {tg_name(actor.display_name or actor.first_name)}\n"
             f"صاحب ترن اصلی: {tg_name(turn_owner.display_name or turn_owner.first_name)}\n\n"
             "صاحب ترن یکی از درخواست‌ها را انتخاب می‌کند.",
             reply_markup=challenge_requests_keyboard(game.game_key, [(event, request_data)]),
