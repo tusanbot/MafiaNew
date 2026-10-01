@@ -3,7 +3,7 @@ from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 from sqlalchemy import func, select
 
-from app.db.models import User
+from app.db.models import Role, User, UserRoleStat
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu
 from app.services.profile import sync_telegram_user
@@ -16,6 +16,24 @@ async def _profile_text(session, user: User) -> str:
     position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
     rank = rank_for_score(user.score)
     win_rate = (user.games_won / user.games_played * 100) if user.games_played else 0
+    role_rows = list((await session.execute(
+        select(UserRoleStat, Role).join(Role, Role.id == UserRoleStat.role_id)
+        .where(UserRoleStat.user_id == user.id)
+        .order_by(UserRoleStat.games.desc(), UserRoleStat.wins.desc())
+        .limit(5)
+    )).all())
+    role_lines = ["", "🎭 آمار نقش‌ها"]
+    if role_rows:
+        for stat, role in role_rows:
+            role_rate = (stat.wins / stat.games * 100) if stat.games else 0
+            extras = []
+            if stat.kills: extras.append(f"کشت {stat.kills}")
+            if stat.saves: extras.append(f"نجات {stat.saves}")
+            if stat.investigations: extras.append(f"تحقیق {stat.investigations}")
+            detail = " • " + " • ".join(extras) if extras else ""
+            role_lines.append(f"• {role.name_fa}: {stat.games} بازی | {stat.wins} برد | {role_rate:.0f}%{detail}")
+    else:
+        role_lines.append("هنوز آمار نقشی ثبت نشده است.")
     return (
         "👤 پروفایل بازیکن\n\n"
         f"نام: {tg_name(user.display_name or user.first_name or 'بازیکن')}\n"
@@ -26,8 +44,16 @@ async def _profile_text(session, user: User) -> str:
         f"📈 نرخ برد: {win_rate:.1f}%\n"
         f"🔴 برد مافیا: {user.mafia_wins}\n"
         f"🔵 برد شهروند: {user.citizen_wins}\n"
-        f"⚔️ چالش‌ها: {user.challenges}\n"
-        f"🏅 دستاوردها: {user.achievements_count}"
+        f"🟣 برد مستقل: {user.independent_wins}\n\n"
+        f"⚔️ چالش‌ها: {user.challenges}  |  پذیرفته‌شده: {user.challenges_accepted}\n"
+        f"🎯 کشت: {user.kills}  |  نجات: {user.saves}\n"
+        f"🔎 تحقیقات: {user.investigations}  |  موفق: {user.investigation_hits}\n"
+        f"🗳 رأی درست علیه مافیا: {user.correct_votes}\n"
+        f"⚔️ فیس‌آف: {user.faceoffs}  |  برد: {user.faceoff_wins}\n"
+        f"☠️ بقا: {user.games_survived}/{user.games_played}  |  کیک: {user.kicks}\n"
+        f"🔥 برد متوالی: {user.win_streak}  |  بهترین: {user.best_win_streak}\n"
+        f"🏅 دستاوردها: {user.achievements_count}\n"
+        + "\n".join(role_lines)
     )
 
 @router.message(Command("profile"))
