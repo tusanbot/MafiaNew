@@ -354,46 +354,24 @@ async def round_start_handler(callback: CallbackQuery) -> None:
             await callback.answer(str(exc), show_alert=True)
             return
         leader = await session.get(User, result["leader_user_id"])
-        group = await session.get(Group, game.group_id)
-        scenario = await session.get(Scenario, game.scenario_id)
-        from app.services.gameplay import all_players
-        team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
-        roster_lines = []
-        for player, user, role in await all_players(session, game.id):
-            roster_lines.append(
-                f"{player.seat:02d} **{user.display_name or user.first_name or 'بازیکن'}** — "
-                f"{role.name_fa if role else 'نامشخص'} --------- "
-                f"{team_names.get(role.team, role.team) if role else 'نامشخص'}"
-            )
-        now_tehran = datetime.now(ZoneInfo("Asia/Tehran"))
-        jy, jm, jd = gregorian_to_jalali(now_tehran.year, now_tehran.month, now_tehran.day)
-        roster = (
-            f"༄\n📓 بازی شماره : {game.id}\n\n"
-            f"⏱ زمان : {now_tehran:%H:%M}\n"
-            f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
-            f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}\n"
-            f"👮‍♂ گرداننده : {leader.display_name if leader else 'بازیکن'}\n\n"
-            "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
-            "👥 لیست بازیکنان حاضر در بازی\n"
-            "◤◢◣◥◤◢◣◥◤◢◣◥\n" + "\n".join(roster_lines) +
-            "\n◤◢◣◥◤◢◣◥◤◢◣◥\n༄"
-        )
-        from app.handlers.keyboards import day_turn_keyboard
         turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
-        try:
-            await callback.bot.send_message(
-                callback.from_user.id,
-                roster + "\n\n▶️ دور شروع شد؛ نوبت صحبت‌ها آغاز شد.",
-                reply_markup=day_turn_keyboard(
-                    game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                    game.turn_color, game.challenge_color, True,
-                    bool(turn and turn.get("kind") != "extra"),
-                ),
-            )
-        except Exception:
-            pass
+        from app.handlers.keyboards import day_turn_keyboard
+        base_text = callback.message.text or ""
+        if "\n\n👑 سردست انتخاب شد:" in base_text:
+            base_text = base_text.split("\n\n👑 سردست انتخاب شد:", 1)[0]
+        await callback.message.edit_text(
+            base_text +
+            f"\n\n▶️ دور {result['round_no']} شروع شد." +
+            f"\n👑 سردست: {leader.display_name if leader else 'بازیکن'}" +
+            "\n\n🗣 نوبت صحبت‌ها آغاز شد.",
+            reply_markup=day_turn_keyboard(
+                game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                game.turn_color, game.challenge_color, True,
+                bool(turn and turn.get("kind") != "extra"),
+            ),
+        )
+        group = await session.get(Group, game.group_id)
         if group:
-            from app.handlers.keyboards import day_turn_keyboard
             await callback.bot.send_message(
                 group.telegram_id,
                 f"▶️ دور {result['round_no']} شروع شد.\n"
@@ -405,10 +383,11 @@ async def round_start_handler(callback: CallbackQuery) -> None:
                     bool(turn and turn.get("kind") != "extra"),
                 ),
             )
-            if game.next_auto_enabled:
-                from app.handlers.gameplay import _schedule_auto_next
-                await _schedule_auto_next(callback.bot, game.game_key)
+        if game.next_auto_enabled:
+            from app.handlers.gameplay import _schedule_auto_next
+            await _schedule_auto_next(callback.bot, game.game_key)
         await callback.answer("دور شروع شد.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:lobby:"))
 async def lobby_game_management(callback: CallbackQuery) -> None:
