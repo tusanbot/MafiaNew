@@ -752,9 +752,10 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
         game.phase = "finished"
         from datetime import datetime, timezone
         game.finished_at = datetime.now(timezone.utc)
+        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
         session.add(GameEvent(
             game_id=game.id,
-            actor_user_id=((await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id if await UserRepository(session).get_by_telegram_id(callback.from_user.id) else None),
+            actor_user_id=actor.id if actor else None,
             event_type="game_cancelled",
             payload=json.dumps({"reason": "admin_cancelled"}, ensure_ascii=False),
         ))
