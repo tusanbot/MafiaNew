@@ -111,6 +111,9 @@ async def reserve_game(callback: CallbackQuery) -> None:
             await callback.answer("در حال حاضر امکان ثبت رزرو وجود ندارد.", show_alert=True)
             return
         await _render(callback, session, game, user.id)
+        group = await session.get(Group, game.group_id)
+        if group:
+            await callback.bot.send_message(group.telegram_id, f"بازیکن {user.display_name or user.first_name} وارد لیست جایگزین شد؛ جایگاه رزرو {player.reserve_position}.")
         await callback.answer(f"رزرو شما ثبت شد؛ جایگاه رزرو {player.reserve_position}.")
 
 
