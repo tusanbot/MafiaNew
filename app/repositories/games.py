@@ -110,9 +110,8 @@ class GameRepository:
         )
         old = existing.scalar_one_or_none()
         if old is not None:
-            if old.is_reserved:
-                return old
-            return None
+            # Joining twice is idempotent: return the existing record.
+            return old
         scenario = await session.get(Scenario, game.scenario_id)
         if scenario is None:
             return None
@@ -125,6 +124,49 @@ class GameRepository:
         used_seats = {player.seat for player in players}
         seat = next((n for n in range(1, scenario.max_players + 1) if n not in used_seats), None)
         if seat is None:
+            return None
+        player = GamePlayer(game_id=game.id, user_id=user.id, seat=seat, is_reserved=False)
+        session.add(player)
+        await session.commit()
+        await session.refresh(player)
+        return player
+
+    @staticmethod
+    async def join_at_seat(session: AsyncSession, game: Game, user: User, seat: int) -> GamePlayer | None:
+        """Join directly into the requested seat, or move the user's existing seat."""
+        if game.status != "waiting":
+            return None
+        scenario = await session.get(Scenario, game.scenario_id)
+        if scenario is None or seat < 1 or seat > scenario.max_players:
+            return None
+        existing_result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
+        )
+        existing = existing_result.scalar_one_or_none()
+        occupied_result = await session.execute(
+            select(GamePlayer).where(
+                GamePlayer.game_id == game.id,
+                GamePlayer.is_reserved.is_(False),
+                GamePlayer.seat == seat,
+            )
+        )
+        occupied = occupied_result.scalar_one_or_none()
+        if existing is not None:
+            if existing.is_reserved:
+                return None
+            if existing.seat == seat:
+                return existing
+            if occupied is not None and occupied.user_id != user.id:
+                return None
+            existing.seat = seat
+            await session.commit()
+            return existing
+        if occupied is not None:
+            return None
+        count_result = await session.execute(
+            select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.is_reserved.is_(False))
+        )
+        if len(list(count_result.scalars())) >= scenario.max_players:
             return None
         player = GamePlayer(game_id=game.id, user_id=user.id, seat=seat, is_reserved=False)
         session.add(player)
