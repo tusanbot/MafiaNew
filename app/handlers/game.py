@@ -284,6 +284,23 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         )
         await callback.answer("سردست انتخاب شد.")
 
+@router.callback_query(lambda c: c.data and c.data.startswith("round:back:"))
+async def round_back_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game else None
+        if not game or not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            "👑 سردست انتخاب شده است.\n\nتنظیمات را بررسی کنید و سپس «شروع دور» را بزنید.",
+            reply_markup=leader_settings_keyboard(game.game_key, game),
+        )
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data and c.data.startswith("round:settings:"))
 async def round_settings_handler(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
@@ -313,7 +330,7 @@ async def round_settings_handler(callback: CallbackQuery) -> None:
                 game.turn_seconds,
                 game.challenge_seconds,
                 game.extra_challenge_seconds,
-                back_callback=f"leader:back:{game.game_key}",
+                back_callback=f"round:back:{game.game_key}",
             ),
         )
     await callback.answer()
