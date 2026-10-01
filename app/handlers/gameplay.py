@@ -576,6 +576,10 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             reply_markup=challenge_requests_keyboard(game.game_key, [(event, request_data)]),
         )
         await attach_challenge_request_message(session, event.id, callback.message.chat.id, msg.message_id)
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         await callback.answer("درخواست چالش در گروه ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
@@ -660,7 +664,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         task = _challenge_tasks.pop(int(event_id), None)
         if task:
             task.cancel()
-        turn_task = _turn_tasks.pop(game.id, None)
+        turn_task = _turn_tasks.pop(game.game_key, None)
         if turn_task:
             turn_task.cancel()
         requester = await session.get(User, result["requester_id"])
