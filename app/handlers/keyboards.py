@@ -560,3 +560,26 @@ def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool 
             InlineKeyboardButton(text="مدیریت گروه", callback_data=f"groupadmin:lobby:{game_key}"),
         )
     return builder.as_markup()
+
+
+def admin_panel_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📊 داشبورد", callback_data="admin:dashboard"))
+    builder.row(InlineKeyboardButton(text="👥 گروه‌ها", callback_data="admin:groups"))
+    builder.row(InlineKeyboardButton(text="🎭 سناریوها", callback_data="admin:scenarios"))
+    builder.row(InlineKeyboardButton(text="🎮 بازی‌های اخیر", callback_data="admin:games"))
+    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات ربات", callback_data="admin:settings"))
+    _back(builder, "menu:root")
+    return builder.as_markup()
+
+
+def admin_scenario_keyboard(scenarios) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for scenario in scenarios:
+        state = "فعال" if scenario.enabled else "غیرفعال"
+        builder.row(InlineKeyboardButton(
+            text=f"{scenario.name_fa}: {state}",
+            callback_data=f"admin:scenario_toggle:{scenario.id}",
+        ))
+    _back(builder, "admin:dashboard")
+    return builder.as_markup()
