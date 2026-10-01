@@ -1524,7 +1524,8 @@ async def toggle_draft_host_next(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play,
+            draft.turn_seconds, draft.challenge_seconds, draft.extra_challenge_seconds))
     await callback.answer("نکست گرداننده تغییر کرد.")
 
 
@@ -1540,7 +1541,8 @@ async def toggle_draft_player_next(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play,
+            draft.turn_seconds, draft.challenge_seconds, draft.extra_challenge_seconds))
     await callback.answer("نکست بازیکن تغییر کرد.")
 
 
@@ -1556,7 +1558,8 @@ async def toggle_draft_auto_next(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play,
+            draft.turn_seconds, draft.challenge_seconds, draft.extra_challenge_seconds))
     await callback.answer("نکست خودکار تغییر کرد.")
 
 
@@ -1653,7 +1656,8 @@ async def toggle_draft_auto(callback: CallbackQuery) -> None:
         from app.handlers.keyboards import new_game_settings_keyboard
         await callback.message.edit_reply_markup(reply_markup=new_game_settings_keyboard(
             group.id, draft.challenge_enabled, draft.next_host_enabled,
-            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play))
+            draft.next_player_enabled, draft.next_auto_enabled, draft.auto_play,
+            draft.turn_seconds, draft.challenge_seconds, draft.extra_challenge_seconds))
     await callback.answer("بازی خودکار تغییر کرد.")
 
 
