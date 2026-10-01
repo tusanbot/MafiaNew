@@ -25,6 +25,10 @@ async def start_handler(message: Message) -> None:
     if message.chat.type in ("group", "supergroup"):
         async with session_factory() as session:
             group = await GroupRepository.upsert_from_chat(session, message.chat)
+            member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+            if member.status not in ("creator", "administrator"):
+                await message.answer("منوی مدیریت ربات فقط برای مدیران گروه در دسترس است.")
+                return
             if not group.is_active:
                 await message.answer(
                     "این گروه هنوز در ربات ثبت نشده است.\n\n"
