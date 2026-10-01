@@ -147,7 +147,7 @@ async def _send_night_menus(bot, session, game):
             await bot.send_message(
                 user.telegram_id,
                 f"🌙 اقدام شب\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
-                reply_markup=night_action_keyboard(game.game_key, action, players),
+                reply_markup=night_action_keyboard(game.game_key, action, players, user.id),
             )
         except Exception:
             pass
