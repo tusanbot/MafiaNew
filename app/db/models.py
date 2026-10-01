@@ -120,7 +120,7 @@ class Game(Base):
     auto_silence_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_kick_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
     turn_color_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
-    emoji_settings: Mapped[str] = mapped_column(Text, default='{"death": true, "kick": true, "challenge": true, "silence": true, "extra_turn": true, "warning": true}')
+    emoji_settings: Mapped[str] = mapped_column(Text, default='{"death": true, "kick": true, "faceoff": true, "slaughter": true, "challenge": true, "silence": true, "extra_turn": true, "warning": true}')
     status: Mapped[str] = mapped_column(String(30), default="waiting")
     phase: Mapped[str] = mapped_column(String(30), default="lobby")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
