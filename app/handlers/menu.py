@@ -659,7 +659,15 @@ async def player_target_action(callback: CallbackQuery) -> None:
                 payload.update(target_vote)
             session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False)))
             await session.commit()
-        await callback.message.edit_text(f"مدیریت بازیکنان\n\n{message}", reply_markup=player_management_menu(group.id))
+        game_winner = None
+        if action in {"remove", "kick", "slaughter", "birthday"} and game.status == "running":
+            from app.services.gameplay import check_winner, finalize_game
+            game_winner = await check_winner(session, game.id)
+            if game_winner:
+                await finalize_game(session, game, game_winner)
+                await session.commit()
+                message += f"\n\n🏁 شرط برد برقرار شد؛ بازی با برد {'مافیا' if game_winner == 'mafia' else 'شهروند' if game_winner == 'citizen' else game_winner} به پایان رسید."
+        await callback.message.edit_text(f"مدیریت بازیکنان\n\n{message}", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
     await callback.answer(message)
 
 
@@ -695,9 +703,21 @@ async def faceoff_to(callback: CallbackQuery) -> None:
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
         session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type="faceoff", payload=json.dumps({"source_user_id": source_id, "destination_user_id": dest_id, "round_no": round_no}, ensure_ascii=False)))
         await session.commit()
+        game_winner = None
+        from app.services.gameplay import check_winner, finalize_game
+        game_winner = await check_winner(session, game.id)
+        if game_winner:
+            await finalize_game(session, game, game_winner)
+            await session.commit()
         source_user, dest_user = await session.get(User, source_id), await session.get(User, dest_id)
-        await callback.bot.send_message(group.telegram_id, f"فیس‌آف انجام شد: نقش {source_user.display_name or source_user.first_name} و {dest_user.display_name or dest_user.first_name} جابه‌جا شد.")
-        await callback.message.edit_text("فیس‌آف با موفقیت انجام شد.", reply_markup=player_management_menu(group.id))
+        await callback.bot.send_message(
+            group.telegram_id,
+            f"فیس‌آف انجام شد: نقش {tg_name(source_user.display_name or source_user.first_name)} و {tg_name(dest_user.display_name or dest_user.first_name)} جابه‌جا شد."
+        )
+        if game_winner:
+            label = {"mafia": "مافیا", "citizen": "شهروند"}.get(game_winner, game_winner)
+            await callback.bot.send_message(group.telegram_id, f"🏁 بازی به پایان رسید. برنده: {label}")
+        await callback.message.edit_text("فیس‌آف با موفقیت انجام شد.", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
     await callback.answer("فیس‌آف انجام شد.")
 
 
