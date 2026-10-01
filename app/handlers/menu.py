@@ -27,6 +27,7 @@ from app.handlers.keyboards import (
     scenario_role_keyboard,
     scenario_challenge_keyboard,
     scenario_delete_confirm_keyboard,
+    notification_settings_menu,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -1037,11 +1038,16 @@ async def bot_settings_placeholder(callback: CallbackQuery) -> None:
     action = callback.data.split(":", 1)[1]
     if action == "general":
         text = "⚙️ تنظیمات عمومی\n\nتنظیمات رفتاری و شخصی ربات؛ مانند نمایش پروفایل و گزارش عملکرد."
+        await callback.message.edit_text(text, reply_markup=bot_settings_menu())
     elif action == "notifications":
-        text = "🔔 تنظیمات اعلان‌ها\n\nاعلان‌های شروع بازی، نوبت و چالش، نتیجه بازی، دستاورد و رتبه در این بخش مدیریت می‌شوند."
+        async with session_factory() as session:
+            user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+            if not user:
+                await callback.answer("کاربر پیدا نشد.", show_alert=True)
+                return
+            await callback.message.edit_text("🔔 تنظیمات اعلان‌ها\n\nاعلان‌های موردنظر را فعال یا غیرفعال کنید.", reply_markup=notification_settings_menu(user))
     else:
-        text = "بخش تنظیمات پیدا نشد."
-    await callback.message.edit_text(text, reply_markup=bot_settings_menu())
+        await callback.message.edit_text("بخش تنظیمات پیدا نشد.", reply_markup=bot_settings_menu())
     await callback.answer()
 
 
@@ -1905,3 +1911,23 @@ async def scenario_delete_confirm(callback: CallbackQuery) -> None:
             result_text = "🗑 سناریو حذف شد."
     await callback.message.edit_text(result_text, reply_markup=scenario_management_menu())
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("notify:toggle:"))
+async def notification_toggle(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    field = callback.data.split(":")[-1]
+    allowed = {"notify_game_result","notify_achievements","notify_rank_changes","notify_challenges","notify_turns"}
+    if field not in allowed:
+        await callback.answer("گزینه نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not user:
+            await callback.answer("کاربر پیدا نشد.", show_alert=True)
+            return
+        setattr(user, field, not getattr(user, field))
+        await session.commit()
+        await callback.message.edit_reply_markup(reply_markup=notification_settings_menu(user))
+    await callback.answer("ذخیره شد.")
