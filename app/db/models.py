@@ -79,12 +79,14 @@ class Scenario(Base):
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
     challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    turn_seconds: Mapped[int] = mapped_column(Integer, default=120)
+    challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    extra_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
     training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class ScenarioRole(Base):
     __tablename__ = "scenario_roles"
-    __table_args__ = (UniqueConstraint("scenario_id", "role_id", name="uq_scenario_role"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     scenario_id: Mapped[int] = mapped_column(ForeignKey("scenarios.id", ondelete="CASCADE"))
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"))
@@ -114,6 +116,9 @@ class Game(Base):
     challenge_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
     challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    turn_seconds: Mapped[int] = mapped_column(Integer, default=120)
+    challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    extra_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
     next_host_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_player_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     next_auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
