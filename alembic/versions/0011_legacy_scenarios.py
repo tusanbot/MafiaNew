@@ -20,6 +20,7 @@ SCENARIOS = [
  ("classic_12","کلاسیک 12",12,"limited",1,["mason","cowboy","mafia_chief","doctor","saboteur","sniper","bartender","spy","priest","gunner","natasha","invulnerable"]),
  ("classic_13","کلاسیک 13",13,"limited",1,["mason","cowboy","mafia_chief","novice","doctor","saboteur","sniper","bartender","spy","priest","gunner","natasha","invulnerable"]),
 ]
+
 ROLES = [
  ("citizen","شهروند ساده","citizen","شهروند عادی"),("constantine","کنستانتین","citizen","احیای محدود بازیکن حذف‌شده"),
  ("leon","لئون","citizen",""),("watson","دکتر واتسون","citizen","نجات"),("hometown","همشهری","citizen","نقش اطلاعاتی"),
@@ -53,25 +54,28 @@ ROLES = [
  ("zodiac","زودیاک","independent",""),("novice","نوفیس","independent","")
 ]
 
+def _execute(stmt, **params):
+    op.execute(stmt.bindparams(**params))
+
 def upgrade():
     op.add_column("scenarios", sa.Column("challenge_limit", sa.Integer(), nullable=True))
     op.execute(sa.text("UPDATE scenarios SET challenge_limit=1 WHERE challenge_mode='limited'"))
     for key,name,players,mode,limit,roles in SCENARIOS:
-        op.execute(sa.text("""
+        _execute(sa.text("""
             INSERT INTO scenarios(key,name_fa,min_players,max_players,enabled,challenge_mode,challenge_limit)
             VALUES (:key,:name,:minp,:maxp,true,:mode,:limit)
             ON CONFLICT (key) DO UPDATE SET name_fa=EXCLUDED.name_fa,min_players=EXCLUDED.min_players,max_players=EXCLUDED.max_players,enabled=true,challenge_mode=EXCLUDED.challenge_mode,challenge_limit=EXCLUDED.challenge_limit
-        """), {"key":key,"name":name,"minp":players,"maxp":players,"mode":mode,"limit":limit})
+        """), key=key,name=name,minp=players,maxp=players,mode=mode,limit=limit)
     for key,name,team,desc in ROLES:
-        op.execute(sa.text("""
+        _execute(sa.text("""
             INSERT INTO roles(key,name_fa,team,description)
             VALUES (:key,:name,:team,:desc)
             ON CONFLICT (key) DO UPDATE SET name_fa=EXCLUDED.name_fa,team=EXCLUDED.team,description=EXCLUDED.description
-        """), {"key":key,"name":name,"team":team,"desc":desc})
+        """), key=key,name=name,team=team,desc=desc)
 
 def downgrade():
     for key, *_ in SCENARIOS:
-        op.execute(sa.text("DELETE FROM scenarios WHERE key=:key"), {"key":key})
+        _execute(sa.text("DELETE FROM scenarios WHERE key=:key"), key=key)
     keys=[r[0] for r in ROLES]
     op.execute(sa.text("DELETE FROM roles WHERE key = ANY(:keys)"), {"keys":keys})
     op.drop_column("scenarios","challenge_limit")
