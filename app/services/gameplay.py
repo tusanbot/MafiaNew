@@ -280,15 +280,19 @@ async def _current_scenario(session, game):
 
 
 async def is_user_silenced(session, game_id: int, user_id: int, round_no: int) -> bool:
+    player = (await session.execute(select(GamePlayer).where(
+        GamePlayer.game_id == game_id, GamePlayer.user_id == user_id
+    ))).scalar_one_or_none()
+    if player and player.silence_until_round == round_no:
+        return True
     result = await session.execute(select(GameEvent).where(
         GameEvent.game_id == game_id,
         GameEvent.event_type == "silence",
     ).order_by(GameEvent.id.desc()))
     for event in result.scalars():
         data = _payload(event)
-        if data.get("round_no") != round_no or data.get("user_id") != user_id:
-            continue
-        return bool(data.get("active"))
+        if data.get("round_no") == round_no and data.get("user_id") == user_id:
+            return bool(data.get("active"))
     return False
 
 
@@ -370,8 +374,9 @@ async def request_challenge(session, game, requester: User):
         raise ValueError("فقط بازیکن زنده می‌تواند درخواست چالش بدهد.")
     if await is_user_silenced(session, game.id, requester.id, round_no):
         raise ValueError("بازیکن ساکت نمی‌تواند چالش بگیرد.")
-    scenario = await _current_scenario(session, game)
-    mode = getattr(scenario, "challenge_mode", "limited") if scenario else "limited"
+    if not game.challenge_enabled:
+        raise ValueError("درخواست چالش در تنظیمات این بازی غیرفعال است.")
+    mode = getattr(game, "challenge_mode", "limited")
     if mode != "free":
         result = await session.execute(select(GameEvent).where(
             GameEvent.game_id == game.id,
