@@ -21,7 +21,6 @@ def upgrade():
             sa.Column("points", sa.Integer(), nullable=False, server_default="0"),
             sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
         )
-        op.create_index("ix_achievements_key", "achievements", ["key"], unique=True)
     if "user_achievements" not in tables:
         op.create_table(
             "user_achievements",
@@ -39,5 +38,4 @@ def downgrade():
     if "user_achievements" in tables:
         op.drop_table("user_achievements")
     if "achievements" in tables:
-        op.drop_index("ix_achievements_key", table_name="achievements")
         op.drop_table("achievements")
