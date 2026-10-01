@@ -113,3 +113,22 @@ def test_night_callbacks_match_keyboard_shapes() -> None:
     assert action[1] == "mafia_kill"
     assert action[2] == "abc123"
     assert int(action[3]) == 456
+
+
+def test_admin_panel_keyboard_has_core_sections() -> None:
+    from app.handlers.keyboards import admin_panel_menu
+    callbacks = _callbacks(admin_panel_menu())
+    assert callbacks == [
+        "admin:dashboard",
+        "admin:groups",
+        "admin:scenarios",
+        "admin:games",
+        "admin:settings",
+        "menu:root",
+    ]
+
+
+def test_main_menu_can_expose_admin_panel() -> None:
+    from app.handlers.keyboards import main_menu
+    callbacks = _callbacks(main_menu(show_admin=True))
+    assert "menu:admin" in callbacks
