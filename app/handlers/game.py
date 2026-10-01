@@ -268,23 +268,40 @@ async def leader_selection_handler(callback: CallbackQuery) -> None:
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        group = await session.get(Group, game.group_id)
         leader = await session.get(User, result["leader_user_id"])
-        if group and leader:
-            players = await GameRepository.players(session, game.id)
-            names = []
-            for player, user in players:
-                marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
-                names.append(f"{marker} {player.seat:02d}. {user.display_name or user.first_name or 'بازیکن'}")
-            from app.handlers.keyboards import leader_settings_keyboard
-            await callback.bot.send_message(
-                group.telegram_id,
-                f"👑 سردست انتخاب شد: {leader.display_name or leader.first_name or 'بازیکن'}\n\n"
-                f"👥 لیست بازیکنان حاضر در بازی\n" + "\n".join(names) +
-                "\n\nتنظیمات چالش و نکست را بررسی کنید و سپس «شروع دور» را بزنید.",
-                reply_markup=leader_settings_keyboard(game.game_key, game),
+        assignments = await __import__("app.services.gameplay", fromlist=["all_players"]).all_players(session, game.id)
+        team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
+        now_tehran = datetime.now(ZoneInfo("Asia/Tehran"))
+        jy, jm, jd = gregorian_to_jalali(now_tehran.year, now_tehran.month, now_tehran.day)
+        roster_lines = []
+        for player, user, role in assignments:
+            marker = "👑" if user.id == leader.id else ("🔇" if player.silence_until_round == result["round_no"] else "•")
+            roster_lines.append(
+                f"{marker} {player.seat:02d} **{user.display_name or user.first_name or 'بازیکن'}** — "
+                f"{role.name_fa if role else 'نامشخص'} --------- "
+                f"{team_names.get(role.team, role.team) if role else 'نامشخص'}"
             )
-        await callback.answer("سردست انتخاب شد و دور آغاز شد.")
+        scenario = await session.get(Scenario, game.scenario_id)
+        roster_text = (
+            f"༄\n📓 بازی شماره : {game.id}\n\n"
+            f"⏱ زمان : {now_tehran:%H:%M}\n"
+            f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
+            f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}\n"
+            f"👮‍♂ گرداننده : {host.display_name or host.first_name or 'نامشخص'}\n\n"
+            "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
+            "👥 لیست بازیکنان حاضر در بازی\n"
+            "◤◢◣◥◤◢◣◥◤◢◣◥\n" + "\n".join(roster_lines) +
+            "\n◤◢◣◥◤◢◣◥◤◢◣◥\n༄"
+        )
+        from app.handlers.keyboards import leader_settings_keyboard
+        await callback.message.edit_text(
+            roster_text + "\n\n👑 سردست انتخاب شد: " +
+            (leader.display_name or leader.first_name or "بازیکن") +
+            "\nتنظیمات چالش و نکست را بررسی کنید و سپس «شروع دور» را بزنید.",
+            reply_markup=leader_settings_keyboard(game.game_key, game),
+        )
+        await callback.answer("سردست انتخاب شد.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("round:toggle_"))
 async def round_toggle_handler(callback: CallbackQuery) -> None:
