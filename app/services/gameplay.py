@@ -215,6 +215,12 @@ async def submit_vote(session, game, voter, target_user_id):
         await session.commit()
         return {"resolved": True, "winner": winner, "eliminated": eliminated, "tie": len(leaders) != 1}
     game.phase = "night"
+    players_to_reset = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id))).scalars().all()
+    for player in players_to_reset:
+        if player.extra_turn_round == round_no:
+            player.extra_turn_round = None
+        if player.silence_until_round == round_no:
+            player.silence_until_round = None
     await _event(session, game, "round_started", {"round_no": round_no + 1})
     await session.commit()
     return {"resolved": True, "winner": None, "eliminated": eliminated, "tie": len(leaders) != 1}
