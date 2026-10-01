@@ -9,42 +9,22 @@ depends_on = None
 def upgrade():
     op.add_column("games", sa.Column("host_user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=True))
 
-    scenarios = sa.table(
-        "scenarios",
-        sa.column("key", sa.String),
-        sa.column("name_fa", sa.String),
-        sa.column("min_players", sa.Integer),
-        sa.column("max_players", sa.Integer),
-        sa.column("enabled", sa.Boolean),
-    )
-    op.bulk_insert(
-        scenarios,
-        [{
-            "key": "classic",
-            "name_fa": "کلاسیک",
-            "min_players": 7,
-            "max_players": 20,
-            "enabled": True,
-        }],
-    )
+    op.execute(sa.text("""
+        INSERT INTO scenarios (key, name_fa, min_players, max_players, enabled)
+        VALUES ('classic', 'کلاسیک', 7, 20, TRUE)
+        ON CONFLICT (key) DO NOTHING
+    """))
 
-    roles = sa.table(
-        "roles",
-        sa.column("key", sa.String),
-        sa.column("name_fa", sa.String),
-        sa.column("team", sa.String),
-        sa.column("description", sa.Text),
-    )
-    op.bulk_insert(
-        roles,
-        [
-            {"key": "godfather", "name_fa": "پدرخوانده", "team": "mafia", "description": "رهبر تیم مافیا"},
-            {"key": "mafia", "name_fa": "مافیا", "team": "mafia", "description": "عضو تیم مافیا"},
-            {"key": "doctor", "name_fa": "دکتر", "team": "citizen", "description": "نقش حمایتی شهروند"},
-            {"key": "detective", "name_fa": "کارآگاه", "team": "citizen", "description": "نقش اطلاعاتی شهروند"},
-            {"key": "citizen", "name_fa": "شهروند", "team": "citizen", "description": "شهروند عادی"},
-        ],
-    )
+    op.execute(sa.text("""
+        INSERT INTO roles (key, name_fa, team, description)
+        VALUES
+          ('godfather', 'پدرخوانده', 'mafia', 'رهبر تیم مافیا'),
+          ('mafia', 'مافیا', 'mafia', 'عضو تیم مافیا'),
+          ('doctor', 'دکتر', 'citizen', 'نقش حمایتی شهروند'),
+          ('detective', 'کارآگاه', 'citizen', 'نقش اطلاعاتی شهروند'),
+          ('citizen', 'شهروند', 'citizen', 'شهروند عادی')
+        ON CONFLICT (key) DO NOTHING
+    """))
 
 def downgrade():
     op.drop_column("games", "host_user_id")
