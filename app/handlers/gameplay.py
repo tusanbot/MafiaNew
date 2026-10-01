@@ -36,6 +36,7 @@ from app.handlers.keyboards import (
     day_turn_keyboard,
     challenge_requests_keyboard,
     challenge_placement_keyboard,
+    continue_night_keyboard,
 )
 
 router = Router(name="gameplay")
