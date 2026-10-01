@@ -55,7 +55,7 @@ async def start_handler(message: Message) -> None:
         f"سلام {user.display_name or 'دوست'}\n\n"
         "به ربات مافیا خوش آمدی.\n"
         "از منوی زیر بخش موردنظر را انتخاب کن.",
-        reply_markup=main_menu(),
+        reply_markup=main_menu(message.from_user.id in get_settings().admin_id_set),
     )
 
 
