@@ -300,7 +300,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         if chat_id:
             if result["placement"] == "before":
                 await callback.bot.send_message(chat_id, f"چالش {name} قبل از ادامه صحبت اجرا می‌شود.",
-                                                 reply_markup=day_turn_keyboard(game.game_key, False))
+                                                 reply_markup=day_turn_keyboard(game.game_key, True))
             else:
                 await callback.bot.send_message(chat_id, f"چالش {name} بعد از پایان این نوبت اجرا می‌شود.")
         await callback.answer("زمان چالش ثبت شد.")
@@ -343,7 +343,7 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.bot.send_message(
                 chat_id,
                 f"نوبت {kind} {name} شروع شد.",
-                reply_markup=day_turn_keyboard(game.game_key, result["kind"] == "main"),
+                reply_markup=day_turn_keyboard(game.game_key, True),
             )
         await callback.answer("نکست ترن انجام شد.")
 
