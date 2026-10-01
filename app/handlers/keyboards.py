@@ -380,7 +380,7 @@ def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup
     builder = InlineKeyboardBuilder()
     for event, data in requests:
         builder.row(InlineKeyboardButton(
-            text=f"چالش {data.get('requester_name', 'بازیکن')}",
+            text=f"تایید چالش {data.get('requester_name', 'بازیکن')}",
             callback_data=f"challenge:grant:{game_key}:{event.id}",
         ))
     return builder.as_markup()
@@ -440,14 +440,32 @@ def host_select_keyboard(group_id: int, admins) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def new_game_settings_keyboard(group_id: int, reserve_enabled: bool = True) -> InlineKeyboardMarkup:
+def new_game_settings_keyboard(
+    group_id: int,
+    challenge_enabled: bool = True,
+    next_host_enabled: bool = True,
+    next_player_enabled: bool = True,
+    next_auto_enabled: bool = False,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"⚔️ چالش: {'فعال' if challenge_enabled else 'غیرفعال'}",
+        callback_data=f"newgame:toggle_challenge:{group_id}",
+    ))
     builder.row(
         InlineKeyboardButton(
-            text=f"رزرو: {'فعال' if reserve_enabled else 'غیرفعال'}",
-            callback_data=f"newgame:toggle_reserve:{group_id}",
-        )
+            text=f"🎛 نکست گرداننده: {'فعال' if next_host_enabled else 'غیرفعال'}",
+            callback_data=f"newgame:toggle_host_next:{group_id}",
+        ),
+        InlineKeyboardButton(
+            text=f"⏭ نکست بازیکن: {'فعال' if next_player_enabled else 'غیرفعال'}",
+            callback_data=f"newgame:toggle_player_next:{group_id}",
+        ),
     )
+    builder.row(InlineKeyboardButton(
+        text=f"⏱ نکست خودکار: {'فعال' if next_auto_enabled else 'غیرفعال'}",
+        callback_data=f"newgame:toggle_auto_next:{group_id}",
+    ))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
