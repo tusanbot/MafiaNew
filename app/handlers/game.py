@@ -1,4 +1,6 @@
 from aiogram import Router
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
 
@@ -336,6 +338,27 @@ async def round_start_handler(callback: CallbackQuery) -> None:
             return
         leader = await session.get(User, result["leader_user_id"])
         group = await session.get(Group, game.group_id)
+        scenario = await session.get(Scenario, game.scenario_id)
+        from app.services.gameplay import all_players
+        team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
+        roster_lines = []
+        for player, user, role in await all_players(session, game.id):
+            roster_lines.append(
+                f"{player.seat:02d} **{user.display_name or user.first_name or 'بازیکن'}** — "
+                f"{role.name_fa if role else 'نامشخص'} --------- "
+                f"{team_names.get(role.team, role.team) if role else 'نامشخص'}"
+            )
+        roster = (
+            f"༄\n📓 بازی شماره : {game.id}\n\n"
+            f"⏱ زمان : {datetime.now(ZoneInfo('Asia/Tehran')):%H:%M}\n"
+            f"📆 تاریخ : {(datetime.now(ZoneInfo('Asia/Tehran'))).date()}\n"
+            f"🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}\n"
+            f"👮‍♂ گرداننده : {leader.display_name if leader else 'بازیکن'}\n\n"
+            "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
+            "👥 لیست بازیکنان حاضر در بازی\n"
+            "◤◢◣◥◤◢◣◥◤◢◣◥\n" + "\n".join(roster_lines) +
+            "\n◤◢◣◥◤◢◣◥◤◢◣◥\n༄"
+        )
         if group:
             turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
             from app.handlers.keyboards import day_turn_keyboard
