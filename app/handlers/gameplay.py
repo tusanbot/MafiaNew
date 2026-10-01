@@ -3,6 +3,7 @@ from aiogram.types import CallbackQuery
 from sqlalchemy import select
 import json
 import asyncio
+from datetime import datetime, timezone
 
 from app.db.models import Game, Group, User, Scenario, GameEvent
 from app.db.session import session_factory
@@ -55,48 +56,88 @@ def _day_keyboard(game, current: bool = False):
 
 _challenge_tasks = {}
 _turn_tasks = {}
-TURN_SECONDS = 60
+TURN_SECONDS = 120
+TURN_UPDATE_SECONDS = 10
 
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
 
-async def _schedule_auto_next(bot, game_key: str):
+async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, message_id: int | None = None):
     async def runner():
-        await asyncio.sleep(TURN_SECONDS)
-        async with session_factory() as session:
-            game = await _load(session, game_key)
-            if not game or game.status != "running" or not game.next_auto_enabled:
-                return
-            turn = await current_turn(session, game.id)
-            if not turn or turn.get("status") != "active":
-                return
-            chat_id = await _group_chat_id(session, game)
-            try:
-                result = await next_turn(session, game)
-            except ValueError:
-                return
-            if not chat_id:
-                return
-            if result["kind"] == "finished_day":
-                await bot.send_message(chat_id, "زمان نوبت به پایان رسید و صحبت‌های این دور تمام شد.", reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)))
-            else:
+        while True:
+            await asyncio.sleep(TURN_UPDATE_SECONDS)
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.status != "running":
+                    return
+                turn = await current_turn(session, game.id)
+                if not turn or turn.get("status") != "active":
+                    return
+                started_at = turn.get("started_at")
+                if not started_at:
+                    return
+                try:
+                    started = datetime.fromisoformat(started_at)
+                except (TypeError, ValueError):
+                    return
+                if started.tzinfo is None:
+                    started = started.replace(tzinfo=timezone.utc)
+                elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
+                remaining = max(0, TURN_SECONDS - elapsed)
+                if chat_id and message_id:
+                    user = await session.get(User, int(turn["user_id"]))
+                    name = user.display_name or user.first_name if user else "بازیکن"
+                    minutes, seconds = divmod(remaining, 60)
+                    try:
+                        await bot.edit_message_text(
+                            f"🗣 نوبت صحبت {name}\n\n⏱ {minutes:02d}:{seconds:02d} فرصت صحبت داری",
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            reply_markup=_day_keyboard(game, True),
+                        )
+                    except Exception:
+                        pass
+                if remaining > 0:
+                    continue
+                if not game.next_auto_enabled:
+                    return
+                try:
+                    result = await next_turn(session, game)
+                except ValueError:
+                    return
+                if not chat_id:
+                    return
+                if result["kind"] == "finished_day":
+                    await bot.send_message(
+                        chat_id,
+                        "زمان نوبت به پایان رسید و صحبت‌های این دور تمام شد.",
+                        reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                    )
+                    return
                 user = await session.get(User, result["user_id"])
                 name = user.display_name or user.first_name if user else "بازیکن"
-                kind = "چالش" if result["kind"] == "challenge" else "اصلی"
-                await bot.send_message(chat_id, f"زمان نوبت تمام شد؛ نوبت {kind} {name} شروع شد.", reply_markup=_day_keyboard(game, True))
-                if game.next_auto_enabled:
-                    _turn_tasks[game.id] = asyncio.create_task(_schedule_auto_next(bot, game_key))
-    old = _turn_tasks.pop(game.id, None)
-    if old:
+                msg = await bot.send_message(
+                    chat_id,
+                    f"🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                    reply_markup=_day_keyboard(game, True),
+                )
+                _turn_tasks[game.game_key] = asyncio.create_task(
+                    _schedule_auto_next(bot, game_key, chat_id, msg.message_id)
+                )
+                return
+    old = _turn_tasks.get(game_key)
+    if old and old is not asyncio.current_task():
         old.cancel()
-    _turn_tasks[game.id] = asyncio.create_task(runner())
-
+    task = asyncio.create_task(runner())
+    _turn_tasks[game_key] = task
 
 async def _group_chat_id(session, game):
     group = await session.get(Group, game.group_id)
     return group.telegram_id if group else None
 
 async def _send_night_menus(bot, session, game):
+    if not game.auto_play:
+        return
     players = await alive_players(session, game.id)
     for player, user, role in players:
         if not role or role.key not in {"godfather", "mafia", "doctor", "detective"}:
@@ -105,7 +146,7 @@ async def _send_night_menus(bot, session, game):
         try:
             await bot.send_message(
                 user.telegram_id,
-                f"شب بازی {game.game_key}\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
+                f"🌙 اقدام شب\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
                 reply_markup=night_action_keyboard(game.game_key, action, players),
             )
         except Exception:
@@ -185,12 +226,15 @@ async def night_callback(callback: CallbackQuery):
             if chat_id:
                 if not result["winner"]:
                     await start_day_turns(session, game)
-                    if game.next_auto_enabled:
-                        await _schedule_auto_next(callback.bot, game.game_key)
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
-                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=_day_keyboard(game, True))
+                    msg = await callback.bot.send_message(
+                        chat_id,
+                        f"{text}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        reply_markup=_day_keyboard(game, True),
+                    )
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
                 else:
                     await callback.bot.send_message(chat_id, text)
             await callback.answer("شب بررسی شد.")
@@ -221,7 +265,12 @@ async def night_callback(callback: CallbackQuery):
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
-                    await callback.bot.send_message(chat_id, text + f"\n\nنوبت اصلی: {name}", reply_markup=day_turn_keyboard(game.game_key, True))
+                    msg = await callback.bot.send_message(
+                        chat_id,
+                        f"{text}\n\n🗣 نوبت صحبت {name}\n\n⏱ 02:00 فرصت صحبت داری",
+                        reply_markup=_day_keyboard(game, True),
+                    )
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
                 else:
                     await callback.bot.send_message(chat_id, text)
         await callback.answer("اقدام شب ثبت شد.")
@@ -289,7 +338,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 try:
                     if req_event.id == result["request_event_id"]:
                         await callback.bot.edit_message_text(
-                            f"چالش به {name} داده شد.\n\nزمان اجرا را انتخاب کنید:",
+                            f"⚔️ چالش برای {name} تأیید شد.\n\nزمان اجرای چالش را انتخاب کنید:",
                             chat_id=chat_id,
                             message_id=message_id,
                             reply_markup=challenge_placement_keyboard(game.game_key, req_event.id),
@@ -302,10 +351,6 @@ async def challenge_grant_handler(callback: CallbackQuery):
                         )
                 except Exception:
                     pass
-        chat_id = await _group_chat_id(session, game)
-        requester = await session.get(User, result["requester_id"])
-        if chat_id and requester:
-            await callback.bot.send_message(chat_id, f"{actor.display_name or actor.first_name} به {requester.display_name or requester.first_name} چالش داد. زمان اجرای چالش در حال تعیین است.")
         await callback.answer("چالش داده شد.")
         async def auto_after():
             await asyncio.sleep(20)
@@ -356,7 +401,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
         await callback.message.edit_text(
-            f"چالش {name}: {'قبل از صحبت' if result['placement'] == 'before' else 'بعد از صحبت'} انتخاب شد."
+            f"⚔️ چالش برای {name} تأیید شد.\nزمان اجرا: {'قبل از صحبت' if result['placement'] == 'before' else 'بعد از صحبت'}"
         )
         if chat_id:
             if result["placement"] == "before":
