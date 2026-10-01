@@ -1249,7 +1249,7 @@ async def render_new_game_menu(session, group, user_id: int | None = None):
         f"نکست بازیکن: {'فعال' if draft.next_player_enabled else 'غیرفعال'}\n"
         f"نکست خودکار: {'فعال' if draft.next_auto_enabled else 'غیرفعال'}\n"
         f"بازی خودکار شب: {'فعال' if draft.auto_play else 'غیرفعال'}\n"
-        f"اموجی‌های وضعیت: {emoji_count}/8 فعال"
+        f"اموجی‌های وضعیت: {emoji_count}/7 فعال"
     )
 
 
