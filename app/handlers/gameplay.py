@@ -177,14 +177,14 @@ async def start_match_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         await callback.message.edit_text(
-            f"بازی {game.game_key} شروع شد.\nسناریو: {scenario.name_fa}\nبازیکنان: {len(assignments)}"
+            f"بازی شروع شد.\nسناریو: {scenario.name_fa}\nبازیکنان: {len(assignments)}\n"
             "نقش‌ها خصوصی ارسال شدند. شب اول آغاز شد."
         )
         for _, role, user in assignments:
             try:
                 await callback.bot.send_message(
                     user.telegram_id,
-                    f"نقش شما در بازی {game.game_key}\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
+                    f"نقش شما\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
                 )
             except Exception:
                 pass
