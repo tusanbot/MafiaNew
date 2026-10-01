@@ -199,6 +199,41 @@ async def _public_status_roster(session, game) -> str:
         lines.append(f"{player.seat:02d}. {' '.join(marks)} {name} — {state}".strip())
     return "\n".join(lines)
 
+async def update_round_roster(bot, session, game, chat_id: int | None = None) -> None:
+    """Maintain one roster message per round; update it instead of sending new rosters."""
+    round_no = await current_round(session, game.id)
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "round_roster_message"
+    ).order_by(GameEvent.id.desc()))
+    event = None
+    for candidate in result.scalars():
+        data = json.loads(candidate.payload or "{}")
+        if int(data.get("round_no", -1)) == int(round_no):
+            event = candidate
+            break
+    data = json.loads(event.payload or "{}") if event else {}
+    target_chat = chat_id or data.get("chat_id") or await _group_chat_id(session, game)
+    if not target_chat:
+        return
+    roster_text = await _public_status_roster(session, game)
+    if event and data.get("message_id"):
+        try:
+            await bot.edit_message_text(roster_text, chat_id=int(target_chat), message_id=int(data["message_id"]))
+            return
+        except Exception:
+            pass
+    try:
+        msg = await bot.send_message(int(target_chat), roster_text)
+    except Exception:
+        return
+    payload = {"round_no": int(round_no), "chat_id": int(target_chat), "message_id": msg.message_id}
+    if event:
+        event.payload = json.dumps(payload, ensure_ascii=False)
+    else:
+        session.add(GameEvent(game_id=game.id, event_type="round_roster_message",
+                              payload=json.dumps(payload, ensure_ascii=False)))
+    await session.commit()
+
 async def _send_night_menus(bot, session, game):
     if not game.auto_play:
         return
@@ -255,51 +290,6 @@ async def start_match_handler(callback: CallbackQuery):
             except Exception:
                 pass
         await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
-
-@router.callback_query(lambda c: c.data and c.data.startswith("leader:"))
-async def leader_selection_handler(callback: CallbackQuery):
-    parts = callback.data.split(":")
-    if len(parts) not in (3, 4) or not callback.from_user or not callback.message:
-        return
-    mode, key = parts[1], parts[2]
-    async with session_factory() as session:
-        game = await _load(session, key)
-        if not game:
-            await callback.answer("بازی پیدا نشد.", show_alert=True)
-            return
-        host = await session.get(User, game.host_user_id)
-        if not host or host.telegram_id != callback.from_user.id:
-            await callback.answer("فقط گرداننده می‌تواند سردست را انتخاب کند.", show_alert=True)
-            return
-        try:
-            leader_id = None if mode == "auto" else int(parts[3])
-            selected = await choose_leader(session, game, leader_id)
-            await start_round(session, game)
-            await session.refresh(game)
-            leader = await session.get(User, selected["leader_user_id"])
-            leader_name = tg_name(leader.display_name or leader.first_name or "بازیکن") if leader else "بازیکن"
-            msg = (
-                f"👑 سردست: {leader_name}\n\n"
-                "دور اول آغاز شد.\n"
-                "نوبت‌های صحبت فعال شدند."
-            )
-            await callback.message.edit_text(msg)
-            chat_id = await _group_chat_id(session, game)
-            if chat_id:
-                turn = await current_turn(session, game.id)
-                speaker = await session.get(User, int(turn["user_id"])) if turn else None
-                speaker_name = tg_name(speaker.display_name or speaker.first_name or "بازیکن") if speaker else "بازیکن"
-                roster = await _public_status_roster(session, game)
-                turn_msg = await callback.bot.send_message(
-                    chat_id,
-                    f"{roster}\n\n🗣 نوبت صحبت {speaker_name}\n\n"
-                    f"⏱ {_duration_text(_turn_duration(game, 'main'))} فرصت صحبت داری",
-                    reply_markup=_day_keyboard(game, True),
-                )
-                await _schedule_auto_next(callback.bot, game.game_key, chat_id, turn_msg.message_id)
-            await callback.answer("سردست انتخاب شد و دور شروع شد.")
-        except (ValueError, TypeError) as exc:
-            await callback.answer(str(exc), show_alert=True)
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("night:"))
@@ -450,7 +440,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 try:
                     if req_event.id == result["request_event_id"]:
                         await callback.bot.edit_message_text(
-                            f"⚔️ چالش برای {name} تأیید شد.\n\nزمان اجرای چالش را انتخاب کنید:",
+                            f"🤏🏼 چالش برای {name} تأیید شد.\n\nزمان اجرای چالش را انتخاب کنید:",
                             chat_id=chat_id,
                             message_id=message_id,
                             reply_markup=challenge_placement_keyboard(game.game_key, req_event.id),
