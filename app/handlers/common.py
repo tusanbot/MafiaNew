@@ -128,7 +128,7 @@ async def group_start_menu_callback(callback: CallbackQuery) -> None:
         elif action == "new":
             from app.handlers.menu import render_new_game_menu
             await callback.message.edit_text(
-                await render_new_game_menu(session, group),
+                await render_new_game_menu(session, group, callback.from_user.id),
                 reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_menu"]).new_game_menu(group.id),
             )
     await callback.answer()
