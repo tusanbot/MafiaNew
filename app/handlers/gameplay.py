@@ -425,10 +425,70 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.bot.send_message(
                 chat_id,
                 f"نوبت {kind} {name} شروع شد.",
-                reply_markup=day_turn_keyboard(game.game_key, True),
+                reply_markup=day_turn_keyboard(
+                    game.game_key, True, game.challenge_enabled,
+                    game.turn_color_enabled, game.turn_color, game.challenge_color,
+                    True, result["kind"] != "extra"
+                ),
             )
         await callback.answer("نکست ترن انجام شد.")
 
+
+@router.callback_query(lambda c: c.data and c.data.startswith("day:night:"))
+async def day_night_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند فاز شب را شروع کند.", show_alert=True)
+            return
+        turn = await current_turn(session, game.id)
+        if not turn or turn.get("status") != "finished":
+            await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
+            return
+        try:
+            await __import__("app.services.gameplay", fromlist=["set_phase"]).set_phase(
+                session, game, __import__("app.core.game.engine", fromlist=["GameEnginePhase"]).GameEnginePhase.NIGHT
+            )
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        chat_id = await _group_chat_id(session, game)
+        if chat_id:
+            await callback.bot.send_message(chat_id, "🌙 فاز شب آغاز شد.")
+            await _send_night_menus(callback.bot, session, game)
+        await callback.answer("فاز شب آغاز شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("day:finish:"))
+async def day_finish_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor:
+            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند بازی را تمام کند.", show_alert=True)
+            return
+        turn = await current_turn(session, game.id)
+        if not turn or turn.get("status") != "finished":
+            await callback.answer("تا پایان نوبت‌های این دور امکان اتمام بازی نیست.", show_alert=True)
+            return
+        await __import__("app.services.gameplay", fromlist=["finalize_game"]).finalize_game(session, game, "draw")
+        await session.commit()
+        await callback.message.edit_text("🏁 بازی توسط گرداننده به پایان رسید. نتیجه: بدون برنده.")
+        await callback.answer("بازی تمام شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
