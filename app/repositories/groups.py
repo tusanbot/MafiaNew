@@ -1,4 +1,5 @@
 from sqlalchemy import select
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from aiogram.types import Chat
 
@@ -32,3 +33,13 @@ class GroupRepository:
     async def get_by_telegram_id(session: AsyncSession, telegram_id: int) -> Group | None:
         result = await session.execute(select(Group).where(Group.telegram_id == telegram_id))
         return result.scalar_one_or_none()
+
+
+    @staticmethod
+    async def register(session: AsyncSession, group: Group, user_id: int) -> Group:
+        group.is_active = True
+        group.registered_at = datetime.now(timezone.utc)
+        group.registered_by_user_id = user_id
+        await session.commit()
+        await session.refresh(group)
+        return group
