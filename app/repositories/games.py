@@ -72,6 +72,9 @@ class GameRepository:
             turn_color=turn_color,
             challenge_color=challenge_color,
             reserve_enabled=reserve_enabled,
+            challenge_enabled=True,
+            challenge_mode=scenario.challenge_mode,
+            challenge_limit=getattr(scenario, "challenge_limit", 1),
         )
         session.add(game)
         await session.commit()
