@@ -9,6 +9,7 @@ from app.services.gameplay import (
     alive_players,
     all_players,
     check_winner,
+    current_round,
     resolve_night,
     start_match,
     start_voting,
@@ -97,16 +98,6 @@ async def night_callback(callback: CallbackQuery):
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        if not actor:
-            await callback.answer("کاربر بازی پیدا نشد.", show_alert=True)
-            return
-        if action == "night":
-            action_type = target
-            target_id = None
-            if callback.data.count(":") == 3:
-                action_type, target_id = parts[1], int(parts[2])
-            # This branch is kept below for explicit target callbacks.
         if action == "resolve":
             try:
                 result = await resolve_night(session, game)
@@ -117,26 +108,24 @@ async def night_callback(callback: CallbackQuery):
             if result["winner"]:
                 text = f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
             elif result["eliminated"]:
-                text = f"روز آغاز شد.بازیکن {result['eliminated'].display_name} در شب حذف شد."
+                text = f"روز آغاز شد.\nبازیکن {result['eliminated'].display_name} در شب حذف شد."
             else:
-                text = "روز آغاز شد.این شب حذف نداشت."
+                text = "روز آغاز شد.\nاین شب حذف نداشت."
             if chat_id:
-                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key))
+                await callback.bot.send_message(chat_id, text, reply_markup=day_keyboard(game.game_key) if not result["winner"] else None)
             await callback.answer("شب بررسی شد.")
             return
-
-        action_type = parts[1]
-        target_id = int(parts[2])
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not actor:
+            await callback.answer("کاربر بازی پیدا نشد.", show_alert=True)
+            return
         try:
-            result = await submit_night_action(session, game, actor, action_type, target_id)
+            result = await submit_night_action(session, game, actor, action, int(target))
         except (ValueError, TypeError) as exc:
             await callback.answer(str(exc), show_alert=True)
             return
         if result["detective_result"]:
-            await callback.bot.send_message(
-                actor.telegram_id,
-                f"نتیجه کارآگاهی: هدف شما {result['detective_result']} است."
-            )
+            await callback.bot.send_message(actor.telegram_id, f"نتیجه کارآگاهی: هدف شما {result['detective_result']} است.")
         if result["resolved"]:
             resolved = await resolve_night(session, game)
             chat_id = await _group_chat_id(session, game)
