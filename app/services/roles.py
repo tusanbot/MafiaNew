@@ -52,7 +52,7 @@ async def assign_roles(session: AsyncSession, game: Game) -> list[tuple[GamePlay
         player.alive=True
         player.exit_type=None
         assigned.append((player,role,user))
-    await session.commit()
+    await session.flush()
     return assigned
 
 def role_distribution_summary(assignments):
