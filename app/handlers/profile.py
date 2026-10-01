@@ -9,6 +9,8 @@ router = Router(name="profile")
 
 @router.message(Command("profile"))
 async def profile_handler(message: Message) -> None:
+    if message.chat.type != "private":
+        return
     user = message.from_user
     if not user:
         return
