@@ -318,6 +318,8 @@ async def night_callback(callback: CallbackQuery):
                 await callback.answer(str(exc), show_alert=True)
                 return
             chat_id = await _group_chat_id(session, game)
+            if not result["winner"]:
+                await update_round_roster(callback.bot, session, game, chat_id)
             if result["winner"]:
                 await send_game_result_notifications(callback.bot, session, game)
                 text = f"بازی تمام شد. تیم {('مافیا' if result['winner']=='mafia' else 'شهروند')} برنده شد."
@@ -355,6 +357,8 @@ async def night_callback(callback: CallbackQuery):
         if result["resolved"]:
             resolved = await resolve_night(session, game)
             chat_id = await _group_chat_id(session, game)
+            if not resolved["winner"]:
+                await update_round_roster(callback.bot, session, game, chat_id)
             if resolved["winner"]:
                 text = f"بازی تمام شد. تیم {('مافیا' if resolved['winner']=='mafia' else 'شهروند')} برنده شد."
             elif resolved["eliminated"]:
@@ -563,6 +567,10 @@ async def next_turn_handler(callback: CallbackQuery):
         if not chat_id:
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
+        try:
+            await callback.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         if result["kind"] == "finished_day":
             old_task = _turn_tasks.pop(game.game_key, None)
             if old_task:
@@ -713,7 +721,7 @@ async def vote_handler(callback: CallbackQuery):
                 text = f"🗳 رأی‌گیری تمام شد.\n\nبازیکن {name} حذف شد."
             else:
                 text = "🗳 رأی‌گیری تمام شد.\n\nرأی‌گیری مساوی شد و کسی حذف نشد."
-            text += f"\n\n{await _public_status_roster(session, game)}"
+            await update_round_roster(callback.bot, session, game, callback.message.chat.id)
             text += "\n\n🌙 شب بعد آغاز شد."
             await callback.message.edit_text(text)
             if game.auto_play:
