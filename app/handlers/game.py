@@ -297,7 +297,7 @@ async def round_back_handler(callback: CallbackQuery) -> None:
             return
         await callback.message.edit_text(
             "👑 سردست انتخاب شده است.\n\nتنظیمات را بررسی کنید و سپس «شروع دور» را بزنید.",
-            reply_markup=leader_settings_keyboard(game.game_key, game),
+            reply_markup=leader_settings_keyboard(game.game_key, game, True),
         )
     await callback.answer()
 
