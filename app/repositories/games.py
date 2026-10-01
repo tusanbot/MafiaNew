@@ -16,6 +16,14 @@ class GameRepository:
         return result.scalars().first()
 
     @staticmethod
+    async def get_draft(session: AsyncSession, group_id: int, host_user_id: int | None = None) -> Game | None:
+        query = select(Game).where(Game.group_id == group_id, Game.status == "draft").order_by(Game.id.desc())
+        if host_user_id is not None:
+            query = query.where(Game.host_user_id == host_user_id)
+        result = await session.execute(query)
+        return result.scalars().first()
+
+    @staticmethod
     async def get_by_key(session: AsyncSession, game_key: str) -> Game | None:
         result = await session.execute(select(Game).where(Game.game_key == game_key))
         return result.scalar_one_or_none()
