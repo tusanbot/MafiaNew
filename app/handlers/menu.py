@@ -580,6 +580,21 @@ async def group_new_game(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:menu:"))
+async def new_game_menu_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        text = await render_new_game_menu(session, group, callback.from_user.id)
+        from app.handlers.keyboards import new_game_menu
+        await callback.message.edit_text(text, reply_markup=new_game_menu(group.id))
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:scenario:"))
 async def new_game_scenario(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -642,10 +657,21 @@ async def new_game_set_host(callback: CallbackQuery) -> None:
         if not group:
             return
         draft = await _ensure_draft(session, group, callback.from_user.id)
-        host = await UserRepository(session).upsert_from_telegram(host_tid, None, "گرداننده", None)
         if not draft:
             await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
             return
+        try:
+            member = await callback.bot.get_chat_member(group.telegram_id, host_tid)
+        except Exception:
+            await callback.answer("اطلاعات گرداننده از تلگرام قابل دریافت نیست.", show_alert=True)
+            return
+        tg_user = member.user
+        host = await UserRepository(session).upsert_from_telegram(
+            tg_user.id,
+            tg_user.username,
+            tg_user.first_name or "",
+            tg_user.last_name,
+        )
         draft.host_user_id = host.id
         await session.commit()
         text = await render_new_game_menu(session, group, callback.from_user.id)
@@ -678,6 +704,9 @@ async def toggle_draft_reserve(callback: CallbackQuery) -> None:
         if not group:
             return
         draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
         draft.reserve_enabled = not draft.reserve_enabled
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_settings_keyboard"]).new_game_settings_keyboard(group.id, draft.reserve_enabled))
@@ -709,10 +738,101 @@ async def toggle_draft_auto(callback: CallbackQuery) -> None:
         if not group:
             return
         draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
         draft.auto_play = not draft.auto_play
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=__import__("app.handlers.keyboards", fromlist=["new_game_extras_keyboard"]).new_game_extras_keyboard(group.id, draft.auto_play, draft.turn_color, draft.challenge_color))
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:turn_color:"))
+async def new_game_turn_color(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
+        from app.handlers.keyboards import new_game_color_keyboard
+        await callback.message.edit_text(
+            "انتخاب رنگ نوبت",
+            reply_markup=new_game_color_keyboard(group.id, "turn", draft.turn_color),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:challenge_color:"))
+async def new_game_challenge_color(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
+        from app.handlers.keyboards import new_game_color_keyboard
+        await callback.message.edit_text(
+            "انتخاب رنگ چالش",
+            reply_markup=new_game_color_keyboard(group.id, "challenge", draft.challenge_color),
+        )
+    await callback.answer()
+
+
+async def _set_new_game_color(callback: CallbackQuery, kind: str) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":", 4)
+    if len(parts) != 5:
+        await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+        return
+    group_id = int(parts[3])
+    value = parts[4]
+    allowed = {"پیش‌فرض", "قرمز", "آبی", "سبز", "زرد", "بنفش"}
+    if value not in allowed:
+        await callback.answer("رنگ نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _require_group_admin(callback, session, group_id)
+        if not group:
+            return
+        draft = await _ensure_draft(session, group, callback.from_user.id)
+        if not draft:
+            await callback.answer("پیش‌نویس بازی پیدا نشد.", show_alert=True)
+            return
+        if kind == "turn":
+            draft.turn_color = value
+        else:
+            draft.challenge_color = value
+        await session.commit()
+        from app.handlers.keyboards import new_game_extras_keyboard
+        await callback.message.edit_text(
+            "امکانات اضافه",
+            reply_markup=new_game_extras_keyboard(
+                group.id, draft.auto_play, draft.turn_color, draft.challenge_color
+            ),
+        )
+    await callback.answer("تنظیم ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:set_turn_color:"))
+async def new_game_set_turn_color(callback: CallbackQuery) -> None:
+    await _set_new_game_color(callback, "turn")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("newgame:set_challenge_color:"))
+async def new_game_set_challenge_color(callback: CallbackQuery) -> None:
+    await _set_new_game_color(callback, "challenge")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("newgame:create:"))
@@ -745,7 +865,7 @@ async def new_game_create(callback: CallbackQuery) -> None:
         await session.commit()
         from app.handlers.keyboards import lobby_keyboard_v2
         text, _ = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, draft)
-        await callback.message.edit_text(text, reply_markup=lobby_keyboard_v2(draft.game_key, scenario, await GameRepository.players(session, draft.id), await GameRepository.reserves(session, draft.id), is_host=callback.from_user.id == host.id, can_deal=False, reserve_enabled=draft.reserve_enabled))
+        await callback.message.edit_text(text, reply_markup=lobby_keyboard_v2(draft.game_key, scenario, await GameRepository.players(session, draft.id), await GameRepository.reserves(session, draft.id), is_host=callback.from_user.id == host.telegram_id, can_deal=False, reserve_enabled=draft.reserve_enabled))
     await callback.answer("لابی بازی ایجاد شد.")
 
 
