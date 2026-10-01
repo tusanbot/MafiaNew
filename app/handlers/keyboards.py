@@ -398,14 +398,6 @@ def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def leader_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="🎲 انتخاب خودکار سردست", callback_data=f"leader:auto:{game_key}"))
-    for player, user in players:
-        name = user.display_name or user.first_name or user.username or str(user.telegram_id)
-        builder.row(InlineKeyboardButton(text=f"👤 {player.seat:02d}. {tg_plain_name(name[:42])}", callback_data=f"leader:manual:{game_key}:{user.id}"))
-    return builder.as_markup()
-
 
 def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
