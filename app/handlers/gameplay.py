@@ -26,6 +26,7 @@ from app.services.gameplay import (
     auto_place_challenge_after,
     current_turn,
     next_turn,
+    send_game_result_notifications,
 )
 from app.utils.text import tg_name
 
@@ -542,6 +543,7 @@ async def day_finish_handler(callback: CallbackQuery):
             return
         await __import__("app.services.gameplay", fromlist=["finalize_game"]).finalize_game(session, game, "draw")
         await session.commit()
+        await send_game_result_notifications(callback.bot, session, game)
         await callback.message.edit_text("🏁 بازی توسط گرداننده به پایان رسید. نتیجه: بدون برنده.")
         await callback.answer("بازی تمام شد.")
 
