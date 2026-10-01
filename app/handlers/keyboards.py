@@ -256,9 +256,26 @@ def finish_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
 
 def bot_settings_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="تنظیمات عمومی", callback_data="botsettings:general"))
-    builder.row(InlineKeyboardButton(text="تنظیمات اعلان ها", callback_data="botsettings:notifications"))
+    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات عمومی", callback_data="botsettings:general"))
+    builder.row(InlineKeyboardButton(text="🔔 تنظیمات اعلان ها", callback_data="botsettings:notifications"))
     _back(builder)
+    return builder.as_markup()
+
+def notification_settings_menu(user) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    items = (
+        ("notify_game_result", "نتیجه بازی"),
+        ("notify_achievements", "دستاوردهای جدید"),
+        ("notify_rank_changes", "تغییر رتبه"),
+        ("notify_challenges", "اعلان چالش"),
+        ("notify_turns", "اعلان نوبت"),
+    )
+    for key, label in items:
+        builder.row(InlineKeyboardButton(
+            text=f"{'✅' if getattr(user, key) else '❌'} {label}",
+            callback_data=f"notify:toggle:{key}",
+        ))
+    _back(builder, "menu:bot_settings")
     return builder.as_markup()
 
 def profile_menu() -> InlineKeyboardMarkup:
