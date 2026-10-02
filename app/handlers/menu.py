@@ -634,7 +634,7 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
             reply_markup=lobby_keyboard_v2(
                 game.game_key, scenario, await GameRepository.players(session, game.id),
                 await GameRepository.reserves(session, game.id),
-                is_host=bool(host and host.id == callback.from_user.id),
+                is_host=bool(host and host.telegram_id == callback.from_user.id),
                 can_deal=full, reserve_enabled=game.reserve_enabled,
                 training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
             ),
@@ -707,7 +707,7 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
             reply_markup=lobby_keyboard_v2(
                 game.game_key, scenario, await GameRepository.players(session, game.id),
                 await GameRepository.reserves(session, game.id),
-                is_host=host.id == callback.from_user.id, can_deal=full,
+                is_host=host.telegram_id == callback.from_user.id, can_deal=full,
                 reserve_enabled=game.reserve_enabled,
                 training_url=scenario.training_url if scenario else None,
                 telegram_training_url=scenario.telegram_training_url if scenario else None,
