@@ -494,7 +494,7 @@ async def player_management(callback: CallbackQuery) -> None:
         )
     await callback.answer()
 
-async def _remap_game_players_to_scenario(session, game, scenario, old_capacity: int) -> None:
+async def _remap_game_players_to_scenario(session, game, scenario, old_capacity: int, old_seats: dict[int, int]) -> None:
     """Remap waiting-lobby seats when the scenario capacity changes."""
     rows = await GameRepository.players(session, game.id, include_reserve=True)
     active = sorted((row for row in rows if not row[0].is_reserved), key=lambda row: row[0].seat)
@@ -510,29 +510,11 @@ async def _remap_game_players_to_scenario(session, game, scenario, old_capacity:
     await session.flush()
 
     capacity = int(scenario.max_players)
-    active_targets = {}
     used = set()
-    # Existing main players keep their original seat whenever that seat exists.
-    for player, user in active:
-        if 1 <= int(player.seat if player.seat > 0 else 0) <= capacity:
-            pass
-    # Preserve original seats from the snapshot captured before temporary seats.
-    original_seats = {player.id: int(getattr(player, "_old_seat", 0) or 0) for player, _ in ordered}
-    # The temporary assignment above erased the old value, so derive it from the
-    # ordered active list's position metadata captured below when needed.
-    # Re-read the old order from the event payload is unnecessary; use the
-    # deterministic active ordering and keep seats that are still in range.
-    # For correctness, active players are ordered by their old seats before the
-    # temporary update, therefore the first capacity slots preserve that order
-    # only when a collision-free direct preservation is impossible.
-    #
-    # Build the intended slot list from the original active ordering by querying
-    # the pre-change seats stored in a local map attached before reassignment.
-    # This helper is called only from the handler below, which sets _old_seat.
     preserved = []
     if capacity >= int(old_capacity):
         for player, user in active:
-            old_seat = int(getattr(player, "_old_seat", 0) or 0)
+            old_seat = int(old_seats.get(player.id, 0) or 0)
             if 1 <= old_seat <= capacity and old_seat not in used:
                 preserved.append((player, old_seat))
                 used.add(old_seat)
@@ -604,11 +586,13 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
             await callback.answer("سناریو پیدا نشد.", show_alert=True)
             return
         rows = await GameRepository.players(session, game.id, include_reserve=True)
-        # Capture original seats before remapping.
-        for player, _user in rows:
-            player._old_seat = int(player.seat)
+        old_seats = {player.id: int(player.seat) for player, _user in rows}
         old_scenario = await session.get(Scenario, game.scenario_id)
-        await _remap_game_players_to_scenario(session, game, scenario, old_scenario.max_players if old_scenario else scenario.max_players)
+        await _remap_game_players_to_scenario(
+            session, game, scenario,
+            old_scenario.max_players if old_scenario else scenario.max_players,
+            old_seats,
+        )
         game.scenario_id = scenario.id
         await session.commit()
         lobby_text, lobby_full = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, game)
