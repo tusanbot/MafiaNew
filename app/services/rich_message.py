@@ -17,6 +17,7 @@ from typing import Any
 
 import aiohttp
 from aiogram.types import Message
+from aiogram.exceptions import TelegramBadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -301,6 +302,15 @@ def install_rich_message_transport() -> None:
     original_send_message = Bot.send_message
     original_edit_message_text = Bot.edit_message_text
 
+    async def _safe_original_edit(*args: Any, **kwargs: Any):
+        try:
+            return await original_edit_message_text(*args, **kwargs)
+        except TelegramBadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                logger.debug("Ignoring Telegram message-not-modified edit")
+                return None
+            raise
+
     async def send_message(self, *args: Any, **kwargs: Any):
         original_args = args
         normalized = dict(kwargs)
@@ -331,7 +341,7 @@ def install_rich_message_transport() -> None:
                 normalized.setdefault("text", args[2])
 
         if os.getenv("RICH_MESSAGES_AUTO", "false").strip().lower() not in {"1", "true", "yes", "on"} or not _enabled() or not _healthy() or normalized.get("text") is None:
-            return await original_edit_message_text(self, *original_args, **kwargs)
+            return await _safe_original_edit(self, *original_args, **kwargs)
 
         try:
             payload = _edit_rich_payload(normalized)
