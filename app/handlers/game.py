@@ -84,7 +84,11 @@ async def return_to_lobby(callback: CallbackQuery) -> None:
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        await _render(callback, session, game, (await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id)
+        user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        if not user:
+            await callback.answer("کاربر بازی پیدا نشد.", show_alert=True)
+            return
+        await _render(callback, session, game, user.id)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("game:join:"))
