@@ -28,6 +28,8 @@ from app.handlers.keyboards import (
     scenario_challenge_keyboard,
     scenario_delete_confirm_keyboard,
     notification_settings_menu,
+    finish_game_confirm_keyboard,
+    game_result_keyboard,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -35,7 +37,7 @@ from app.services.game import create_game
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round
 from app.config import get_settings
-from app.utils.text import tg_name
+from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
 
 router = Router(name="menu")
@@ -916,23 +918,30 @@ async def finish_game_result(callback: CallbackQuery) -> None:
         if not game or game.status != "running":
             await callback.answer("بازی در حال اجرا پیدا نشد.", show_alert=True)
             return
-        # پایان دستی فقط پس از تکمیل یک دور فرد مجاز است؛ این کار از
-        # پایان تصادفی بازی وسط نوبت‌ها جلوگیری می‌کند.
-        latest_vote = (await session.execute(
-            select(GameEvent).where(
-                GameEvent.game_id == game.id,
-                GameEvent.event_type == "voting_resolved",
-            ).order_by(GameEvent.id.desc())
-        )).scalars().first()
-        if not latest_vote:
-            await callback.answer("هنوز هیچ دور کاملی برای اتمام بازی ثبت نشده است.", show_alert=True)
-            return
-        try:
-            completed_round = int(json.loads(latest_vote.payload or "{}").get("round_no", 0))
-        except (TypeError, ValueError):
-            completed_round = 0
-        if completed_round <= 0 or completed_round % 2 == 0:
-            await callback.answer("اتمام دستی فقط پس از تکمیل یک دور فرد امکان‌پذیر است.", show_alert=True)
+        labels = {"citizen": "برد شهروند", "mafia": "برد مافیا", "independent": "برد مستقل", "citizen_independent": "برد شهروند/مستقل", "draw": "مساوی"}
+        await callback.message.edit_text(
+            f"🏁 <b>تعیین نتیجه بازی</b>\n\nنتیجه انتخاب‌شده: <b>{labels.get(winner, winner)}</b>\n\nآیا نتیجه را تأیید می‌کنید؟",
+            reply_markup=finish_game_confirm_keyboard(group.id, winner),
+            parse_mode="HTML",
+        )
+    await callback.answer("نتیجه انتخاب شد؛ تأیید کنید.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:finish_confirm:"))
+async def finish_game_confirm(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("نتیجه نامعتبر است.", show_alert=True)
+        return
+    _, _, group_raw, winner = parts
+    group_id = int(group_raw)
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game or game.status != "running":
+            await callback.answer("بازی در حال اجرا پیدا نشد.", show_alert=True)
             return
         from app.services.gameplay import finalize_game
         try:
@@ -942,19 +951,55 @@ async def finish_game_result(callback: CallbackQuery) -> None:
             await callback.answer(str(exc), show_alert=True)
             return
         rows = await session.execute(
-            select(GamePlayer, User, Role)
-            .outerjoin(Role, Role.id == GamePlayer.role_id)
-            .join(User, User.id == GamePlayer.user_id)
-            .where(GamePlayer.game_id == game.id)
-            .order_by(GamePlayer.seat)
+            select(GamePlayer, User, Role).outerjoin(Role, Role.id == GamePlayer.role_id)
+            .join(User, User.id == GamePlayer.user_id).where(GamePlayer.game_id == game.id).order_by(GamePlayer.seat)
         )
         labels = {"citizen": "برد شهروند", "mafia": "برد مافیا", "independent": "برد مستقل", "citizen_independent": "برد شهروند/مستقل", "draw": "مساوی"}
-        lines = [f"پایان بازی — {labels.get(winner, winner)}", ""]
+        lines = [f"🏁 <b>پایان بازی</b> — {labels.get(winner, winner)}", ""]
         for player, user, role in rows.all():
             state = "زنده" if player.alive else player.exit_type or "حذف‌شده"
-            lines.append(f"{player.seat}. {user.display_name or user.first_name} — {role.name_fa if role else 'بدون نقش'} — {state} — تذکر: {player.warning_count} — امتیاز: {user.score}")
-        await callback.message.edit_text("\n".join(lines), reply_markup=group_game_menu(group.id))
+            lines.append(f"\u200f{player.seat}. {tg_mention(user.telegram_id, user.display_name or user.first_name)} — {role.name_fa if role else "بدون نقش"} — {state}")
+        await callback.message.edit_text("\n".join(lines), reply_markup=game_result_keyboard(group.id, game.id), parse_mode="HTML")
     await callback.answer("نتیجه بازی ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:stats:"))
+async def game_result_stats(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        rounds = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "round_started"))
+        challenges = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request"))
+        nights = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "night_resolved"))
+        votes = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "voting_resolved"))
+        await callback.message.edit_text(f"📊 <b>آمار بازی</b>\n\nدورها: {rounds or 0}\nدرخواست‌های چالش: {challenges or 0}\nشب‌های حل‌شده: {nights or 0}\nرأی‌گیری‌های حل‌شده: {votes or 0}")
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:events:"))
+async def game_result_events(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        result = await session.execute(select(GameEvent).where(GameEvent.game_id == game.id).order_by(GameEvent.id.desc()).limit(25))
+        events = list(result.scalars())
+        lines = ["📜 <b>اتفاقات بازی</b>", ""]
+        for event in reversed(events):
+            data = json.loads(event.payload or "{}")
+            round_no = data.get("round_no", "-")
+            lines.append(f"دور {round_no} — {event.event_type}")
+        await callback.message.edit_text("\n".join(lines))
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:emoji:"))
