@@ -531,7 +531,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
             try:
                 await callback.bot.edit_message_text(
                     f"🗣 نوبت صحبت {tg_mention(requester.telegram_id, requester_name)}\n\n"
-                    "⚔️ <b>درخواست چالش انتخاب شد.</b>",
+                    "🤏🏻 <b>درخواست چالش انتخاب شد.</b>",
                     chat_id=int(turn_data["chat_id"]), message_id=int(turn_data["message_id"]),
                     reply_markup=None, parse_mode="HTML"
                 )
@@ -541,7 +541,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if chat_id:
             await callback.bot.send_message(
                 chat_id,
-                f"⚔️ چالش به <b>{requester_name}</b> داده شد.",
+                f"🤏🏻 چالش به <b>{requester_name}</b> داده شد.",
                 reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
                 parse_mode="HTML",
             )
@@ -597,7 +597,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
         await callback.message.edit_text(
-            f"⚔️ چالش به <b>{name}</b> داده شد.",
+            f"🤏🏻 چالش به <b>{name}</b> داده شد.",
             parse_mode="HTML",
         )
         if chat_id:
@@ -606,7 +606,7 @@ async def challenge_place_handler(callback: CallbackQuery):
                 if challenge_turn:
                     try:
                         await callback.message.edit_text(
-                            f"⚔️ چالش به <b>{name}</b> اجرا شد.",
+                            f"🤏🏻 چالش به <b>{name}</b> اجرا شد.",
                             parse_mode="HTML",
                         )
                     except Exception:
@@ -621,7 +621,7 @@ async def challenge_place_handler(callback: CallbackQuery):
             else:
                 try:
                     await callback.message.edit_text(
-                        f"⚔️ چالش به <b>{name}</b> داده شد.",
+                        f"🤏🏻 چالش به <b>{name}</b> داده شد.",
                         parse_mode="HTML",
                     )
                 except Exception:
