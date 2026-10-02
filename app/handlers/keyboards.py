@@ -335,6 +335,8 @@ def notification_settings_menu(user) -> InlineKeyboardMarkup:
         ("notify_game_result", "نتیجه بازی"),
         ("notify_achievements", "دستاوردهای جدید"),
         ("notify_rank_changes", "تغییر رتبه"),
+        ("notify_challenges", "درخواست‌های چالش"),
+        ("notify_turns", "نوبت‌های بازی"),
     )
     for key, label in items:
         builder.row(InlineKeyboardButton(
