@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Scenario, User
 from app.repositories.games import GameRepository
-from app.utils.text import tg_name
+from app.utils.text import tg_name, tg_mention
 
 
 def gregorian_to_jalali(year: int, month: int, day: int) -> tuple[int, int, int]:
