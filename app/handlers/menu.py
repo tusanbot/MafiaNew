@@ -901,6 +901,8 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
         ))
         await session.commit()
         try:
+            from app.handlers.gameplay import delete_main_roster
+            await delete_main_roster(callback.bot, session, game)
             await callback.bot.send_message(
                 group.telegram_id,
                 "❌ بازی توسط گرداننده لغو شد."
@@ -956,6 +958,8 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         try:
             await finalize_game(session, game, winner)
             await session.commit()
+            from app.handlers.gameplay import delete_main_roster
+            await delete_main_roster(callback.bot, session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
