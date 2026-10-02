@@ -495,575 +495,75 @@ async def player_management(callback: CallbackQuery) -> None:
     await callback.answer()
 
 async def _remap_game_players_to_scenario(session, game, scenario, old_capacity: int, old_seats: dict[int, int]) -> None:
-    """Remap waiting-lobby seats when the scenario capacity changes."""
+    """Preserve old seats within the new capacity; move overflow to first free seats, then reserve."""
     rows = await GameRepository.players(session, game.id, include_reserve=True)
-    active = sorted((row for row in rows if not row[0].is_reserved), key=lambda row: row[0].seat)
-    reserves = sorted((row for row in rows if row[0].is_reserved), key=lambda row: row[0].reserve_position or 0)
-    ordered = active + reserves
-    if not ordered:
-        return
+    active = sorted(
+        [row for row in rows if not row[0].is_reserved],
+        key=lambda row: int(row[0].seat),
+    )
+    reserves = sorted(
+        [row for row in rows if row[0].is_reserved],
+        key=lambda row: (row[0].reserve_position is None, row[0].reserve_position or 0),
+    )
+    capacity = int(scenario.max_players)
 
-    # Temporarily move every row to a unique negative seat so PostgreSQL's
-    # (game_id, seat) uniqueness cannot collide while seats are reassigned.
-    for index, (player, _user) in enumerate(ordered, 1):
-        player.seat = -index
+    snapshot = [(player, user, int(old_seats.get(player.id, player.seat))) for player, user in active]
+    preserved = [(player, user, seat) for player, user, seat in snapshot if 1 <= seat <= capacity]
+    used = {seat for _, _, seat in preserved}
+    remaining = [(player, user, seat) for player, user, seat in snapshot if not (1 <= seat <= capacity)]
+
+    # Existing reserves can also fill any remaining seats before becoming reserves.
+    reserve_candidates = [(player, user, 0) for player, user in reserves]
+    queue = remaining + reserve_candidates
+    free = [seat for seat in range(1, capacity + 1) if seat not in used]
+
+    # Temporarily move all records away from their unique seat values.
+    for index, (player, _user) in enumerate(active + reserves, 1):
+        player.seat = -(index)
     await session.flush()
 
-    capacity = int(scenario.max_players)
-    used = set()
-    preserved = []
-    if capacity >= int(old_capacity):
-        for player, user in active:
-            old_seat = int(old_seats.get(player.id, 0) or 0)
-            if 1 <= old_seat <= capacity and old_seat not in used:
-                preserved.append((player, old_seat))
-                used.add(old_seat)
-    remaining = [player for player, _user in ordered if player not in {p for p, _ in preserved}]
-    free = [seat for seat in range(1, capacity + 1) if seat not in used]
-    assignments = preserved + list(zip(remaining[:len(free)], free))
-    for player, seat in assignments:
+    for player, _user, seat in preserved:
         player.is_reserved = False
         player.reserve_position = None
-        player.seat = int(seat)
-    overflow = remaining[len(free):]
-    reserve_pos = 1
-    for player in overflow:
+        player.seat = seat
+
+    assigned = 0
+    for player, _user, _old_seat in queue:
+        if assigned >= len(free):
+            break
+        player.is_reserved = False
+        player.reserve_position = None
+        player.seat = free[assigned]
+        assigned += 1
+
+    overflow = queue[assigned:]
+    for player, _user, _old_seat in overflow:
         player.is_reserved = True
-        player.reserve_position = reserve_pos
-        player.seat = -(capacity + reserve_pos)
-        reserve_pos += 1
+        player.seat = 0
+        player.reserve_position = None
 
-    # Existing reserves that fit into open seats are promoted before overflow.
+    # Rebuild reserve order: pre-existing reserves first, then newly overflowed players.
+    reserve_rows = [player for player, _user, _old_seat in overflow]
+    # Any old reserve not promoted is also still in the overflow queue if it was not assigned.
+    old_reserve_ids = {int(player.id) for player, _user in reserves}
+    for player, _user in reserves:
+        if player.is_reserved and int(player.id) not in {int(x.id) for x in reserve_rows}:
+            reserve_rows.append(player)
+
+    # Keep the original reserve order ahead of newly overflowed active players.
+    reserve_rows.sort(
+        key=lambda player: (
+            0 if int(player.id) in old_reserve_ids else 1,
+            next((r[0].reserve_position or 0 for r in reserves if r[0].id == player.id), 0),
+            int(player.id),
+        )
+    )
+    for position, player in enumerate(reserve_rows, 1):
+        player.is_reserved = True
+        player.seat = 0
+        player.reserve_position = position
+
     await session.flush()
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:scenario:"))
-async def gameadmin_change_scenario(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    key = callback.data.split(":", 2)[2]
-    async with session_factory() as session:
-        game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر سناریو فقط در لابی امکان‌پذیر است.", show_alert=True)
-            return
-        group = await session.get(Group, game.group_id)
-        if not group:
-            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
-            return
-        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
-        if member.status not in ("creator", "administrator"):
-            await callback.answer("فقط مدیر گروه می‌تواند سناریو را تغییر دهد.", show_alert=True)
-            return
-        scenarios = list((await session.execute(
-            select(Scenario).where(Scenario.enabled.is_(True), Scenario.id != game.scenario_id).order_by(Scenario.id)
-        )).scalars().all())
-        await callback.message.edit_text(
-            "🎭 سناریوی جدید را انتخاب کنید:",
-            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}", f"gameadmin:setscenario:{game.game_key}"),
-        )
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:setscenario:"))
-async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    if len(parts) != 5 or not callback.from_user:
-        return
-    key, scenario_id = parts[2], int(parts[4])
-    async with session_factory() as session:
-        game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("لابی فعال نیست.", show_alert=True)
-            return
-        group = await session.get(Group, game.group_id)
-        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
-        if member.status not in ("creator", "administrator"):
-            await callback.answer("دسترسی ندارید.", show_alert=True)
-            return
-        scenario = await session.get(Scenario, scenario_id)
-        if not scenario or not scenario.enabled:
-            await callback.answer("سناریو پیدا نشد.", show_alert=True)
-            return
-        rows = await GameRepository.players(session, game.id, include_reserve=True)
-        old_seats = {player.id: int(player.seat) for player, _user in rows}
-        old_scenario = await session.get(Scenario, game.scenario_id)
-        await _remap_game_players_to_scenario(
-            session, game, scenario,
-            old_scenario.max_players if old_scenario else scenario.max_players,
-            old_seats,
-        )
-        game.scenario_id = scenario.id
-        await session.commit()
-        lobby_text, lobby_full = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, game)
-        lobby_markup = __import__("app.handlers.keyboards", fromlist=["lobby_keyboard_v2"]).lobby_keyboard_v2(
-            game.game_key, scenario, await GameRepository.players(session, game.id),
-            await GameRepository.reserves(session, game.id),
-            is_host=True, can_deal=lobby_full, reserve_enabled=game.reserve_enabled,
-            training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
-        )
-        if callback.message.chat.id == group.telegram_id:
-            await callback.message.edit_text(lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
-        else:
-            await callback.bot.send_message(group.telegram_id, lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
-            await callback.message.edit_text(
-                f"🎭 سناریو تغییر کرد: <b>{scenario.name_fa}</b>",
-                reply_markup=active_game_menu(group.id, back_callback=f"gameadmin:lobby:{game.game_key}", game_key=game.game_key, lobby_editable=True),
-                parse_mode="HTML",
-            )
-    await callback.answer("سناریو تغییر کرد.")
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:host:"))
-async def gameadmin_change_host(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    key = callback.data.split(":", 2)[2]
-    async with session_factory() as session:
-        game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
-            return
-        group = await session.get(Group, game.group_id)
-        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
-        if member.status not in ("creator", "administrator"):
-            await callback.answer("دسترسی ندارید.", show_alert=True)
-            return
-        admins = await callback.bot.get_chat_administrators(group.telegram_id)
-        await callback.message.edit_text(
-            "🎙 گرداننده جدید را انتخاب کنید:",
-            reply_markup=host_select_keyboard(group.id, admins, f"gameadmin:sethost:{game.game_key}", f"gameadmin:lobby:{game.game_key}"),
-        )
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:sethost:"))
-async def gameadmin_set_host(callback: CallbackQuery) -> None:
-    parts = callback.data.split(":")
-    if len(parts) != 5 or not callback.from_user:
-        return
-    key, host_tid = parts[2], int(parts[4])
-    async with session_factory() as session:
-        game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("لابی فعال نیست.", show_alert=True)
-            return
-        group = await session.get(Group, game.group_id)
-        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
-        if member.status not in ("creator", "administrator"):
-            await callback.answer("دسترسی ندارید.", show_alert=True)
-            return
-        host_member = await callback.bot.get_chat_member(group.telegram_id, host_tid)
-        if host_member.status not in ("creator", "administrator"):
-            await callback.answer("گرداننده باید مدیر گروه باشد.", show_alert=True)
-            return
-        host = await UserRepository(session).upsert_from_telegram(
-            host_member.user.id, host_member.user.username,
-            host_member.user.first_name or "", host_member.user.last_name,
-        )
-        game.host_user_id = host.id
-        await session.commit()
-        scenario = await session.get(Scenario, game.scenario_id)
-        lobby_text, lobby_full = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, game)
-        lobby_markup = __import__("app.handlers.keyboards", fromlist=["lobby_keyboard_v2"]).lobby_keyboard_v2(
-            game.game_key, scenario, await GameRepository.players(session, game.id),
-            await GameRepository.reserves(session, game.id),
-            is_host=True, can_deal=lobby_full, reserve_enabled=game.reserve_enabled,
-            training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
-        )
-        if callback.message.chat.id == group.telegram_id:
-            await callback.message.edit_text(lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
-        else:
-            await callback.bot.send_message(group.telegram_id, lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
-            await callback.message.edit_text(
-                f"🎙 گرداننده تغییر کرد: <b>{tg_mention(host.telegram_id, host.display_name or host.first_name)}</b>",
-                reply_markup=active_game_menu(group.id, back_callback=f"gameadmin:lobby:{game.game_key}", game_key=game.game_key, lobby_editable=True),
-                parse_mode="HTML",
-            )
-    await callback.answer("گرداننده تغییر کرد.")
-
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:features:"))
-async def game_features(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    group_id = int(callback.data.rsplit(":", 1)[1])
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        if not group:
-            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
-            return
-        game = await GameRepository.get_active(session, group.id)
-        if not game:
-            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=active_game_menu(group.id))
-            return
-        await callback.message.edit_text(
-            "تنظیمات بازی\n\n"
-            "وضعیت تنظیمات واقعی بازی از دکمه‌های زیر قابل تغییر است.",
-            reply_markup=game_features_menu(
-                group.id,
-                game.challenge_enabled,
-                game.challenge_mode,
-                game.next_host_enabled,
-                game.next_player_enabled,
-                game.next_auto_enabled,
-                game.auto_silence_warnings,
-                game.auto_kick_warnings,
-                game.turn_seconds,
-                game.challenge_seconds,
-                game.extra_challenge_seconds,
-                back_callback=f"gameadmin:lobby:{game.game_key}" if game.status == "waiting" or callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
-            ),
-        )
-    await callback.answer()
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:extras:"))
-async def game_extras(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    group_id = int(callback.data.rsplit(":", 1)[1])
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        if not group:
-            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
-            return
-        game = await GameRepository.get_active(session, group.id)
-        if not game:
-            await callback.message.edit_text("بازی فعالی وجود ندارد.", reply_markup=group_game_menu(group.id))
-            await callback.answer()
-            return
-        await callback.message.edit_text(
-            "امکانات اضافی بازی\n\n"
-            f"بازی خودکار: {'فعال' if game.auto_play else 'غیرفعال'}\n"
-            f"رنگ نوبت: {game.turn_color}\n"
-            f"رنگ چالش: {game.challenge_color}",
-            reply_markup=game_extras_menu(
-                group.id,
-                game.auto_play,
-                game.turn_color,
-                game.challenge_color,
-                back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
-            ),
-        )
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:player_action:"))
-async def player_action(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    parts = callback.data.split(":")
-    if len(parts) != 4:
-        await callback.answer("درخواست مدیریت بازیکن نامعتبر است.", show_alert=True)
-        return
-    _, _, group_raw, action = parts
-    group_id = int(group_raw)
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        if not group:
-            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
-            return
-        game = await GameRepository.get_active(session, group.id)
-        if not game:
-            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
-            return
-        players = await GameRepository.players(session, game.id, include_reserve=True)
-        if action == "replace":
-            players = [row for row in players if not row[0].is_reserved and row[0].alive]
-        elif action == "birthday":
-            players = [row for row in players if not row[0].is_reserved and not row[0].alive and row[0].exit_type == "death"]
-        else:
-            players = [row for row in players if not row[0].is_reserved and row[0].alive]
-        if action == "remove" and game.status == "waiting":
-            players = [row for row in players if row[0].alive]
-        labels = {
-            "remove": "حذف بازیکن", "replace": "جایگزین — بازیکن مبدا",
-            "silence": "سکوت", "extra_turn": "ترن اضافه", "kick": "کیک از بازی",
-            "warning": "ثبت تذکر", "birthday": "تولد", "faceoff": "فیس آف — بازیکن مبدا", "slaughter": "سلاخی",
-        }
-        if action == "remove" and game.status == "running":
-            labels["remove"] = "حذف / کشتن بازیکن"
-        if action == "faceoff" and callback.message.chat.type in ("group", "supergroup"):
-            try:
-                await callback.bot.send_message(
-                    callback.from_user.id,
-                    "عملیات محرمانه مدیریت بازیکن\n\nبازیکن مبدا را انتخاب کنید:",
-                    reply_markup=player_target_management_keyboard(group.id, action, players),
-                )
-                await callback.message.edit_text(
-                    "عملیات محرمانه مدیریت بازیکن برای مدیر در PV ارسال شد."
-                )
-                await callback.answer("انتخاب فیس‌آف در PV ارسال شد.")
-            except Exception:
-                await callback.answer("برای عملیات محرمانه، ابتدا ربات را در PV /start کنید.", show_alert=True)
-            return
-        await callback.message.edit_text(
-            f"{labels.get(action, action)}\n\nبازیکن موردنظر را انتخاب کنید:",
-            reply_markup=player_target_management_keyboard(group.id, action, players),
-        )
-    await callback.answer()
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:player_target:"))
-async def player_target_action(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    parts = callback.data.split(":")
-    if len(parts) != 5:
-        await callback.answer("درخواست بازیکن نامعتبر است.", show_alert=True)
-        return
-    _, _, group_raw, action, user_raw = parts
-    group_id, target_id = int(group_raw), int(user_raw)
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        if not group:
-            await callback.answer("دسترسی مدیریت گروه تأیید نشد.", show_alert=True)
-            return
-        game = await GameRepository.get_active(session, group.id)
-        target = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == target_id))).scalar_one_or_none() if game else None
-        target_user = await session.get(User, target_id)
-        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
-        if not game or not target or not target_user:
-            await callback.answer("بازیکن پیدا نشد.", show_alert=True)
-            return
-
-        if action == "replace":
-            if game.status not in ("waiting", "running"):
-                await callback.answer("جایگزینی در این وضعیت بازی ممکن نیست.", show_alert=True)
-                return
-            if not target.alive:
-                await callback.answer("بازیکن مبدا باید زنده باشد.", show_alert=True)
-                return
-            reserves = await GameRepository.reserves(session, game.id)
-            await callback.message.edit_text(
-                f"بازیکن مبدا: {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن مقصد از لیست رزرو را انتخاب کنید:",
-                reply_markup=__import__("app.handlers.keyboards", fromlist=["player_replace_destination_keyboard"]).player_replace_destination_keyboard(group.id, target_id, reserves),
-            )
-            await callback.answer()
-            return
-
-        if action == "remove":
-            if game.status == "waiting":
-                await session.delete(target)
-                await session.commit()
-                message = "بازیکن از لیست بازی حذف شد."
-            elif game.status == "running" and target.alive:
-                if game.phase == "night":
-                    from app.services.gameplay import queue_pending_status_action
-                    round_no = await current_round(session, game.id)
-                    await queue_pending_status_action(session, game, "death", target_id, round_no, actor.id if actor else None)
-                    await session.commit()
-                    message = "حذف برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
-                else:
-                    target.alive = False
-                    target.exit_type = "death"
-                    await session.commit()
-                    message = "بازیکن به لیست کشته‌شده‌ها منتقل شد."
-            else:
-                await callback.answer("این بازیکن قابل حذف نیست.", show_alert=True)
-                return
-        elif action == "birthday":
-            if game.status != "running" or target.alive or target.exit_type != "death":
-                await callback.answer("فقط بازیکنانی که با حذف/مرگ از بازی خارج شده‌اند قابل تولد هستند.", show_alert=True)
-                return
-            target.alive = True
-            target.exit_type = None
-            target.silence_until_round = None
-            target.extra_turn_round = None
-            await session.commit()
-            message = "بازیکن با صندلی و نقش قبلی به بازی برگشت."
-        elif game.status != "running":
-            await callback.answer("این عملیات فقط در بازی در حال اجرا قابل استفاده است.", show_alert=True)
-            return
-        else:
-            round_no = await current_round(session, game.id)
-            if action == "silence":
-                event_type, message = "silence", "بازیکن برای شروع روز بعد ساکت شد و وضعیت در لیست روز اعمال می‌شود."
-                if game.phase == "night":
-                    from app.services.gameplay import queue_pending_status_action
-                    await queue_pending_status_action(session, game, "silence", target_id, round_no, actor.id if actor else None)
-                else:
-                    target.silence_until_round = round_no
-            elif action == "extra_turn":
-                target.extra_turn_round = round_no
-                queue_event = (await session.execute(
-                    select(GameEvent).where(GameEvent.game_id == game.id, GameEvent.event_type == "turn_queue").order_by(GameEvent.id.desc())
-                )).scalars().first()
-                if queue_event:
-                    queue_data = json.loads(queue_event.payload or "{}")
-                    queue_data.setdefault("queue", [])
-                    queue_data.setdefault("extra_turn_users", [])
-                    if target_id not in queue_data["extra_turn_users"]:
-                        queue_data["queue"].append(target_id)
-                        queue_data["extra_turn_users"].append(target_id)
-                    queue_event.payload = json.dumps(queue_data, ensure_ascii=False)
-                event_type, message = "extra_turn_granted", "ترن اضافه برای پایان این دور ثبت شد."
-            elif action == "kick":
-                event_type, message = "player_kicked", (
-                    "بازیکن کیک شد و امکان تولد ندارد."
-                    if game.phase != "night"
-                    else "کیک برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
-                )
-                if game.phase == "night":
-                    from app.services.gameplay import queue_pending_status_action
-                    await queue_pending_status_action(session, game, "kick", target_id, round_no, actor.id if actor else None)
-                else:
-                    target.alive, target.exit_type = False, "kick"
-            elif action == "slaughter":
-                event_type, message = "slaughter", (
-                    "بازیکن سلاخی شد و امکان تولد ندارد."
-                    if game.phase != "night"
-                    else "سلاخی برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
-                )
-                if game.phase == "night":
-                    from app.services.gameplay import queue_pending_status_action
-                    await queue_pending_status_action(session, game, "slaughter", target_id, round_no, actor.id if actor else None)
-                else:
-                    target.alive, target.exit_type = False, "slaughter"
-            elif action == "faceoff":
-                await callback.message.edit_text(
-                    f"بازیکن مبدا: {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن مقصد را انتخاب کنید:",
-                    reply_markup=__import__("app.handlers.keyboards", fromlist=["player_faceoff_destination_keyboard"]).player_faceoff_destination_keyboard(group.id, target_id, [
-                        row for row in await GameRepository.players(session, game.id) if row[0].alive and row[0].user_id != target_id
-                    ]),
-                )
-                await callback.answer()
-                return
-            elif action == "warning":
-                if game.phase == "night":
-                    from app.services.gameplay import queue_pending_status_action
-                    next_warning = target.warning_count + 1
-                    await queue_pending_status_action(
-                        session, game, "warning", target_id, round_no,
-                        actor.id if actor else None, warning_count=next_warning,
-                    )
-                    event_type, message = "warning", "تذکر برای شروع روز بعد ثبت شد و در لیست روز اعمال می‌شود."
-                    target_vote = {"pending": True}
-                else:
-                    target.warning_count += 1
-                    penalty = min(target.warning_count, 5)
-                    target_user.score -= penalty
-                    event_type, message = "warning", f"تذکر {target.warning_count} ثبت شد؛ {penalty}- امتیاز."
-                    if target.warning_count >= 3:
-                        target_vote = {"vote_blocked": True}
-                        await _event(session, game, "vote_right_revoked", {
-                            "round_no": round_no,
-                            "user_id": target_id,
-                            "active": True,
-                            "reason": "automatic_warning",
-                            "warning_count": target.warning_count,
-                        }, actor.id if actor else None)
-                        if game.auto_silence_warnings and target.warning_count >= 4:
-                            target.silence_until_round = round_no + 1
-                            target_vote["auto_silence"] = True
-                        if game.auto_kick_warnings and target.warning_count >= 5:
-                            target.alive, target.exit_type = False, "kick"
-                            target_vote["auto_kick"] = True
-                    else:
-                        target_vote = {}
-            else:
-                await callback.answer("عملیات نامعتبر است.", show_alert=True)
-                return
-            payload = {"user_id": target_id, "round_no": round_no, "active": True, "warning_count": target.warning_count}
-            if action == "warning":
-                payload.update(target_vote)
-            session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type=event_type, payload=json.dumps(payload, ensure_ascii=False)))
-            await session.commit()
-            if game.phase in {"day", "voting"} and action in {"remove", "silence", "kick", "slaughter", "warning"}:
-                try:
-                    from app.handlers.gameplay import update_round_roster
-                    await update_round_roster(callback.bot, session, game, group.telegram_id)
-                except Exception:
-                    pass
-        game_winner = None
-        if action in {"remove", "kick", "slaughter", "birthday"} and game.status == "running":
-            from app.services.gameplay import check_winner, finalize_game
-            game_winner = await check_winner(session, game.id)
-            if game_winner:
-                await finalize_game(session, game, game_winner)
-                await session.commit()
-                message += f"\n\n🏁 شرط برد برقرار شد؛ بازی با برد {'مافیا' if game_winner == 'mafia' else 'شهروند' if game_winner == 'citizen' else game_winner} به پایان رسید."
-        await callback.message.edit_text(f"مدیریت بازیکنان\n\n{message}", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
-    await callback.answer(message)
-
-
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:faceoff_to:"))
-async def faceoff_to(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    parts = callback.data.split(":")
-    if len(parts) != 5:
-        await callback.answer("درخواست فیس‌آف نامعتبر است.", show_alert=True)
-        return
-    _, _, _, group_raw, dest_raw = parts
-    # callback shape: gameadmin:faceoff_to:group:source:destination
-    source_raw = parts[3]
-    group_id, source_id, dest_id = int(parts[2]), int(source_raw), int(dest_raw)
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        game = await GameRepository.get_active(session, group.id) if group else None
-        if not game or game.status != "running":
-            await callback.answer("فیس‌آف فقط در بازی در حال اجرا انجام می‌شود.", show_alert=True)
-            return
-        source = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == source_id))).scalar_one_or_none()
-        dest = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == dest_id))).scalar_one_or_none()
-        if not source or not dest or not source.alive or not dest.alive:
-            await callback.answer("بازیکن مبدا یا مقصد معتبر نیست.", show_alert=True)
-            return
-        source_role, dest_role = source.role_id, dest.role_id
-        source.role_id = dest_role
-        dest.role_id = source_role
-        source.alive, source.exit_type = False, "faceoff"
-        round_no = await current_round(session, game.id)
-        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
-        session.add(GameEvent(game_id=game.id, actor_user_id=actor.id if actor else None, event_type="faceoff", payload=json.dumps({"source_user_id": source_id, "destination_user_id": dest_id, "round_no": round_no}, ensure_ascii=False)))
-        await session.commit()
-        game_winner = None
-        from app.services.gameplay import check_winner, finalize_game
-        game_winner = await check_winner(session, game.id)
-        if game_winner:
-            await finalize_game(session, game, game_winner)
-            await session.commit()
-        source_user, dest_user = await session.get(User, source_id), await session.get(User, dest_id)
-        if game_winner:
-            label = {"mafia": "مافیا", "citizen": "شهروند"}.get(game_winner, game_winner)
-            await callback.bot.send_message(group.telegram_id, f"🏁 بازی به پایان رسید. برنده: {label}")
-        await callback.message.edit_text("عملیات بازیکن انجام شد.", reply_markup=group_game_menu(group.id) if game_winner else player_management_menu(group.id))
-    await callback.answer("عملیات انجام شد.")
-
-
-@router.callback_query(lambda c: c.data.startswith("gameadmin:player_replace_to:"))
-async def player_replace_to(callback: CallbackQuery) -> None:
-    if not callback.message or not callback.from_user:
-        return
-    parts = callback.data.split(":")
-    if len(parts) != 5:
-        await callback.answer("درخواست جایگزینی نامعتبر است.", show_alert=True)
-        return
-    _, _, group_raw, source_raw, dest_raw = parts
-    group_id, source_id, dest_id = int(group_raw), int(source_raw), int(dest_raw)
-    async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        game = await GameRepository.get_active(session, group.id) if group else None
-        if not game or game.status != "waiting":
-            await callback.answer("جایگزینی در این وضعیت بازی ممکن نیست.", show_alert=True)
-            return
-        source = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == source_id))).scalar_one_or_none()
-        dest = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == dest_id))).scalar_one_or_none()
-        source_user, dest_user = await session.get(User, source_id), await session.get(User, dest_id)
-        if not source or not dest or not dest.is_reserved:
-            await callback.answer("بازیکن مبدا یا مقصد معتبر نیست.", show_alert=True)
-            return
-        seat = source.seat
-        ok = await GameRepository.replace_player(session, game, source, dest)
-        if not ok:
-            await callback.answer("عملیات جایگزینی انجام نشد.", show_alert=True)
-            return
-        chat_id = group.telegram_id
-        await callback.bot.send_message(chat_id, f"جایگزینی انجام شد: {tg_name(source_user.display_name or source_user.first_name)} ← {tg_name(dest_user.display_name or dest_user.first_name)}\nصندلی: {seat}")
-        await callback.message.edit_text("جایگزینی با موفقیت انجام شد.", reply_markup=player_management_menu(group.id))
-    await callback.answer("جایگزینی انجام شد.")
-
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:scenario:"))
 async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
