@@ -591,7 +591,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
         await callback.message.edit_text(
-            f"⚔️ چالش برای {name} تأیید شد.\nزمان اجرا: {'قبل از صحبت' if result['placement'] == 'before' else 'بعد از صحبت'}"
+            f"⚔️ چالش به <b>{name}</b> داده شد."
         )
         if chat_id:
             if result["placement"] == "before":
@@ -599,7 +599,7 @@ async def challenge_place_handler(callback: CallbackQuery):
                 if challenge_turn:
                     try:
                         await callback.message.edit_text(
-                            f"⚔️ چالش برای {name} اجرا شد.\n\nبعد از انتخاب جایگاه، نوبت چالش جداگانه آغاز شد."
+                            f"⚔️ چالش به <b>{name}</b> اجرا شد."
                         )
                     except Exception:
                         pass
@@ -613,7 +613,7 @@ async def challenge_place_handler(callback: CallbackQuery):
             else:
                 try:
                     await callback.message.edit_text(
-                        f"⚔️ چالش برای {name} تأیید شد.\n\nبعد از پایان نوبت اصلی اجرا می‌شود."
+                        f"⚔️ چالش به <b>{name}</b> داده شد."
                     )
                 except Exception:
                     pass
@@ -666,11 +666,23 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
-            await callback.bot.send_message(
-                chat_id,
-                "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
-                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
-            )
+            if game.auto_play:
+                try:
+                    await start_voting(session, game)
+                    await callback.bot.send_message(
+                        chat_id,
+                        "🗳 رأی‌گیری دور شروع شد.",
+                        reply_markup=vote_keyboard(game.game_key, await alive_players(session, game.id)),
+                    )
+                except ValueError as exc:
+                    await callback.answer(str(exc), show_alert=True)
+                    return
+            else:
+                await callback.bot.send_message(
+                    chat_id,
+                    "🗳 نوبت‌های این دور تمام شد.",
+                    reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                )
         else:
             new_turn = await current_turn(session, game.id)
             if new_turn:
