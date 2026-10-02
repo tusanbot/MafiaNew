@@ -9,12 +9,14 @@ class Settings(BaseSettings):
     webhook_mode: bool = False
     log_level: str = "INFO"
     admin_ids: str = ""
+    admin_id: str = ""
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     @property
     def admin_id_set(self) -> set[int]:
-        return {int(v.strip()) for v in self.admin_ids.split(",") if v.strip()}
+        raw = ",".join(v for v in (self.admin_ids, self.admin_id) if v)
+        return {int(v.strip()) for v in raw.split(",") if v.strip()}
 
 @lru_cache
 def get_settings() -> Settings:
