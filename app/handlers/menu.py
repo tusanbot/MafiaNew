@@ -896,6 +896,40 @@ async def emoji_toggle(callback: CallbackQuery) -> None:
     await callback.answer("تنظیم اموجی ذخیره شد.")
 
 
+@router.callback_query(lambda c: c.data.startswith("gameadmin:features:"))
+async def game_features_menu_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            return
+        game = await GameRepository.get_active(session, group.id)
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            "⚙️ <b>تنظیمات بازی</b>",
+            reply_markup=game_features_menu(
+                group.id,
+                game.challenge_enabled,
+                game.challenge_mode,
+                game.next_host_enabled,
+                game.next_player_enabled,
+                game.next_auto_enabled,
+                game.auto_silence_warnings,
+                game.auto_kick_warnings,
+                game.turn_seconds,
+                game.challenge_seconds,
+                game.extra_challenge_seconds,
+                back_callback=f"game:return_lobby:{game.game_key}" if game.status == "waiting" else f"gameadmin:active:{group.id}",
+                game_key=game.game_key,
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:feature:"))
 async def game_feature_handler(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
