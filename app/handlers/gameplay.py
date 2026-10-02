@@ -1363,9 +1363,7 @@ async def vote1_finish_handler(callback: CallbackQuery):
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
         await callback.message.edit_text(
-            "🗳 <b>رأی اول تمام شد</b>
-
-از گزینه‌های زیر مرحله بعد را انتخاب کنید.",
+            "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
             reply_markup=vote1_complete_keyboard(key),
             parse_mode="HTML",
         )
