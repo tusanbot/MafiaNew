@@ -591,7 +591,8 @@ async def challenge_place_handler(callback: CallbackQuery):
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
         await callback.message.edit_text(
-            f"⚔️ چالش به <b>{name}</b> داده شد."
+            f"⚔️ چالش به <b>{name}</b> داده شد.",
+            parse_mode="HTML",
         )
         if chat_id:
             if result["placement"] == "before":
@@ -599,7 +600,8 @@ async def challenge_place_handler(callback: CallbackQuery):
                 if challenge_turn:
                     try:
                         await callback.message.edit_text(
-                            f"⚔️ چالش به <b>{name}</b> اجرا شد."
+                            f"⚔️ چالش به <b>{name}</b> اجرا شد.",
+                            parse_mode="HTML",
                         )
                     except Exception:
                         pass
@@ -613,7 +615,8 @@ async def challenge_place_handler(callback: CallbackQuery):
             else:
                 try:
                     await callback.message.edit_text(
-                        f"⚔️ چالش به <b>{name}</b> داده شد."
+                        f"⚔️ چالش به <b>{name}</b> داده شد.",
+                        parse_mode="HTML",
                     )
                 except Exception:
                     pass
