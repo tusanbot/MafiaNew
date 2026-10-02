@@ -1504,6 +1504,7 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 if not state:
                     return
                 await finish_vote2(session, game)
+                await update_main_roster(bot, session, game, chat_id)
                 await _finish_vote_message(bot, session, game, next_button=False, final=True)
                 return
     except asyncio.CancelledError:
@@ -1527,6 +1528,7 @@ async def vote2_next_handler(callback: CallbackQuery):
         if task:
             task.cancel()
         result = await advance_vote2(session, game)
+        await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
         await _finish_vote_message(callback.bot, session, game, next_button=False, final=True)
         if result["finished"]:
             await callback.answer("رای گیری دوم تمام شد.")
