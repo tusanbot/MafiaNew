@@ -600,6 +600,20 @@ def vote2_result_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="پایان بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
+def vote2_setup_keyboard(game_key: str, selection_mode: str = "manual") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"نوع رای گیری دوم: {'خودکار' if selection_mode == 'auto' else 'دستی'}",
+        callback_data=f"vote2:mode:{game_key}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="انتخاب بازیکنان برای دفاع",
+        callback_data=f"vote2:choose:{game_key}",
+    ))
+    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
+    return builder.as_markup()
+
+
 def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🗳 رای میدم", callback_data=f"vote2:cast:{game_key}:{target_user_id}"))
