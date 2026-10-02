@@ -514,6 +514,87 @@ def day_turn_keyboard(
     return builder.as_markup()
 
 
+def voting_setup_keyboard(game_key: str, pre_delay: int = 10, vote_seconds: int = 10, voting_mode: str = "manual") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"⏳ انتظار قبل از رای: {pre_delay} ثانیه", callback_data=f"votingset:delay:{game_key}"))
+    builder.row(InlineKeyboardButton(text=f"⏱ زمان هر رای: {vote_seconds} ثانیه", callback_data=f"votingset:duration:{game_key}"))
+    builder.row(InlineKeyboardButton(text=f"نوع رای گیری: {'خودکار' if voting_mode == 'auto' else 'دستی'}", callback_data=f"votingset:mode:{game_key}"))
+    builder.row(InlineKeyboardButton(text="گرفتن حق رای", callback_data=f"votingset:revoke:{game_key}"))
+    builder.row(InlineKeyboardButton(text="شروع رای ۱", callback_data=f"vote:start1:{game_key}"))
+    return builder.as_markup()
+
+
+def voting_delay_keyboard(game_key: str, current: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for value in (0, 5, 10, 15, 30):
+        builder.row(InlineKeyboardButton(text=f"{'✓ ' if value == current else ''}{value} ثانیه", callback_data=f"votingset:set_delay:{game_key}:{value}"))
+    _back(builder, f"votingset:menu:{game_key}")
+    return builder.as_markup()
+
+
+def voting_duration_keyboard(game_key: str, current: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for value in (5, 10, 15, 20, 30, 60, 90):
+        builder.row(InlineKeyboardButton(text=f"{'✓ ' if value == current else ''}{value} ثانیه", callback_data=f"votingset:set_duration:{game_key}:{value}"))
+    _back(builder, f"votingset:menu:{game_key}")
+    return builder.as_markup()
+
+
+def voting_mode_keyboard(game_key: str, current: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"{'✓ ' if current == 'manual' else ''}دستی", callback_data=f"votingset:set_mode:{game_key}:manual"))
+    builder.row(InlineKeyboardButton(text=f"{'✓ ' if current == 'auto' else ''}خودکار", callback_data=f"votingset:set_mode:{game_key}:auto"))
+    _back(builder, f"votingset:menu:{game_key}")
+    return builder.as_markup()
+
+
+def vote_rights_keyboard(game_key: str, players, revoked_ids: set[int] | None = None) -> InlineKeyboardMarkup:
+    revoked_ids = revoked_ids or set()
+    builder = InlineKeyboardBuilder()
+    for player, user, *_ in players:
+        if not player.alive:
+            continue
+        name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
+        mark = "🚫" if user.id in revoked_ids else "🗳"
+        builder.row(InlineKeyboardButton(text=f"{mark} {name}", callback_data=f"votingset:revoke_target:{game_key}:{user.id}"))
+    _back(builder, f"votingset:menu:{game_key}")
+    return builder.as_markup()
+
+
+def vote1_target_keyboard(game_key: str, target_user_id: int, voter_count: int = 0) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"🗳 رای میدم", callback_data=f"vote1:cast:{game_key}:{target_user_id}"))
+    return builder.as_markup()
+
+
+def vote1_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="اتمام رای گیری", callback_data=f"vote1:finish:{game_key}"))
+    return builder.as_markup()
+
+
+def defense_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for player, user, *_ in players:
+        if player.alive:
+            name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
+            builder.row(InlineKeyboardButton(text=f"دفاع: {name}", callback_data=f"vote2:select:{game_key}:{user.id}"))
+    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:start:{game_key}"))
+    return builder.as_markup()
+
+
+def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🗳 رای میدم", callback_data=f"vote2:cast:{game_key}:{target_user_id}"))
+    return builder.as_markup()
+
+
+def vote2_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="اتمام رای گیری", callback_data=f"vote2:finish:{game_key}"))
+    return builder.as_markup()
+
+
 def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup:
     return day_turn_keyboard(game_key, False, True, False, challenge_requests=requests)
 
