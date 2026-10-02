@@ -223,8 +223,10 @@ async def _render_ranking(target, session, kind: str):
             edit=not isinstance(target, Message),
             custom_emoji=custom_emoji_enabled,
         )
-    except Exception as exc:
-        if custom_emoji_enabled:
+    except Exception:
+        # A failed Rich Message must never break ranking. Retry without
+        # custom emoji first, then fall back to a standard HTML message.
+        try:
             await _send_rich_ranking(
                 target,
                 rows,
@@ -232,8 +234,26 @@ async def _render_ranking(target, session, kind: str):
                 edit=not isinstance(target, Message),
                 custom_emoji=False,
             )
-        else:
-            raise
+        except Exception:
+            title = {
+                "all": "🏆 رتبه‌بندی بازیکنان",
+                "mafia": "🔴 برترین‌های مافیا",
+                "citizen": "🔵 برترین‌های شهروند",
+            }.get(kind, "🏆 رتبه‌بندی")
+            lines = [f"<b>{title}</b>", ""]
+            if rows:
+                for i, user in enumerate(rows, 1):
+                    name = tg_name(user.display_name or user.first_name or "بازیکن")
+                    lines.append(
+                        f"{i}. {name} — <b>{int(user.score)}</b> امتیاز — "
+                        f"{int(user.games_won)}/{int(user.games_played)} برد"
+                    )
+            else:
+                lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
+            if isinstance(target, Message):
+                await target.answer("\n".join(lines), parse_mode="HTML", reply_markup=ranking_menu())
+            else:
+                await target.message.edit_text("\n".join(lines), parse_mode="HTML", reply_markup=ranking_menu())
 
 
 @router.callback_query(lambda c: c.data == "menu:ranking")
