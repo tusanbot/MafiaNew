@@ -1175,3 +1175,28 @@ async def vote2_finish_handler(callback: CallbackQuery):
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
             _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
     await callback.answer()
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:cast:"))
+async def vote2_cast_handler(callback: CallbackQuery):
+    parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor: await callback.answer("بازی پیدا نشد.", show_alert=True); return
+        try: await cast_vote_phase(session, game, actor, target_id, "vote2")
+        except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
+        await _refresh_vote_target_message(callback.bot, session, game)
+    await callback.answer("رای ثبت شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:finish:"))
+async def vote2_finish_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        result = await advance_vote2(session, game)
+        if result["finished"]:
+            await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
+            await callback.message.answer("🗳 رای گیری دوم تمام شد.")
+        else:
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
+    await callback.answer()
