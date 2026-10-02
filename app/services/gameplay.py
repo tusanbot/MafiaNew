@@ -1027,6 +1027,34 @@ async def next_turn(session, game):
     if not turn or turn.get("status") not in ("active", "paused"):
         raise ValueError("نوبت فعالی وجود ندارد.")
     round_no = int(turn["round_no"])
+    if turn.get("kind") == "defense":
+        await _event(session, game, "turn_state", {**turn, "status": "finished", "finished_at": datetime.now(timezone.utc).isoformat()})
+        state_result = await session.execute(select(GameEvent).where(
+            GameEvent.game_id == game.id, GameEvent.event_type == "vote2_state"
+        ).order_by(GameEvent.id.desc()))
+        state_event = state_result.scalars().first()
+        if not state_event:
+            raise ValueError("صف دفاع پیدا نشد.")
+        state = _payload(state_event)
+        queue = [int(x) for x in state.get("queue", [])]
+        idx = int(state.get("index", 0))
+        if idx + 1 < len(queue):
+            next_id = queue[idx + 1]
+            state["index"] = idx + 1
+            state["target_user_id"] = next_id
+            state["started_at"] = datetime.now(timezone.utc).isoformat()
+            state["status"] = "active"
+            await _event(session, game, "vote2_state", state)
+            await session.commit()
+            return {"kind": "defense", "user_id": next_id}
+        game.phase = "voting2"
+        await _event(session, game, "vote_state", {
+            "round_no": round_no, "phase": "vote2", "index": 0,
+            "queue": queue, "target_user_id": queue[0],
+            "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await session.commit()
+        return {"kind": "voting2", "user_id": queue[0]}
     if turn.get("kind") == "challenge":
         placement = turn.get("placement", "before")
         await _event(session, game, "turn_state", {**turn, "status": "finished", "finished_at": datetime.now(timezone.utc).isoformat()})
@@ -1039,6 +1067,7 @@ async def next_turn(session, game):
                 "status": "active",
                 "started_at": datetime.now(timezone.utc).isoformat(),
                 "resumed_after_challenge": True,
+                "challenge_consumed": True,
             })
             await session.commit()
             return {"kind": "main", "user_id": resume_user, "resumed": True}
