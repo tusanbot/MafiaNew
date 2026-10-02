@@ -968,7 +968,11 @@ async def game_event_select(callback: CallbackQuery) -> None:
     async with session_factory() as session:
         game = await session.get(Game, game_id)
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
-        if not game or not actor or game.status != "running" or game.host_user_id != actor.id:
+        group = await session.get(Group, game.group_id) if game else None
+        allowed = bool(game and actor and group and game.status == "running" and (
+            game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id)
+        ))
+        if not allowed:
             await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
             return
         await callback.message.edit_text(
@@ -987,7 +991,11 @@ async def game_event_add(callback: CallbackQuery, state: FSMContext) -> None:
     async with session_factory() as session:
         game = await session.get(Game, game_id)
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
-        if not game or not actor or game.status != "running" or game.host_user_id != actor.id:
+        group = await session.get(Group, game.group_id) if game else None
+        allowed = bool(game and actor and group and game.status == "running" and (
+            game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id)
+        ))
+        if not allowed:
             await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
             return
         if game.auto_play:
@@ -1286,11 +1294,16 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         if action == "events":
+            manageable = await _manageable_groups(session, callback.bot, callback.from_user.id)
+            group_ids = [g.id for g in manageable]
+            if not group_ids:
+                await callback.answer("گروه قابل مدیریت فعالی پیدا نشد.", show_alert=True)
+                return
             result = await session.execute(
                 select(Game, Scenario, Group)
                 .join(Scenario, Scenario.id == Game.scenario_id)
                 .join(Group, Group.id == Game.group_id)
-                .where(Game.status == "running", Game.host_user_id == (await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id)
+                .where(Game.status == "running", Game.group_id.in_(group_ids))
                 .order_by(desc(Game.id))
             )
             games = list(result.all())
