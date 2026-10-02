@@ -43,13 +43,11 @@ async def new_game_handler(message: Message) -> None:
             return
 
         result = await session.execute(
-            select(Scenario).where(
-                Scenario.key == "classic", Scenario.enabled.is_(True)
-            )
+            select(Scenario).where(Scenario.enabled.is_(True)).order_by(Scenario.id)
         )
-        scenario = result.scalar_one_or_none()
+        scenario = result.scalars().first()
         if scenario is None:
-            await message.answer("سناریوی کلاسیک هنوز در پایگاه داده ثبت نشده است.")
+            await message.answer("هیچ سناریوی فعالی برای ایجاد بازی ثبت نشده است.")
             return
 
         user = await UserRepository(session).upsert_from_telegram(
