@@ -561,74 +561,14 @@ async def finish_vote2(session, game):
     await _event(session, game, "vote2_target_finished", {
         "round_no": round_no, "target_user_id": target_id, "vote_count": len(records),
     })
-    queue = [int(x) for x in state.get("queue", [])]
-    idx = int(state.get("index", 0))
-    if idx + 1 < len(queue):
-        next_id = queue[idx + 1]
-        state["index"] = idx + 1
-        state["target_user_id"] = next_id
-        state["started_at"] = datetime.now(timezone.utc).isoformat()
-        state["status"] = "active"
-        await _event(session, game, "vote_state", state)
-        await session.commit()
-        return {"finished": False, "target_user_id": next_id, "records": records}
-    # Final vote2 result is intentionally resolved by the host/game engine later.
-    game.phase = "vote2_complete"
-    state["status"] = "finished"
-    await _event(session, game, "vote2_completed", {
-        "round_no": round_no, "candidates": queue,
-    })
     await session.commit()
-    return {"finished": True, "candidates": queue, "records": records}
+    return {
+        "finished": int(state.get("index", 0)) + 1 >= len(state.get("queue", [])),
+        "target_user_id": target_id,
+        "records": records,
+    }
 
 
-async def submit_vote(session, game, voter, target_user_id):
-    if game.status != "running" or game.phase != "voting": raise ValueError("الان زمان رأی‌گیری نیست.")
-    round_no = await current_round(session, game.id)
-    if (await session.execute(select(GamePlayer).where(
-        GamePlayer.game_id == game.id, GamePlayer.user_id == voter.id, GamePlayer.alive.is_(True)
-    ))).scalar_one_or_none() is None:
-        raise ValueError("فقط بازیکن زنده می‌تواند رأی بدهد.")
-    if (await session.execute(select(GamePlayer).where(
-        GamePlayer.game_id == game.id, GamePlayer.user_id == target_user_id, GamePlayer.alive.is_(True)
-    ))).scalar_one_or_none() is None:
-        raise ValueError("هدف انتخاب‌شده زنده نیست.")
-    existing = await session.execute(select(Vote).where(
-        Vote.game_id == game.id, Vote.round_no == round_no, Vote.voter_user_id == voter.id))
-    if existing.scalar_one_or_none(): raise ValueError("رأی شما قبلاً ثبت شده است.")
-    session.add(Vote(game_id=game.id, voter_user_id=voter.id, target_user_id=target_user_id, round_no=round_no))
-    await session.flush()
-    alive_count = len(await alive_players(session, game.id))
-    vote_count = await session.scalar(select(func.count(Vote.id)).where(Vote.game_id == game.id, Vote.round_no == round_no))
-    if vote_count < alive_count:
-        await session.commit()
-        return {"resolved": False}
-    result = await session.execute(select(Vote.target_user_id, func.count(Vote.id))
-        .where(Vote.game_id == game.id, Vote.round_no == round_no)
-        .group_by(Vote.target_user_id).order_by(func.count(Vote.id).desc()))
-    rows = list(result.all())
-    top = rows[0][1] if rows else 0
-    leaders = [target for target, count in rows if count == top]
-    eliminated = None
-    if len(leaders) == 1:
-        row = (await session.execute(select(GamePlayer, User).join(User, User.id == GamePlayer.user_id).where(
-            GamePlayer.game_id == game.id, GamePlayer.user_id == leaders[0], GamePlayer.alive.is_(True)
-        ))).first()
-        if row:
-            row[0].alive = False
-            row[0].exit_type = "death"
-            eliminated = row[1]
-    await _event(session, game, "voting_resolved",
-                 {"round_no": round_no, "eliminated_user_id": eliminated.id if eliminated else None, "tie": len(leaders) != 1})
-    winner = await check_winner(session, game.id)
-    if winner:
-        await finalize_game(session, game, winner)
-        await session.commit()
-        return {"resolved": True, "winner": winner, "eliminated": eliminated, "tie": len(leaders) != 1}
-    game.phase = "night"
-    await _event(session, game, "phase_changed", {"to": "night", "round_no": round_no})
-    await session.commit()
-    return {"resolved": True, "winner": None, "eliminated": eliminated, "tie": len(leaders) != 1}
 
 async def advance_vote2(session, game):
     state = await _latest_vote_state(session, game.id)
