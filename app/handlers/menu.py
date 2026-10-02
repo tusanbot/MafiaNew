@@ -494,7 +494,7 @@ async def player_management(callback: CallbackQuery) -> None:
         )
     await callback.answer()
 
-async def _remap_game_players_to_scenario(session, game, scenario) -> None:
+async def _remap_game_players_to_scenario(session, game, scenario, old_capacity: int) -> None:
     """Remap waiting-lobby seats when the scenario capacity changes."""
     rows = await GameRepository.players(session, game.id, include_reserve=True)
     active = sorted((row for row in rows if not row[0].is_reserved), key=lambda row: row[0].seat)
@@ -530,11 +530,12 @@ async def _remap_game_players_to_scenario(session, game, scenario) -> None:
     # the pre-change seats stored in a local map attached before reassignment.
     # This helper is called only from the handler below, which sets _old_seat.
     preserved = []
-    for player, user in active:
-        old_seat = int(getattr(player, "_old_seat", 0) or 0)
-        if 1 <= old_seat <= capacity and old_seat not in used:
-            preserved.append((player, old_seat))
-            used.add(old_seat)
+    if capacity >= int(old_capacity):
+        for player, user in active:
+            old_seat = int(getattr(player, "_old_seat", 0) or 0)
+            if 1 <= old_seat <= capacity and old_seat not in used:
+                preserved.append((player, old_seat))
+                used.add(old_seat)
     remaining = [player for player, _user in ordered if player not in {p for p, _ in preserved}]
     free = [seat for seat in range(1, capacity + 1) if seat not in used]
     assignments = preserved + list(zip(remaining[:len(free)], free))
@@ -577,7 +578,7 @@ async def gameadmin_change_scenario(callback: CallbackQuery) -> None:
         )).scalars().all())
         await callback.message.edit_text(
             "🎭 سناریوی جدید را انتخاب کنید:",
-            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}"),
+            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}", "gameadmin:setscenario"),
         )
     await callback.answer()
 
@@ -606,7 +607,8 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
         # Capture original seats before remapping.
         for player, _user in rows:
             player._old_seat = int(player.seat)
-        await _remap_game_players_to_scenario(session, game, scenario)
+        old_scenario = await session.get(Scenario, game.scenario_id)
+        await _remap_game_players_to_scenario(session, game, scenario, old_scenario.max_players if old_scenario else scenario.max_players)
         game.scenario_id = scenario.id
         await session.commit()
         await callback.message.edit_text(
@@ -640,7 +642,7 @@ async def gameadmin_change_host(callback: CallbackQuery) -> None:
         admins = await callback.bot.get_chat_administrators(group.telegram_id)
         await callback.message.edit_text(
             "🎙 گرداننده جدید را انتخاب کنید:",
-            reply_markup=host_select_keyboard(group.id, admins),
+            reply_markup=host_select_keyboard(group.id, admins, "gameadmin:sethost", f"gameadmin:lobby:{game.game_key}"),
         )
     await callback.answer()
 
