@@ -645,26 +645,17 @@ async def challenge_place_handler(callback: CallbackQuery):
                 if challenge_turn:
                     try:
                         await callback.message.edit_text(
-                            f"⚔️ چالش برای {name} اجرا شد.\n\n"
-                            f"⏱ {_duration_text(_turn_duration(game, 'challenge'))} فرصت صحبت داری",
-                            reply_markup=day_turn_keyboard(
-                                game.game_key, True, game.challenge_enabled,
-                                game.turn_color_enabled, game.turn_color, game.challenge_color,
-                                True, False
-                            ),
+                            f"⚔️ چالش برای {name} اجرا شد.\n\nبعد از انتخاب جایگاه، نوبت چالش جداگانه آغاز شد."
                         )
                     except Exception:
                         pass
-                    await _register_turn_message(
-                        session,
-                        game,
-                        chat_id=chat_id,
-                        message_id=callback.message.message_id,
-                        turn=challenge_turn,
+                    challenge_msg = await _send_turn_message(
+                        callback.bot, session, game, chat_id, challenge_turn
                     )
-                    await _schedule_auto_next(
-                        callback.bot, game.game_key, chat_id, callback.message.message_id
-                    )
+                    if challenge_msg:
+                        await _schedule_auto_next(
+                            callback.bot, game.game_key, chat_id, challenge_msg.message_id
+                        )
             else:
                 try:
                     await callback.message.edit_text(
