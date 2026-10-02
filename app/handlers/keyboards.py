@@ -264,6 +264,24 @@ def finish_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def finish_game_confirm_keyboard(group_id: int, winner: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="تأیید نتیجه", callback_data=f"gameadmin:finish_confirm:{group_id}:{winner}"))
+    builder.row(InlineKeyboardButton(text="تغییر برنده", callback_data=f"gameadmin:feature:{group_id}:finish"))
+    return builder.as_markup()
+
+
+def game_result_keyboard(group_id: int, game_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"groupgame:history:{group_id}"))
+    builder.row(
+        InlineKeyboardButton(text="آمار", callback_data=f"gameresult:stats:{game_id}"),
+        InlineKeyboardButton(text="رتبه‌بندی", callback_data="ranking:players"),
+    )
+    builder.row(InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"))
+    return builder.as_markup()
+
+
 def bot_settings_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات عمومی", callback_data="botsettings:general"))
