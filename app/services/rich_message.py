@@ -84,11 +84,82 @@ def _pick(payload: Mapping[str, Any], names: tuple[str, ...]) -> dict[str, Any]:
     }
 
 
+def _rich_inline_keyboard(markup: Any) -> str | None:
+    """Convert an aiogram InlineKeyboardMarkup to Rich HTML buttons.
+
+    Rich Messages support interactive buttons directly in rich HTML. Using
+    them here avoids depending on the legacy reply_markup rendering path and
+    keeps every existing callback_data/url keyboard usable.
+    """
+    data = _model_dump(markup)
+    if not isinstance(data, Mapping) or not data.get("inline_keyboard"):
+        return None
+
+    rows: list[str] = []
+    for row in data["inline_keyboard"]:
+        buttons: list[str] = []
+        for button in row:
+            if not isinstance(button, Mapping):
+                return None
+            label = html.escape(str(button.get("text") or ""), quote=False)
+            style = str(button.get("style") or "").strip()
+            style_attr = f' style="{html.escape(style, quote=True)}"' if style in {"danger", "success", "primary", "link"} else ""
+            if button.get("callback_data") is not None:
+                callback_data = html.escape(str(button["callback_data"]), quote=True)
+                buttons.append(
+                    f'<tg-button type="callback_data" data="{callback_data}"{style_attr}>{label}</tg-button>'
+                )
+            elif button.get("url") is not None:
+                url = html.escape(str(button["url"]), quote=True)
+                buttons.append(
+                    f'<tg-button type="url" url="{url}"{style_attr}>{label}</tg-button>'
+                )
+            elif button.get("web_app") is not None:
+                web_app = _model_dump(button["web_app"])
+                if not isinstance(web_app, Mapping) or not web_app.get("url"):
+                    return None
+                url = html.escape(str(web_app["url"]), quote=True)
+                buttons.append(
+                    f'<tg-button type="web_app" url="{url}"{style_attr}>{label}</tg-button>'
+                )
+            elif button.get("login_url") is not None:
+                login = _model_dump(button["login_url"])
+                if not isinstance(login, Mapping) or not login.get("url"):
+                    return None
+                url = html.escape(str(login["url"]), quote=True)
+                buttons.append(
+                    f'<tg-button type="login_url" url="{url}"{style_attr}>{label}</tg-button>'
+                )
+            else:
+                # Unknown button types must never silently disappear.
+                return None
+        rows.append('<tg-button-row align="center">' + "".join(buttons) + "</tg-button-row>")
+    return "".join(rows)
+
+
+def _rich_content_with_markup(
+    text: str | None,
+    parse_mode: str | None,
+    reply_markup: Any = None,
+) -> dict[str, Any]:
+    content = _rich_content(text, parse_mode)
+    if reply_markup is None:
+        return content
+    keyboard = _rich_inline_keyboard(reply_markup)
+    if keyboard is None:
+        return content
+    key = next(iter(content))
+    content[key] = f"{content[key]}{keyboard}"
+    return content
+
+
 def _send_rich_payload(kwargs: Mapping[str, Any]) -> dict[str, Any]:
-    rich_message = {
-        **_rich_content(kwargs.get("text"), kwargs.get("parse_mode")),
-        "is_rtl": True,
-    }
+    content = _rich_content_with_markup(
+        kwargs.get("text"),
+        kwargs.get("parse_mode"),
+        kwargs.get("reply_markup"),
+    )
+    rich_message = {**content, "is_rtl": True}
     payload: dict[str, Any] = {
         "chat_id": kwargs.get("chat_id"),
         "rich_message": rich_message,
@@ -106,24 +177,24 @@ def _send_rich_payload(kwargs: Mapping[str, Any]) -> dict[str, Any]:
         "message_effect_id",
         "suggested_post_parameters",
         "reply_parameters",
-        "reply_markup",
     )))
     return {k: v for k, v in payload.items() if v is not None}
 
 
 def _edit_rich_payload(kwargs: Mapping[str, Any]) -> dict[str, Any]:
+    content = _rich_content_with_markup(
+        kwargs.get("text"),
+        kwargs.get("parse_mode"),
+        kwargs.get("reply_markup"),
+    )
     payload: dict[str, Any] = {
-        "rich_message": {
-            **_rich_content(kwargs.get("text"), kwargs.get("parse_mode")),
-            "is_rtl": True,
-        }
+        "rich_message": {**content, "is_rtl": True}
     }
     for name in (
         "business_connection_id",
         "chat_id",
         "message_id",
         "inline_message_id",
-        "reply_markup",
     ):
         if kwargs.get(name) is not None:
             payload[name] = _model_dump(kwargs[name])
