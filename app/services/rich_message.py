@@ -16,6 +16,7 @@ from collections.abc import Mapping
 from typing import Any
 
 import aiohttp
+from aiogram.types import Message
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +149,13 @@ async def _try_rich(method: str, token: str, payload: dict[str, Any]) -> Any:
     try:
         result = await _call(method, token, payload)
         _mark_success()
+        if isinstance(result, dict) and result.get("message_id") is not None:
+            try:
+                return Message.model_validate(result)
+            except Exception:
+                # Keep the raw result only as a last resort; callers that need
+                # Message attributes will otherwise trigger the normal fallback.
+                pass
         return result
     except Exception as exc:
         _mark_failure(exc)
