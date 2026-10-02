@@ -744,6 +744,7 @@ async def challenge_place_handler(callback: CallbackQuery):
             f"🤏🏻 چالش به <b>{name}</b> داده شد.",
             parse_mode="HTML",
         )
+        await update_main_roster(callback.bot, session, game, chat_id)
         if chat_id:
             if result["placement"] == "before":
                 challenge_turn = await current_turn(session, game.id)
@@ -1247,6 +1248,18 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
                 await _finish_vote_message(bot, session, game, next_button=True)
                 result = await advance_vote1(session, game)
                 if result["finished"] or is_last:
+                    if result.get("finished"):
+                        state_after = await _latest_vote_state(session, game.id)
+                        message_id = state_after.get("message_id") if state_after else None
+                        if message_id:
+                            try:
+                                await bot.edit_message_reply_markup(
+                                    chat_id=chat_id,
+                                    message_id=int(message_id),
+                                    reply_markup=vote1_complete_keyboard(game.game_key),
+                                )
+                            except Exception:
+                                pass
                     return
                 if game.voting_mode == "auto":
                     await _vote_target_message(bot, session, game, chat_id)
