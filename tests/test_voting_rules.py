@@ -13,7 +13,7 @@ def test_half_rules():
     assert threshold_for_count(10, "half_plus_one_odd") == 5
     assert threshold_for_count(9, "half_plus_one_odd") == 6
     assert threshold_for_count(10, "half_minus_one_odd") == 5
-    assert threshold_for_count(9, "half_minus_one_odd") == 3
+    assert threshold_for_count(9, "half_minus_one_odd") == 4
 
 
 def test_revoked_players_do_not_reduce_threshold_denominator():
