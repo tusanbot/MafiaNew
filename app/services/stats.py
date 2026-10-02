@@ -239,17 +239,25 @@ async def achievement_progress(session: AsyncSession, user: User) -> list[tuple[
     earned_ids = set((await session.execute(
         select(UserAchievement.achievement_id).where(UserAchievement.user_id == user.id)
     )).scalars().all())
+    challenge_games = int(await session.scalar(
+        select(func.count(func.distinct(GameEvent.game_id))).where(
+            GameEvent.event_type == "challenge_request",
+            GameEvent.actor_user_id == user.id,
+        )
+    ) or 0)
     progress = {
         "first_game": (user.games_played, 1),
         "first_win": (user.games_won, 1),
         "ten_games": (user.games_played, 10),
         "ten_wins": (user.games_won, 10),
-        "mafia_master": (user.mafia_wins, 10),
-        "citizen_master": (user.citizen_wins, 10),
-        "independent_master": (user.independent_wins, 1),
-        "army_one": (user.independent_wins, 3),
-        "challenge_10": (user.challenges, 10),
-        "challenge_50": (user.challenges, 50),
+        "mafia_master": (user.mafia_wins, 20),
+        "mafia_50": (user.mafia_wins, 50),
+        "citizen_master": (user.citizen_wins, 20),
+        "citizen_50": (user.citizen_wins, 50),
+        "independent_master": (user.independent_wins, 3),
+        "army_one": (user.independent_wins, 5),
+        "challenge_10": (user.challenges, 100),
+        "challenge_50": (challenge_games, 50),
         "first_kill": (user.kills, 1),
         "first_save": (user.saves, 1),
         "first_investigation": (user.investigation_hits, 1),
