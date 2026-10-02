@@ -884,6 +884,8 @@ async def _finish_vote_message(bot, session, game, *, next_button: bool, final: 
         lines.append("کسی رای نداده است")
     if final:
         markup = vote2_complete_keyboard(game.game_key)
+    elif state.get("phase") == "vote2" and next_button:
+        markup = vote2_next_keyboard(game.game_key, state.get("index", 0) + 1 >= len(state.get("queue", [])))
     elif next_button:
         markup = vote1_complete_keyboard(game.game_key) if state.get("index", 0) + 1 >= len(state.get("queue", [])) else InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="بازیکن بعدی", callback_data=f"vote1:next:{game.game_key}")]])
     else:
