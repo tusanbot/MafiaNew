@@ -520,7 +520,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if turn_event and turn_data:
             try:
                 await callback.bot.edit_message_text(
-                    f"🗣 نوبت صحبت {tg_name((await session.get(User, int(turn["user_id"]))).display_name)}\n\n"
+                    f"🗣 نوبت صحبت {tg_mention(requester.telegram_id, requester_name)}\n\n"
                     "⚔️ <b>درخواست چالش انتخاب شد.</b>",
                     chat_id=int(turn_data["chat_id"]), message_id=int(turn_data["message_id"]),
                     reply_markup=None, parse_mode="HTML"
@@ -531,7 +531,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if chat_id:
             await callback.bot.send_message(
                 chat_id,
-                f"⚔️ چالش به {tg_name(requester_name)} داده شد.",
+                f"⚔️ چالش به <b>{requester_name}</b> داده شد.",
                 reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
                 parse_mode="HTML",
             )
@@ -850,7 +850,7 @@ async def vote_handler(callback: CallbackQuery):
             )
         else:
             if result["eliminated"]:
-                name = tg_name(result["eliminated"].display_name or result["eliminated"].first_name)
+                name = tg_mention(result["eliminated"].telegram_id, result["eliminated"].display_name or result["eliminated"].first_name)
                 text = f"🗳 رأی‌گیری تمام شد.\n\nبازیکن {name} حذف شد."
             else:
                 text = "🗳 رأی‌گیری تمام شد.\n\nرأی‌گیری مساوی شد و کسی حذف نشد."
