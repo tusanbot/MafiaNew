@@ -753,6 +753,13 @@ async def player_target_action(callback: CallbackQuery) -> None:
                     event_type, message = "warning", f"تذکر {target.warning_count} ثبت شد؛ {penalty}- امتیاز."
                     if target.warning_count >= 3:
                         target_vote = {"vote_blocked": True}
+                        await _event(session, game, "vote_right_revoked", {
+                            "round_no": round_no,
+                            "user_id": target_id,
+                            "active": True,
+                            "reason": "automatic_warning",
+                            "warning_count": target.warning_count,
+                        }, actor.id if actor else None)
                         if game.auto_silence_warnings and target.warning_count >= 4:
                             target.silence_until_round = round_no + 1
                             target_vote["auto_silence"] = True
