@@ -126,28 +126,35 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 if not chat_id:
                     return
-                if message_id:
-                    try:
-                        await bot.edit_message_reply_markup(chat_id=chat_id, message_id=message_id, reply_markup=None)
-                    except Exception:
-                        pass
                 if result["kind"] == "finished_day":
-                    await bot.send_message(
-                        chat_id,
-                        "زمان نوبت به پایان رسید و صحبت‌های این دور تمام شد.",
-                        reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
-                    )
+                    if message_id:
+                        try:
+                            await bot.edit_message_text(
+                                "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
+                                chat_id=chat_id,
+                                message_id=message_id,
+                                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                            )
+                        except Exception:
+                            pass
                     return
                 user = await session.get(User, result["user_id"])
                 name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-                msg = await bot.send_message(
-                    chat_id,
-                    f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(turn.get('kind', 'main'))))} فرصت صحبت داری",
-                    reply_markup=_day_keyboard(game, True),
-                )
-                _turn_tasks[game.game_key] = asyncio.create_task(
-                    _schedule_auto_next(bot, game_key, chat_id, msg.message_id)
-                )
+                text = f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری"
+                if message_id:
+                    try:
+                        await bot.edit_message_text(
+                            text,
+                            chat_id=chat_id,
+                            message_id=message_id,
+                            reply_markup=_day_keyboard(game, True),
+                        )
+                        await _schedule_auto_next(bot, game_key, chat_id, message_id)
+                        return
+                    except Exception:
+                        pass
+                msg = await bot.send_message(chat_id, text, reply_markup=_day_keyboard(game, True))
+                await _schedule_auto_next(bot, game_key, chat_id, msg.message_id)
                 return
     old = _turn_tasks.get(game_key)
     if old and old is not asyncio.current_task():
