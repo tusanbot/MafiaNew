@@ -51,6 +51,26 @@ from uuid import uuid4
 
 router = Router(name="menu")
 
+
+def _ui_box(title: str, *lines: str) -> str:
+    clean = [str(x) for x in lines if x is not None and str(x).strip()]
+    width = max([len(title)] + [len(x) for x in clean] + [18])
+    top = "╭" + "─" * (width + 2) + "╮"
+    mid = "├" + "─" * (width + 2) + "┤"
+    bottom = "╰" + "─" * (width + 2) + "╯"
+    body = [f"│ {title.ljust(width)} │"]
+    if clean:
+        body.append(mid)
+        body.extend(f"│ {x.ljust(width)} │" for x in clean)
+    return "\\n".join([top, *body, bottom])
+
+
+def _ui_title(emoji: str, title: str, subtitle: str | None = None) -> str:
+    text = f"{emoji} <b>{title}</b>"
+    if subtitle:
+        text += f"\\n<i>{subtitle}</i>"
+    return text
+
 class GameEventState(StatesGroup):
     description = State()
 
@@ -337,7 +357,7 @@ async def menu_admin(callback: CallbackQuery) -> None:
     if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
         await callback.answer("دسترسی پنل مدیریت مجاز نیست.", show_alert=True)
         return
-    await callback.message.edit_text("🛠 پنل مدیریت ربات\n\nبخش موردنظر را انتخاب کنید.", reply_markup=admin_panel_menu())
+    await callback.message.edit_text(_ui_title("🛠️", "پنل مدیریت", "خب، از اینجا همه‌چیز زیر دستته؛ یه بخش رو انتخاب کن 👇"), reply_markup=admin_panel_menu())
     await callback.answer()
 
 
@@ -365,9 +385,9 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
             await callback.message.edit_text(text, reply_markup=admin_panel_menu())
         elif action == "groups":
             rows = (await session.execute(select(Group).order_by(desc(Group.updated_at)).limit(20))).scalars().all()
-            lines = ["👥 گروه‌های ثبت‌شده", ""]
-            lines.extend(f"{i}. {g.title or g.telegram_id} — {'فعال' if g.is_active else 'غیرفعال'}" for i, g in enumerate(rows, 1))
-            await callback.message.edit_text("\n".join(lines) if rows else "هنوز گروهی ثبت نشده است.", reply_markup=admin_panel_menu())
+            lines = ["╭────────────────────────────╮", "│ 👥 <b>گروه‌های ثبت‌شده</b>      │", "├────────────────────────────┤"]
+            lines.extend(f"│ {i:02d}  {'🟢' if g.is_active else '⚪'} {g.title or g.telegram_id}" for i, g in enumerate(rows, 1))\n            lines.append("╰────────────────────────────╯")
+            await callback.message.edit_text("\n".join(lines) if rows else "╭────────────────────────────╮\\n│ 📭 هنوز گروهی ثبت نشده است. │\\n╰────────────────────────────╯", reply_markup=admin_panel_menu())
         elif action == "scenarios":
             scenarios = (await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all()
             await callback.message.edit_text("🎭 مدیریت سناریوها\n\nوضعیت هر سناریو را انتخاب کنید.", reply_markup=admin_scenario_keyboard(scenarios))
@@ -375,10 +395,10 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
             pass
         elif action == "games":
             rows = (await session.execute(select(Game, Scenario).join(Scenario, Scenario.id == Game.scenario_id).order_by(desc(Game.id)).limit(15))).all()
-            lines = ["🎮 بازی‌های اخیر", ""]
+            lines = ["╭──────────────────────────────────╮", "│ 🎮 <b>بازی‌های اخیر</b>               │", "├──────────────────────────────────┤"]
             for game, scenario in rows:
-                lines.append(f"#{game.id} — {scenario.name_fa} — {game.status} / {game.phase}")
-            await callback.message.edit_text("\n".join(lines) if rows else "بازی‌ای ثبت نشده است.", reply_markup=admin_panel_menu())
+                lines.append(f"│ #{game.id} · {scenario.name_fa[:18]} · {game.status} / {game.phase}")
+            lines.append("╰──────────────────────────────────╯")\n            await callback.message.edit_text("\n".join(lines) if rows else "╭──────────────────────────────────╮\\n│ 📭 هنوز بازی‌ای ثبت نشده است.    │\\n╰──────────────────────────────────╯", reply_markup=admin_panel_menu())
         elif action == "settings":
             settings = get_settings()
             await callback.message.edit_text(
@@ -408,7 +428,7 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
 async def menu_root(callback: CallbackQuery) -> None:
     if not callback.message:
         return
-    await callback.message.edit_text("منوی اصلی", reply_markup=main_menu())
+    await callback.message.edit_text(_ui_title("🎭", "مافیا نایتس", "آماده‌ای بازی رو شروع کنیم؟ یه گزینه رو انتخاب کن 👇"), reply_markup=main_menu())
     await callback.answer()
 
 
@@ -417,7 +437,7 @@ async def menu_group_management(callback: CallbackQuery) -> None:
     if not callback.message:
         return
     await callback.message.edit_text(
-        "مدیریت گروه\n\nبخش موردنظر را انتخاب کنید.",
+        "👥 <b>مدیریت گروه</b>\n\nاینجا می‌تونی بازی‌های گروه و قفل‌های چت رو مدیریت کنی.\n\n👇 انتخاب کن ببینیم چی کار داریم:",
         reply_markup=group_management_menu(),
     )
     await callback.answer()
@@ -2371,7 +2391,7 @@ async def scenario_form_name(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     if value == "/cancel":
         await state.clear()
-        await message.answer("لغو شد.", reply_markup=scenario_management_menu())
+        await message.answer("↩️ باشه، عملیات لغو شد. هر وقت خواستی دوباره شروع کنیم.", reply_markup=scenario_management_menu())
         return
     if value == "-" and data.get("edit_id"):
         value = data.get("current_name", "")
@@ -2396,7 +2416,7 @@ async def scenario_form_description(message: Message, state: FSMContext) -> None
         value = data.get("current_description", "")
     await state.update_data(description=value)
     await state.set_state(ScenarioAdminState.turn_time)
-    await message.answer("زمان هر نوبت را وارد کنید (مثلاً 02:00 یا 120). پیش‌فرض: 02:00")
+    await message.answer("⏱️ <b>زمان نوبت</b>\n\nمثلاً <code>02:00</code> یا <code>120</code> ثانیه بفرست.\nپیش‌فرض: <b>۲ دقیقه</b>")
 
 @router.message(ScenarioAdminState.min_players)
 async def scenario_form_min(message: Message, state: FSMContext) -> None:
@@ -2416,7 +2436,7 @@ async def scenario_form_turn_time(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(turn_seconds=seconds)
     await state.set_state(ScenarioAdminState.challenge_time)
-    await message.answer("زمان چالش را وارد کنید. پیش‌فرض: 01:00")
+    await message.answer("🤏🏻 <b>زمان چالش</b>\n\nمثلاً <code>01:00</code> بفرست.\nپیش‌فرض: <b>۱ دقیقه</b>")
 
 @router.message(ScenarioAdminState.challenge_time)
 async def scenario_form_challenge_time(message: Message, state: FSMContext) -> None:
@@ -2430,7 +2450,7 @@ async def scenario_form_challenge_time(message: Message, state: FSMContext) -> N
         return
     await state.update_data(challenge_seconds=seconds)
     await state.set_state(ScenarioAdminState.extra_challenge_time)
-    await message.answer("زمان چالش اضافه را وارد کنید. پیش‌فرض: 01:00")
+    await message.answer("➕ <b>زمان چالش اضافه</b>\n\nمثلاً <code>01:00</code> بفرست.\nپیش‌فرض: <b>۱ دقیقه</b>")
 
 @router.message(ScenarioAdminState.extra_challenge_time)
 async def scenario_form_extra_challenge_time(message: Message, state: FSMContext) -> None:
@@ -2444,7 +2464,7 @@ async def scenario_form_extra_challenge_time(message: Message, state: FSMContext
         return
     await state.update_data(extra_challenge_seconds=seconds)
     await state.set_state(ScenarioAdminState.challenge)
-    await message.answer("تنظیم چالش را انتخاب کنید:", reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))))
+    await message.answer("🤏🏻 <b>خب، حالا چالش رو تنظیم کنیم.</b>\n\nیکی از گزینه‌های زیر رو انتخاب کن 👇", reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))))
 
 @router.message(ScenarioAdminState.max_players)
 async def scenario_form_max(message: Message, state: FSMContext) -> None:
@@ -2580,10 +2600,10 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
     try:
         role_lines = _parse_scenario_roles(value)
     except ValueError as exc:
-        await message.answer(str(exc) + "\nفرمت صحیح را رعایت کنید.")
+        await message.answer("⚠️ " + str(exc) + "\n\nفرمت رو طبق نمونه وارد کن و دوباره امتحان کن.")
         return
     if not role_lines:
-        await message.answer("حداقل یک نقش وارد کنید.")
+        await message.answer("🎭 حداقل یک نقش لازمه؛ حداقل یک مورد اضافه کن و دوباره بفرست.")
         return
 
     async with session_factory() as session:
@@ -2593,7 +2613,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
         for role_name, team in role_lines:
             role = role_map.get((role_name, team))
             if not role:
-                await message.answer(f"نقش «{role_name}» با ساید «{team}» در فهرست نقش‌ها پیدا نشد.")
+                await message.answer(f"🔎 نقش «{role_name}» با ساید «{team}» پیدا نشد.\n\nاسم نقش و ساید رو دقیق بررسی کن و دوباره بفرست.")
                 return
             resolved.append(role)
 
