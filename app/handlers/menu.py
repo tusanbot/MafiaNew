@@ -111,6 +111,19 @@ async def _is_game_participant(session, game_id: int, telegram_user_id: int) -> 
     return (await _game_player(session, game_id, telegram_user_id)) is not None
 
 
+async def _is_finished_game_player(session, game_id: int, telegram_user_id: int) -> bool:
+    user = await session.scalar(select(User).where(User.telegram_id == telegram_user_id))
+    if not user:
+        return False
+    player = await session.scalar(select(GamePlayer).where(
+        GamePlayer.game_id == game_id,
+        GamePlayer.user_id == user.id,
+        GamePlayer.is_reserved.is_(False),
+        GamePlayer.role_id.is_not(None),
+    ))
+    return player is not None
+
+
 async def _can_manage_game_events(session, bot, game: Game, actor: User, group: Group) -> bool:
     if not game or game.status != "running" or not actor or not group:
         return False
@@ -1172,8 +1185,8 @@ async def game_result_events(callback: CallbackQuery) -> None:
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        if game.status != "finished" or not await _is_game_participant(session, game.id, callback.from_user.id):
-            await callback.answer("اتفاقات مخفی فقط پس از پایان بازی و فقط برای بازیکنان همان بازی قابل مشاهده است.", show_alert=True)
+        if game.status != "finished" or not await _is_finished_game_player(session, game.id, callback.from_user.id):
+            await callback.answer("اتفاقات مخفی فقط پس از پایان بازی و فقط برای بازیکنان اصلی همان بازی قابل مشاهده است.", show_alert=True)
             return
         group = await session.get(Group, game.group_id)
         if not group:
