@@ -74,7 +74,7 @@ _challenge_tasks = {}
 _turn_tasks = {}
 _turn_live_tasks = {}
 TURN_UPDATE_SECONDS = 10
-TURN_LIVE_UPDATE_SECONDS = 1
+TURN_LIVE_UPDATE_SECONDS = 10
 
 def _turn_duration(game, kind: str) -> int:
     if kind == "challenge":
@@ -213,6 +213,7 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
         parse_mode="HTML",
     )
     await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
+    await _schedule_turn_live(bot, game.game_key)
     return msg
 
 
@@ -578,7 +579,7 @@ async def start_match_handler(callback: CallbackQuery):
         await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
 
 
-@router.callback_query(lambda c: c.data and c.data.startswith("night:"))
+@router.callback_query(lambda c: c.data and c.data.startswith("night:") and not c.data.startswith("night:lock:") and not c.data.startswith("night:start_day:"))
 async def night_callback(callback: CallbackQuery):
     parts = callback.data.split(":")
     if not callback.from_user:
@@ -601,7 +602,7 @@ async def night_callback(callback: CallbackQuery):
             if not await night_ready(session, game):
                 await callback.answer("شب هنوز آماده حل شدن نیست.", show_alert=True)
                 return
-            await callback.answer("اقدامات شب کامل است؛ برای حل شب «شروع روز» را بزنید.")
+            await callback.answer("اقدامات شب کامل است؛ برای حل شب، «شروع روز» را بزنید.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not actor:
@@ -615,7 +616,7 @@ async def night_callback(callback: CallbackQuery):
         if result["detective_result"]:
             await callback.bot.send_message(actor.telegram_id, f"نتیجه کارآگاهی: هدف شما {result['detective_result']} است.")
         if result["resolved"]:
-            await callback.answer("اقدامات شب کامل شد؛ برای حل شب «شروع روز» را بزنید.")
+            await callback.answer("اقدامات شب کامل شد؛ برای حل شب، «شروع روز» را بزنید.")
         else:
             await callback.answer("اقدام شب ثبت شد.")
 
