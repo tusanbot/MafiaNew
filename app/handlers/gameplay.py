@@ -24,7 +24,7 @@ from app.services.gameplay import (
     start_day_turns,
     start_new_day_round,
     vote1_start, vote1_current_target, cast_vote_phase, finish_vote1_target, advance_vote1,
-    toggle_vote2_candidate, start_vote2, advance_defense_turn, finish_vote2,
+    toggle_vote2_candidate, start_vote2, advance_defense_turn, finish_vote2, advance_vote2,
     _latest_vote_state, _vote_records_for_target, _revoked_vote_ids,
     request_challenge,
     pending_challenge_requests,
