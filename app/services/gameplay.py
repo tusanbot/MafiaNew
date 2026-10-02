@@ -512,7 +512,7 @@ async def start_vote2(session, game):
     if not state or state.get("phase") != "vote1_complete":
         raise ValueError("ابتدا باید رای اول تمام شود.")
     candidates = [int(x) for x in state.get("defense_candidates", [])]
-    if game.voting_mode == "auto" and not candidates:
+    if game.vote2_selection_mode == "auto" and not candidates:
         candidates = [int(x) for x in state.get("qualified_candidates", [])]
     if not candidates:
         raise ValueError("حداقل یک بازیکن باید برای دفاع انتخاب شود.")
