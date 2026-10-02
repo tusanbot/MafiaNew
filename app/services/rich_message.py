@@ -242,6 +242,48 @@ async def _try_rich(method: str, token: str, payload: dict[str, Any]) -> Any:
         raise
 
 
+async def send_rich_message(bot: Any, chat_id: int | str, html_content: str, *, reply_markup: Any = None, is_rtl: bool = True, **extra: Any) -> Any:
+    """Explicitly send a Telegram Rich Message without changing normal messages."""
+    if not _enabled():
+        raise RuntimeError("Rich Messages are disabled")
+    payload = {
+        "chat_id": chat_id,
+        "rich_message": {"html": html_content, "is_rtl": is_rtl},
+    }
+    if reply_markup is not None:
+        keyboard = _rich_inline_keyboard(reply_markup)
+        if keyboard:
+            payload["rich_message"]["html"] += keyboard
+        elif not _is_inline_keyboard(reply_markup):
+            payload["reply_markup"] = _model_dump(reply_markup)
+    payload.update(_pick(extra, (
+        "message_thread_id", "direct_messages_topic_id", "business_connection_id",
+        "disable_notification", "protect_content", "allow_paid_broadcast",
+        "message_effect_id", "suggested_post_parameters", "reply_parameters",
+    )))
+    return await _try_rich("sendRichMessage", bot.token, {k: v for k, v in payload.items() if v is not None})
+
+
+async def edit_rich_message(bot: Any, chat_id: int | str, message_id: int, html_content: str, *, reply_markup: Any = None, is_rtl: bool = True, **extra: Any) -> Any:
+    """Explicitly edit a message into a Telegram Rich Message."""
+    if not _enabled():
+        raise RuntimeError("Rich Messages are disabled")
+    rich_html = html_content
+    payload: dict[str, Any] = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "rich_message": {"html": rich_html, "is_rtl": is_rtl},
+    }
+    if reply_markup is not None:
+        keyboard = _rich_inline_keyboard(reply_markup)
+        if keyboard:
+            payload["rich_message"]["html"] += keyboard
+        elif not _is_inline_keyboard(reply_markup):
+            payload["reply_markup"] = _model_dump(reply_markup)
+    payload.update(_pick(extra, ("business_connection_id", "inline_message_id")))
+    return await _try_rich("editMessageText", bot.token, {k: v for k, v in payload.items() if v is not None})
+
+
 def install_rich_message_transport() -> None:
     """Install one global, transparent Rich Message transport on aiogram Bot.
 
@@ -268,7 +310,7 @@ def install_rich_message_transport() -> None:
             if len(args) >= 2:
                 normalized.setdefault("text", args[1])
 
-        if not _enabled() or not _healthy() or normalized.get("text") is None:
+        if os.getenv("RICH_MESSAGES_AUTO", "false").strip().lower() not in {"1", "true", "yes", "on"} or not _enabled() or not _healthy() or normalized.get("text") is None:
             return await original_send_message(self, *original_args, **kwargs)
 
         try:
@@ -288,7 +330,7 @@ def install_rich_message_transport() -> None:
             if len(args) >= 3:
                 normalized.setdefault("text", args[2])
 
-        if not _enabled() or not _healthy() or normalized.get("text") is None:
+        if os.getenv("RICH_MESSAGES_AUTO", "false").strip().lower() not in {"1", "true", "yes", "on"} or not _enabled() or not _healthy() or normalized.get("text") is None:
             return await original_edit_message_text(self, *original_args, **kwargs)
 
         try:
