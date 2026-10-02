@@ -1029,7 +1029,7 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         result_html = (
             "<h2>🏁 نتیجه نهایی بازی</h2>"
             "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
-            "<hr/>"
+            "<p>━━━━━━━━━━━━━━━━━━━━</p>"
             + result_html.replace("\\n", "<br/>")
         )
         try:
