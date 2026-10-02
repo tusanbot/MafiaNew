@@ -609,7 +609,7 @@ async def night_callback(callback: CallbackQuery):
     elif len(parts) == 4 and parts[0] == "night":
         _, action, key, target = parts
     else:
-        await callback.answer("درخواست شب نامعتبر است.", show_alert=True)
+        await callback.answer("🌙 این درخواست شب دیگه معتبر نیست.", show_alert=True)
         return
     async with session_factory() as session:
         game = await _load(session, key)
@@ -630,7 +630,7 @@ async def night_callback(callback: CallbackQuery):
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not actor:
-            await callback.answer("کاربر بازی پیدا نشد.", show_alert=True)
+            await callback.answer("👤 بازیکن بازی پیدا نشد.", show_alert=True)
             return
         try:
             result = await submit_night_action(session, game, actor, action, int(target))
@@ -653,7 +653,7 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         try:
             result = await request_challenge(session, game, actor)
@@ -662,7 +662,7 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             return
         turn_owner = await session.get(User, result["turn_user_id"])
         if not turn_owner or not callback.message:
-            await callback.answer("صاحب نوبت یا پیام بازی پیدا نشد.", show_alert=True)
+            await callback.answer("⏳ صاحب نوبت یا پیام بازی پیدا نشد.", show_alert=True)
             return
         event = await session.get(GameEvent, result["event_id"])
         request_data = json.loads(event.payload or "{}")
@@ -684,7 +684,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         try:
             result = await choose_challenge(session, game, actor, int(event_id))
@@ -749,7 +749,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         try:
             result = await select_challenge_placement(session, game, actor, int(event_id), placement)
@@ -813,7 +813,7 @@ async def next_turn_handler(callback: CallbackQuery):
             select(User).where(User.telegram_id == callback.from_user.id)
         )).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
         if not turn:
@@ -855,7 +855,7 @@ async def next_turn_handler(callback: CallbackQuery):
             return
         chat_id = await _group_chat_id(session, game)
         if not chat_id:
-            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
+            await callback.answer("👥 گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
             await callback.bot.send_message(
@@ -885,7 +885,7 @@ async def day_night_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
         if not host or host.id != actor.id:
@@ -960,7 +960,7 @@ async def night_start_day_handler(callback: CallbackQuery):
                 await callback.bot.send_message(chat_id, "🏁 بازی تمام شد.")
             await delete_main_roster(callback.bot, session, game)
             await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.answer("بازی تمام شد.")
+            await callback.answer("🏁 بازی تموم شد!")
             return
         await start_new_day_round(session, game)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
@@ -984,10 +984,10 @@ async def day_finish_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
+            await callback.answer("🎮 بازی یا بازیکن پیدا نشد.", show_alert=True)
             return
         if game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند بازی را تمام کند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده می‌تونه بازی رو تموم کنه.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
         if not turn or turn.get("status") != "finished":
@@ -1308,7 +1308,7 @@ async def day_vote_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند تنظیمات رای گیری را باز کند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده می‌تونه تنظیمات رأی‌گیری رو باز کنه.", show_alert=True)
             return
         game.phase = "vote_setup"
         await session.commit()
@@ -1324,16 +1324,16 @@ async def voting_settings_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند تنظیمات رای گیری را تغییر دهد.", show_alert=True); return
+            await callback.answer("🔒 فقط گرداننده می‌تونه تنظیمات رأی‌گیری رو تغییر بده.", show_alert=True); return
         action = parts[1] if len(parts) > 1 else ""
         if action == "menu":
             await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
         elif action == "delay":
-            await callback.message.edit_text("زمان انتظار قبل از شروع رای:", reply_markup=voting_delay_keyboard(key, game.voting_pre_delay_seconds))
+            await callback.message.edit_text("⏳ زمان انتظار قبل از رأی:", reply_markup=voting_delay_keyboard(key, game.voting_pre_delay_seconds))
         elif action == "duration":
-            await callback.message.edit_text("زمان هر رای:", reply_markup=voting_duration_keyboard(key, game.vote_seconds))
+            await callback.message.edit_text("⏱️ زمان هر رأی:", reply_markup=voting_duration_keyboard(key, game.vote_seconds))
         elif action == "mode":
-            await callback.message.edit_text("نوع رای گیری:", reply_markup=voting_mode_keyboard(key, game.voting_mode))
+            await callback.message.edit_text("🗳️ نوع رأی‌گیری:", reply_markup=voting_mode_keyboard(key, game.voting_mode))
         elif action == "set_delay":
             game.voting_pre_delay_seconds = int(parts[3]); await session.commit()
             await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
@@ -1346,7 +1346,7 @@ async def voting_settings_handler(callback: CallbackQuery):
         elif action == "revoke":
             players = await alive_players(session, game.id)
             revoked = await _revoked_vote_ids(session, game.id, await current_round(session, game.id))
-            await callback.message.edit_text("بازیکنی را که می‌خواهید حق رای او گرفته شود انتخاب کنید:", reply_markup=vote_rights_keyboard(key, players, revoked))
+            await callback.message.edit_text("🚫 بازیکنی که می‌خوای حق رأیش گرفته بشه رو انتخاب کن:", reply_markup=vote_rights_keyboard(key, players, revoked))
         elif action == "revoke_target":
             uid = int(parts[3]); user = await session.get(User, uid)
             await callback.message.edit_text(f"حق رای <b>{tg_name(user.display_name or user.first_name)}</b> گرفته شود؟", reply_markup=vote_right_confirm_keyboard(key, uid), parse_mode="HTML")
@@ -1365,10 +1365,10 @@ async def vote_start1_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or actor is None or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند رای گیری را شروع کند.", show_alert=True); return
+            await callback.answer("🔒 فقط گرداننده می‌تونه رأی‌گیری رو شروع کنه.", show_alert=True); return
         delay = int(game.voting_pre_delay_seconds or 0)
         if delay:
-            await callback.message.edit_text(f"🗳 رای گیری بعد از <b>{delay} ثانیه</b> شروع می‌شود.", parse_mode="HTML")
+            await callback.message.edit_text(f"⏳ رأی‌گیری تا <b>{delay} ثانیه</b> دیگه شروع می‌شه.", parse_mode="HTML")
             task = asyncio.create_task(_start_vote1_after_delay(callback.bot, key, callback.message.chat.id, delay))
             _vote_tasks[key] = task
         else:
@@ -1393,7 +1393,7 @@ async def vote1_next_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
-        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("🔒 فقط گرداننده.", show_alert=True); return
         task = _vote_tasks.pop(key, None)
         if task: task.cancel()
         result = await advance_vote1(session, game)
@@ -1413,7 +1413,7 @@ async def vote1_finish_handler(callback: CallbackQuery):
             select(User).where(User.telegram_id == callback.from_user.id)
         )).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         task = _vote_tasks.pop(key, None)
         if task:
@@ -1437,7 +1437,7 @@ async def vote2_select_handler(callback: CallbackQuery):
     parts = callback.data.split(":"); key, uid = parts[2], int(parts[3])
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
-        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("🔒 فقط گرداننده.", show_alert=True); return
         selected = await toggle_vote2_candidate(session, game, uid)
         state = await _latest_vote_state(session, game.id)
         pool = {int(x) for x in (state or {}).get("defense_pool_candidates", (state or {}).get("qualified_candidates", []))}
@@ -1476,7 +1476,7 @@ async def vote2_setup_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         await callback.message.edit_text("🗳️ <b>تنظیمات رأی‌گیری دوم</b>\n\nمدافع‌ها و روش رأی‌گیری رو از اینجا انتخاب کن 👇", reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode), parse_mode="HTML")
     await callback.answer()
@@ -1491,7 +1491,7 @@ async def vote2_mode_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         game.vote2_selection_mode = "auto" if game.vote2_selection_mode == "manual" else "manual"
         await session.commit()
@@ -1508,7 +1508,7 @@ async def vote2_choose_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         state = await _latest_vote_state(session, game.id)
         pool = {int(x) for x in (state or {}).get("defense_pool_candidates", (state or {}).get("qualified_candidates", []))}
@@ -1531,7 +1531,7 @@ async def vote2_begin_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         try:
             first_defender = await start_vote2(session, game)
@@ -1586,7 +1586,7 @@ async def vote2_next_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند رای را تمام کند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده می‌تونه رأی‌گیری رو تموم کنه.", show_alert=True)
             return
         task = _vote_tasks.pop(f"vote2:{key}", None)
         if task:
@@ -1610,7 +1610,7 @@ async def vote2_private_voter_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         state = await _latest_vote_state(session, game.id)
         if not state or state.get("phase") != "vote2" or state.get("status") != "active":
@@ -1643,7 +1643,7 @@ async def vote2_private_cast_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         try:
             voter = await session.get(User, voter_id)
@@ -1666,7 +1666,7 @@ async def vote2_private_panel_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده.", show_alert=True)
             return
         state = await _latest_vote_state(session, game.id)
         if not state:
@@ -1708,11 +1708,11 @@ async def vote2_finish_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
-        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("🔒 فقط گرداننده.", show_alert=True); return
         result = await advance_vote2(session, game)
         if result["finished"]:
             await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
-            await callback.message.answer("🗳 رای گیری دوم تمام شد.")
+            await callback.message.answer("🗳️ رأی‌گیری دوم تموم شد!")
         else:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
             _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
