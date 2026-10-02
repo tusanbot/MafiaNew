@@ -23,6 +23,9 @@ from app.services.gameplay import (
     resolve_challenge,
     start_day_turns,
     start_new_day_round,
+    vote1_start, vote1_current_target, cast_vote_phase, finish_vote1_target, advance_vote1,
+    toggle_vote2_candidate, start_vote2, advance_defense_turn, finish_vote2,
+    _latest_vote_state, _vote_records_for_target, _revoked_vote_ids,
     request_challenge,
     pending_challenge_requests,
     attach_challenge_request_message,
@@ -44,6 +47,9 @@ from app.handlers.keyboards import (
     challenge_placement_keyboard,
     continue_night_keyboard,
     finish_game_keyboard,
+    voting_setup_keyboard, voting_delay_keyboard, voting_duration_keyboard, voting_mode_keyboard,
+    vote_rights_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
+    defense_selection_keyboard, vote2_target_keyboard, vote2_complete_keyboard,
 )
 
 router = Router(name="gameplay")
@@ -197,7 +203,7 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     msg = await bot.send_message(
         chat_id, text,
         reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                                       game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"}, requests),
+                                       game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests),
         parse_mode="HTML",
     )
     await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
@@ -220,7 +226,7 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
     try:
         await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
                                     reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                                                                   game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"}, requests),
+                                                                   game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests),
                                     parse_mode="HTML")
     except Exception:
         pass
