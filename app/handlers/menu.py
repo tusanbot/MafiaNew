@@ -2181,18 +2181,21 @@ async def scenario_form_vote_threshold(message: Message, state: FSMContext) -> N
     data = await state.get_data()
     if value == "-":
         value = str(data.get("current_vote_rule_input", "50"))
-    try:
-        threshold = int(value)
-        mode = "fixed"
-        threshold_value = threshold
-    except ValueError:
-        if value in {"50", "half", "نصف"}:
-            mode, threshold_value = "half_up", 0
-        elif value in {"50+1", "half+1", "نصف+1"}:
-            mode, threshold_value = "half_plus_one_odd", 0
-        elif value in {"50-1", "half-1", "نصف-1"}:
-            mode, threshold_value = "half_minus_one_odd", 0
-        else:
+    if value in {"50", "half", "نصف"}:
+        mode, threshold_value = "half_up", 0
+        threshold = 2
+    elif value in {"50+1", "half+1", "نصف+1"}:
+        mode, threshold_value = "half_plus_one_odd", 0
+        threshold = 2
+    elif value in {"50-1", "half-1", "نصف-1"}:
+        mode, threshold_value = "half_minus_one_odd", 0
+        threshold = 2
+    else:
+        try:
+            threshold = int(value)
+            mode = "fixed"
+            threshold_value = threshold
+        except ValueError:
             await message.answer("قانون نامعتبر است. یکی از 50، 50+1، 50-1 یا یک عدد ثابت را وارد کنید.")
             return
     player_count = max(1, int(data.get("max_players") or 20))
