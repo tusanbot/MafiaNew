@@ -51,6 +51,7 @@ class ScenarioAdminState(StatesGroup):
     challenge_time = State()
     extra_challenge_time = State()
     challenge = State()
+    vote_threshold = State()
     roles = State()
 
 
@@ -2159,7 +2160,11 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
     if value == "unchanged":
         value = data.get("challenge_mode", "limited")
     await state.update_data(challenge_mode=value, challenge_limit=(1 if value == "limited" else None))
-    await state.set_state(ScenarioAdminState.roles)
+    await state.set_state(ScenarioAdminState.vote_threshold)
+    await callback.message.edit_text("حدنصاب رای برای رفتن به دفاع را وارد کنید. پیش‌فرض: ۲")
+    await callback.answer()
+    return
+
     current = data.get("current_roles_text", "")
     prompt = (
         "🎭 نقش‌ها و سایدها را هر کدام در یک سطر وارد کنید.\n\n"
@@ -2171,6 +2176,36 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
     )
     await callback.message.edit_text(prompt)
     await callback.answer()
+
+@router.message(ScenarioAdminState.vote_threshold)
+async def scenario_form_vote_threshold(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private":
+        return
+    value = (message.text or "").strip()
+    data = await state.get_data()
+    if value == "-":
+        value = str(data.get("current_vote_defense_threshold", 2))
+    try:
+        threshold = int(value)
+    except ValueError:
+        await message.answer("حدنصاب باید یک عدد صحیح باشد.")
+        return
+    player_count = max(1, int(data.get("max_players") or 20))
+    if not 1 <= threshold <= player_count:
+        await message.answer("حدنصاب باید بین ۱ تا تعداد بازیکنان سناریو باشد.")
+        return
+    await state.update_data(vote_defense_threshold=threshold)
+    await state.set_state(ScenarioAdminState.roles)
+    current = data.get("current_roles_text", "")
+    prompt = (
+        "🎭 نقش‌ها و سایدها را هر کدام در یک سطر وارد کنید.\n\n"
+        "فرمت:\nپدرخوانده مافیا\nکنستانتین شهروند\nدکتر شهروند\nنوستراداموس مستقل\n\n"
+        "کلمه آخر هر سطر ساید است و بقیه متن نام نقش.\n"
+        "نقش تکراری را در سطر جداگانه بنویسید.\n"
+        + ("\nترکیب فعلی:\n" + current if current else "")
+        + ("\n\nبرای بدون تغییر، - بفرستید." if data.get("edit_id") else "")
+    )
+    await message.answer(prompt)
 
 @router.message(ScenarioAdminState.roles)
 async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
@@ -2220,6 +2255,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
             scenario.extra_challenge_seconds = int(data.get("extra_challenge_seconds", 60))
             scenario.challenge_mode = data.get("challenge_mode", "limited")
             scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
+            scenario.vote_defense_threshold = int(data.get("vote_defense_threshold", 2))
             old = list((await session.execute(select(ScenarioRole).where(ScenarioRole.scenario_id == scenario.id))).scalars().all())
             for row in old:
                 await session.delete(row)
