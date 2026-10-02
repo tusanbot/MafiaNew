@@ -237,7 +237,7 @@ def emoji_management_menu(group_id: int, settings: dict, back_callback: str | No
     return builder.as_markup()
 
 
-def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض", turn_color_enabled: bool = True, back_callback: str | None = None) -> InlineKeyboardMarkup:
+def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "پیش‌فرض", challenge_color: str = "پیش‌فرض", turn_color_enabled: bool = True, custom_emoji: bool = False, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
         text=f"بازی خودکار: {'فعال' if auto_play else 'غیرفعال'}",
@@ -249,6 +249,10 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
     ))
     builder.row(InlineKeyboardButton(text=f"تغییر رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
     builder.row(InlineKeyboardButton(text=f"تغییر رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
+    builder.row(InlineKeyboardButton(
+        text=f"✨ اموجی سفارشی: {'فعال' if custom_emoji else 'غیرفعال'}",
+        callback_data=f"gameadmin:extra:{group_id}:custom_emoji",
+    ))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
