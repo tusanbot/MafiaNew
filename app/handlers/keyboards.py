@@ -606,6 +606,15 @@ def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardM
     return builder.as_markup()
 
 
+def vote2_next_keyboard(game_key: str, final: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if final:
+        builder.row(InlineKeyboardButton(text="اتمام رای گیری", callback_data=f"vote2:finish:{game_key}"))
+    else:
+        builder.row(InlineKeyboardButton(text="بازیکن بعدی", callback_data=f"vote2:next:{game_key}"))
+    return builder.as_markup()
+
+
 def vote2_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="اتمام رای گیری", callback_data=f"vote2:finish:{game_key}"))
