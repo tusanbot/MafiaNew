@@ -5,7 +5,7 @@ import json
 import asyncio
 from datetime import datetime, timezone
 
-from app.db.models import Game, Group, User, Scenario, GameEvent
+from app.db.models import Game, Group, GroupSettings, User, Scenario, GameEvent
 from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.services.gameplay import (
@@ -21,6 +21,7 @@ from app.services.gameplay import (
     submit_vote,
     resolve_challenge,
     start_day_turns,
+    start_new_day_round,
     request_challenge,
     pending_challenge_requests,
     attach_challenge_request_message,
@@ -736,15 +737,72 @@ async def day_night_handler(callback: CallbackQuery):
             return
         game.phase = "night"
         await session.commit()
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         chat_id = await _group_chat_id(session, game)
         if chat_id:
             await callback.bot.send_message(
-                chat_id,
-                "🌙 فاز شب آغاز شد.",
-                reply_markup=continue_night_keyboard(game.game_key),
+                chat_id, "🌙 فاز شب آغاز شد.",
+                reply_markup=continue_night_keyboard(game.game_key, settings.night_lock if settings else False, settings.chat_lock if settings else False),
             )
             await _send_night_menus(callback.bot, session, game)
         await callback.answer("فاز شب آغاز شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("night:lock:"))
+async def night_lock_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 4 or not callback.from_user:
+        return
+    _, _, key, field = parts
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id or field not in {"night_lock", "chat_lock"}:
+            await callback.answer("فقط گرداننده می‌تواند قفل‌ها را تغییر دهد.", show_alert=True)
+            return
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+        if not settings:
+            settings = GroupSettings(group_id=game.group_id)
+            session.add(settings)
+            await session.flush()
+        setattr(settings, field, not bool(getattr(settings, field)))
+        await session.commit()
+        await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock))
+        await callback.answer("تنظیم قفل ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("night:start_day:"))
+async def night_start_day_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند روز را شروع کند.", show_alert=True)
+            return
+        try:
+            result = await resolve_night(session, game)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        chat_id = await _group_chat_id(session, game)
+        if result["winner"]:
+            await send_game_result_notifications(callback.bot, session, game)
+            if chat_id:
+                await callback.bot.send_message(chat_id, "🏁 بازی تمام شد.")
+            await callback.message.edit_reply_markup(reply_markup=None)
+            await callback.answer("بازی تمام شد.")
+            return
+        await start_new_day_round(session, game)
+        if chat_id:
+            await update_round_roster(callback.bot, session, game, chat_id)
+            await callback.bot.send_message(chat_id, f"🌅 روز جدید شروع شد. دور {await current_round(session, game.id)}")
+            await _send_turn_message(callback.bot, session, game, chat_id)
+            await _schedule_auto_next(callback.bot, game.game_key, chat_id)
+        await callback.message.edit_reply_markup(reply_markup=None)
+        await callback.answer("روز جدید شروع شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:finish:"))
 async def day_finish_handler(callback: CallbackQuery):
