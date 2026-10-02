@@ -478,8 +478,6 @@ async def text_next(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("دستورات", "دستورها"))
 async def text_commands(message: Message, state: FSMContext) -> None:
-    if await state.get_state():
-        return
     await message.answer(
         "📚 دستورات متنی\n\n"
         "پیوی: پروفایل، نقش من، رتبه\n"
