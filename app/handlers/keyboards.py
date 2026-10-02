@@ -581,7 +581,7 @@ def defense_selection_keyboard(game_key: str, players, selected_ids: set[int] | 
             name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
             mark = "✅" if user.id in selected_ids else "⬜"
             builder.row(InlineKeyboardButton(text=f"{mark} {name}", callback_data=f"vote2:select:{game_key}:{user.id}"))
-    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:start:{game_key}"))
+    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
     return builder.as_markup()
 
 
