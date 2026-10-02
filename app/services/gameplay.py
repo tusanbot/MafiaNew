@@ -232,6 +232,24 @@ async def resolve_night(session, game):
     await session.commit()
     return {"winner": None, "eliminated": eliminated, "saved": bool(killed_id and killed_id == saved_id)}
 
+async def start_new_day_round(session, game, first_user_id: int | None = None):
+    """Create a durable round boundary and reset temporary per-round state."""
+    if game.status != "running" or game.phase != "day":
+        raise ValueError("روز آماده شروع دور جدید نیست.")
+    old_round = await current_round(session, game.id)
+    new_round = old_round + 1
+    players = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id))).scalars().all()
+    for player in players:
+        if player.silence_until_round == old_round:
+            player.silence_until_round = None
+        if player.extra_turn_round == old_round:
+            player.extra_turn_round = None
+    await _event(session, game, "round_ended", {"round_no": old_round, "next_round_no": new_round})
+    await _event(session, game, "round_started", {"round_no": new_round, "previous_round_no": old_round, "started_after_night": True})
+    await session.commit()
+    await start_day_turns(session, game, first_user_id)
+    return new_round
+
 async def start_voting(session, game):
     if game.phase != "day":
         raise ValueError("الان مرحله روز نیست.")
@@ -306,13 +324,7 @@ async def submit_vote(session, game, voter, target_user_id):
         await session.commit()
         return {"resolved": True, "winner": winner, "eliminated": eliminated, "tie": len(leaders) != 1}
     game.phase = "night"
-    players_to_reset = (await session.execute(select(GamePlayer).where(GamePlayer.game_id == game.id))).scalars().all()
-    for player in players_to_reset:
-        if player.extra_turn_round == round_no:
-            player.extra_turn_round = None
-        if player.silence_until_round == round_no:
-            player.silence_until_round = None
-    await _event(session, game, "round_started", {"round_no": round_no + 1})
+    await _event(session, game, "phase_changed", {"to": "night", "round_no": round_no})
     await session.commit()
     return {"resolved": True, "winner": None, "eliminated": eliminated, "tie": len(leaders) != 1}
 
