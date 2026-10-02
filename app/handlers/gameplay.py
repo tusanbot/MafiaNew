@@ -560,16 +560,16 @@ async def start_match_handler(callback: CallbackQuery):
     async with session_factory() as session:
         game = await _load(session, key)
         if not game or game.status != "waiting":
-            await callback.answer("بازی قابل شروع نیست.", show_alert=True)
+            await callback.answer("⛔ این بازی هنوز آماده شروع نیست.", show_alert=True)
             return
         host = await session.get(User, game.host_user_id)
         if not host or host.telegram_id != callback.from_user.id:
-            await callback.answer("فقط سازنده بازی می‌تواند شروع کند.", show_alert=True)
+            await callback.answer("🔒 فقط سازنده بازی می‌تونه بازی رو شروع کنه.", show_alert=True)
             return
         players = await GameRepository.players(session, game.id)
         scenario = await session.get(Scenario, game.scenario_id)
         if not scenario or len(players) < scenario.min_players:
-            await callback.answer("تعداد بازیکنان کافی نیست.", show_alert=True)
+            await callback.answer("👥 هنوز بازیکن کافی نداریم؛ چند نفر دیگه باید وارد بازی بشن.", show_alert=True)
             return
         try:
             assignments = await start_match(session, game)
@@ -594,7 +594,7 @@ async def start_match_handler(callback: CallbackQuery):
                 )
             except Exception:
                 pass
-        await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
+        await callback.answer("🎴 نقش‌ها پخش شد! حالا بریم سراغ انتخاب سردست 👑")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("night:") and not c.data.startswith("night:lock:") and not c.data.startswith("night:start_day:"))
@@ -623,10 +623,10 @@ async def night_callback(callback: CallbackQuery):
                 return
             ready = await night_ready(session, game)
             if ready:
-                await callback.answer("اقدامات شب کامل است؛ حالا «شروع روز» را بزنید.")
+                await callback.answer("🌙 کارهای شب کامل شد؛ آماده‌ایم بریم روز. روی «شروع روز» بزن.")
             else:
                 await _send_night_menus(callback.bot, session, game)
-                await callback.answer("اقدامات شب برای بازیکنان ارسال شد؛ پس از ثبت همه اقدامات «شروع روز» را بزنید.")
+                await callback.answer("🌙 اقدامات شب برای بازیکن‌ها فرستاده شد. وقتی همه کارشون رو انجام دادن، «شروع روز» رو بزن.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not actor:
@@ -640,9 +640,9 @@ async def night_callback(callback: CallbackQuery):
         if result["detective_result"]:
             await callback.bot.send_message(actor.telegram_id, f"نتیجه کارآگاهی: هدف شما {result['detective_result']} است.")
         if result["resolved"]:
-            await callback.answer("اقدامات شب کامل شد؛ برای حل شب، «شروع روز» را بزنید.")
+            await callback.answer("🌙 شب جمع شد! برای رفتن به روز، «شروع روز» رو بزن.")
         else:
-            await callback.answer("اقدام شب ثبت شد.")
+            await callback.answer("🌙 اقدام شب ثبت شد؛ عالیه.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("turn:request_challenge:"))
 async def turn_request_challenge_handler(callback: CallbackQuery):
@@ -672,7 +672,7 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         event.payload = json.dumps(request_data, ensure_ascii=False)
         await session.commit()
         await _refresh_turn_message(callback.bot, session, game, await current_turn(session, game.id))
-        await callback.answer("درخواست چالش ثبت شد.")
+        await callback.answer("🤏🏻 درخواست چالش ثبت شد؛ حالا نوبت رسیدگیه.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
 async def challenge_grant_handler(callback: CallbackQuery):
@@ -714,7 +714,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
                 parse_mode="HTML",
             )
-        await callback.answer("چالش به بازیکن انتخاب‌شده داده شد.")
+        await callback.answer("🤏🏻 چالش برای بازیکن انتخاب‌شده ثبت شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:select:"))
@@ -736,7 +736,7 @@ async def challenge_select_handler(callback: CallbackQuery):
         requester = await session.get(User, int(data.get("requester_id", 0)))
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         await callback.message.edit_reply_markup(reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), name))
-        await callback.answer("زمان اجرای چالش را انتخاب کنید.")
+        await callback.answer("⏱️ زمان اجرای چالش رو انتخاب کن:")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:place:"))
@@ -794,7 +794,7 @@ async def challenge_place_handler(callback: CallbackQuery):
                     )
                 except Exception:
                     pass
-        await callback.answer("زمان چالش ثبت شد.")
+        await callback.answer("⏱️ زمان چالش ذخیره شد.")
 
 
 async def _reschedule_auto_next(bot, game):
@@ -817,19 +817,19 @@ async def next_turn_handler(callback: CallbackQuery):
             return
         turn = await current_turn(session, game.id)
         if not turn:
-            await callback.answer("نوبت فعالی وجود ندارد.", show_alert=True)
+            await callback.answer("⏳ الان نوبت فعالی نداریم.", show_alert=True)
             return
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
         is_host = bool(host and host.id == actor.id)
         is_turn_owner = int(turn.get("user_id", -1)) == actor.id
         if is_host and not game.next_host_enabled:
-            await callback.answer("نکست گرداننده در تنظیمات بازی غیرفعال است.", show_alert=True)
+            await callback.answer("⏭️ نکست گرداننده خاموشه.", show_alert=True)
             return
         if not is_host and is_turn_owner and not game.next_player_enabled:
-            await callback.answer("نکست بازیکن در تنظیمات بازی غیرفعال است.", show_alert=True)
+            await callback.answer("⏭️ نکست بازیکن خاموشه.", show_alert=True)
             return
         if not is_host and not is_turn_owner:
-            await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده یا صاحب نوبت فعلی می‌تونه نکست بزنه.", show_alert=True)
             return
         try:
             if turn.get("kind") == "defense":
@@ -840,7 +840,7 @@ async def next_turn_handler(callback: CallbackQuery):
                     _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
                         _vote2_timer(callback.bot, key, callback.message.chat.id)
                     )
-                    await callback.answer("دفاع تمام شد؛ رای دوم آغاز شد.")
+                    await callback.answer("🛡️ دفاع تموم شد؛ بریم سراغ رأی دوم!")
                     return
                 await _send_defense_message(
                     callback.bot, session, game, callback.message.chat.id,
@@ -875,7 +875,7 @@ async def next_turn_handler(callback: CallbackQuery):
             if new_turn:
                 await _send_turn_message(callback.bot, session, game, chat_id, new_turn)
                 await _schedule_auto_next(callback.bot, game.game_key, chat_id)
-        await callback.answer("نوبت بعدی شروع شد.")
+        await callback.answer("➡️ نوبت بعدی شروع شد؛ بزن بریم!")
 @router.callback_query(lambda c: c.data and c.data.startswith("day:night:"))
 async def day_night_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
@@ -889,15 +889,15 @@ async def day_night_handler(callback: CallbackQuery):
             return
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
         if not host or host.id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند فاز شب را شروع کند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده می‌تونه شب رو شروع کنه.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
         if game.phase == "day":
             if not turn or turn.get("status") != "finished":
-                await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
+                await callback.answer("🗣️ اول باید صحبت‌های این دور تموم بشه.", show_alert=True)
                 return
         elif game.phase not in {"vote1_complete", "vote2_complete"}:
-            await callback.answer("شروع فاز شب در این مرحله امکان‌پذیر نیست.", show_alert=True)
+            await callback.answer("🌙 الان هنوز وقت شروع شب نیست.", show_alert=True)
             return
         game.phase = "night"
         await session.commit()
@@ -910,7 +910,7 @@ async def day_night_handler(callback: CallbackQuery):
                 reply_markup=continue_night_keyboard(game.game_key, settings.night_lock if settings else False, settings.chat_lock if settings else False),
             )
             await _send_night_menus(callback.bot, session, game)
-        await callback.answer("فاز شب آغاز شد.")
+        await callback.answer("🌙 شب شروع شد؛ مافیا، شهروند و مستقل‌ها آماده باشن.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("night:lock:"))
@@ -934,7 +934,7 @@ async def night_lock_handler(callback: CallbackQuery):
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock))
         await _set_game_chat_lock(callback.bot, session, game, bool(settings.chat_lock or settings.night_lock))
-        await callback.answer("تنظیم قفل ذخیره شد.")
+        await callback.answer("🔒 تنظیم قفل ذخیره شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("night:start_day:"))
@@ -946,7 +946,7 @@ async def night_start_day_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند روز را شروع کند.", show_alert=True)
+            await callback.answer("🔒 فقط گرداننده می‌تونه روز رو شروع کنه.", show_alert=True)
             return
         try:
             result = await resolve_night(session, game)
@@ -973,7 +973,7 @@ async def night_start_day_handler(callback: CallbackQuery):
             await _send_turn_message(callback.bot, session, game, chat_id)
             await _schedule_auto_next(callback.bot, game.game_key, chat_id)
         await callback.message.edit_reply_markup(reply_markup=None)
-        await callback.answer("روز جدید شروع شد.")
+        await callback.answer("🌅 روز جدید شروع شد؛ بریم سراغ ادامه بازی!")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:finish:"))
 async def day_finish_handler(callback: CallbackQuery):
@@ -991,10 +991,10 @@ async def day_finish_handler(callback: CallbackQuery):
             return
         turn = await current_turn(session, game.id)
         if not turn or turn.get("status") != "finished":
-            await callback.answer("تا پایان نوبت‌های این دور امکان اتمام بازی نیست.", show_alert=True)
+            await callback.answer("⏳ تا وقتی نوبت‌های این دور تموم نشن، نمی‌شه بازی رو بست.", show_alert=True)
             return
         await callback.message.edit_text("🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:", reply_markup=finish_game_keyboard(game.group_id), parse_mode="HTML")
-        await callback.answer("نتیجه نهایی را انتخاب کنید.")
+        await callback.answer("🏁 نتیجه نهایی رو انتخاب کن؛ بازی رو جمع‌بندی کنیم!")
 
 
 _vote_tasks = {}
@@ -1312,7 +1312,7 @@ async def day_vote_handler(callback: CallbackQuery):
             return
         game.phase = "vote_setup"
         await session.commit()
-        await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(game.game_key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        await callback.message.edit_text("🗳️ <b>تنظیمات رأی‌گیری</b>\n\nاینجا می‌تونی زمان و حالت رأی‌گیری رو تنظیم کنی 👇", reply_markup=voting_setup_keyboard(game.game_key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("votingset:"))
@@ -1354,7 +1354,7 @@ async def voting_settings_handler(callback: CallbackQuery):
             uid = int(parts[3]); round_no = await current_round(session, game.id)
             await _event(session, game, "vote_right_revoked", {"round_no": round_no, "user_id": uid, "active": True}, actor.id)
             await session.commit()
-            await callback.message.edit_text("حق رای بازیکن برای این دور گرفته شد.", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+            await callback.message.edit_text("🚫 حق رأی این بازیکن برای این دور گرفته شد.", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
         await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote:start1:"))
@@ -1386,7 +1386,7 @@ async def vote1_cast_handler(callback: CallbackQuery):
         try: await cast_vote_phase(session, game, actor, target_id, "vote1")
         except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
         await _refresh_vote_target_message(callback.bot, session, game)
-    await callback.answer("رای ثبت شد.")
+    await callback.answer("🗳️ رأی ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:next:"))
 async def vote1_next_handler(callback: CallbackQuery):
@@ -1478,7 +1478,7 @@ async def vote2_setup_handler(callback: CallbackQuery):
         if not game or not actor or game.host_user_id != actor.id:
             await callback.answer("فقط گرداننده.", show_alert=True)
             return
-        await callback.message.edit_text("🗳 <b>تنظیمات رای گیری دوم</b>", reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode), parse_mode="HTML")
+        await callback.message.edit_text("🗳️ <b>تنظیمات رأی‌گیری دوم</b>\n\nمدافع‌ها و روش رأی‌گیری رو از اینجا انتخاب کن 👇", reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode), parse_mode="HTML")
     await callback.answer()
 
 
@@ -1496,7 +1496,7 @@ async def vote2_mode_handler(callback: CallbackQuery):
         game.vote2_selection_mode = "auto" if game.vote2_selection_mode == "manual" else "manual"
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode))
-    await callback.answer("نوع رای گیری دوم تغییر کرد.")
+    await callback.answer("🗳️ نوع رأی‌گیری دوم تغییر کرد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:choose:"))
@@ -1539,7 +1539,7 @@ async def vote2_begin_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         await _send_defense_message(callback.bot, session, game, callback.message.chat.id, int(first_defender))
-    await callback.answer("دور دفاع شروع شد.")
+    await callback.answer("🛡️ دور دفاع شروع شد؛ مدافع‌ها آماده باشن!")
 
 
 async def _vote2_timer(bot, game_key: str, chat_id: int):
@@ -1595,7 +1595,7 @@ async def vote2_next_handler(callback: CallbackQuery):
         await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
         await _finish_vote_message(callback.bot, session, game, next_button=False, final=True)
         if result["finished"]:
-            await callback.answer("رای گیری دوم تمام شد.")
+            await callback.answer("🗳️ رأی دوم تموم شد.")
             return
     await callback.answer()
 
@@ -1614,7 +1614,7 @@ async def vote2_private_voter_handler(callback: CallbackQuery):
             return
         state = await _latest_vote_state(session, game.id)
         if not state or state.get("phase") != "vote2" or state.get("status") != "active":
-            await callback.answer("رای دوم فعال نیست.", show_alert=True)
+            await callback.answer("⚪ رأی دوم الان فعال نیست.", show_alert=True)
             return
         candidates = []
         for uid in state.get("queue", []):
@@ -1623,7 +1623,7 @@ async def vote2_private_voter_handler(callback: CallbackQuery):
                 candidates.append((int(uid), user.display_name or user.first_name or "بازیکن"))
         voter = await session.get(User, voter_id)
         if not voter:
-            await callback.answer("رأی‌دهنده پیدا نشد.", show_alert=True)
+            await callback.answer("🔎 رأی‌دهنده پیدا نشد.", show_alert=True)
             return
         await callback.message.edit_text(
             f"🗳 رأی برای {tg_mention(voter.telegram_id, voter.display_name or voter.first_name or 'بازیکن')}",
@@ -1648,13 +1648,13 @@ async def vote2_private_cast_handler(callback: CallbackQuery):
         try:
             voter = await session.get(User, voter_id)
             if not voter:
-                raise ValueError("رأی‌دهنده پیدا نشد.")
+                raise ValueError("🔎 رأی‌دهنده پیدا نشد.")
             await cast_vote_phase(session, game, actor, target_id, "vote2", voter_id=voter_id)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
         await callback.message.edit_text("✅ رای این بازیکن ثبت شد.")
-    await callback.answer("رای ثبت شد.")
+    await callback.answer("🗳️ رأی ثبت شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:private:panel:"))
@@ -1670,7 +1670,7 @@ async def vote2_private_panel_handler(callback: CallbackQuery):
             return
         state = await _latest_vote_state(session, game.id)
         if not state:
-            await callback.answer("رای دوم فعال نیست.", show_alert=True)
+            await callback.answer("⚪ رأی دوم الان فعال نیست.", show_alert=True)
             return
         voters = []
         for uid in state.get("rules", {}).get("eligible_voter_ids", []):
@@ -1701,7 +1701,7 @@ async def vote2_cast_handler(callback: CallbackQuery):
                 await callback.message.edit_text("✅ رای شما ثبت شد.")
             except Exception:
                 pass
-    await callback.answer("رای ثبت شد.")
+    await callback.answer("🗳️ رأی ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:finish:"))
 async def vote2_finish_handler(callback: CallbackQuery):
