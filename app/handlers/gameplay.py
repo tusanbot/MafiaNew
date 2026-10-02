@@ -1,5 +1,5 @@
 from aiogram import Router
-from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, ChatPermissions
 from sqlalchemy import select
 import json
 import asyncio
@@ -518,9 +518,36 @@ async def update_round_roster(bot, session, game, chat_id: int | None = None) ->
                               payload=json.dumps(payload, ensure_ascii=False)))
     await session.commit()
 
-async def _send_night_menus(bot, session, game):
-    if not game.auto_play:
+
+
+async def _set_game_chat_lock(bot, session, game, locked: bool) -> None:
+    """Apply the game's chat/night lock to the Telegram group when possible."""
+    chat_id = await _group_chat_id(session, game)
+    if not chat_id:
         return
+    try:
+        if locked:
+            permissions = ChatPermissions(can_send_messages=False)
+        else:
+            permissions = ChatPermissions(
+                can_send_messages=True,
+                can_send_audios=True,
+                can_send_documents=True,
+                can_send_photos=True,
+                can_send_videos=True,
+                can_send_video_notes=True,
+                can_send_voice_notes=True,
+                can_send_polls=True,
+                can_send_other_messages=True,
+                can_add_web_page_previews=True,
+            )
+        await bot.set_chat_permissions(chat_id, permissions)
+    except Exception:
+        # Telegram permissions require administrator rights; the DB setting
+        # remains authoritative if the bot cannot change group permissions.
+        pass
+
+async def _send_night_menus(bot, session, game):
     players = await alive_players(session, game.id)
     for player, user, role in players:
         if not role or role.key not in {"godfather", "mafia", "doctor", "detective"}:
@@ -599,10 +626,12 @@ async def night_callback(callback: CallbackQuery):
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         if action == "resolve":
-            if not await night_ready(session, game):
-                await callback.answer("شب هنوز آماده حل شدن نیست.", show_alert=True)
-                return
-            await callback.answer("اقدامات شب کامل است؛ برای حل شب، «شروع روز» را بزنید.")
+            ready = await night_ready(session, game)
+            if ready:
+                await callback.answer("اقدامات شب کامل است؛ حالا «شروع روز» را بزنید.")
+            else:
+                await _send_night_menus(callback.bot, session, game)
+                await callback.answer("اقدامات شب برای بازیکنان ارسال شد؛ پس از ثبت همه اقدامات «شروع روز» را بزنید.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not actor:
@@ -745,7 +774,6 @@ async def challenge_place_handler(callback: CallbackQuery):
             f"🤏🏻 چالش به <b>{name}</b> داده شد.",
             parse_mode="HTML",
         )
-        await update_main_roster(callback.bot, session, game, chat_id)
         if chat_id:
             if result["placement"] == "before":
                 challenge_turn = await current_turn(session, game.id)
@@ -761,9 +789,8 @@ async def challenge_place_handler(callback: CallbackQuery):
                         callback.bot, session, game, chat_id, challenge_turn
                     )
                     if challenge_msg:
-                        await _schedule_auto_next(
-                            callback.bot, game.game_key, chat_id, challenge_msg.message_id
-                        )
+                        await _schedule_turn_live(callback.bot, game.game_key)
+                        await _schedule_auto_next(callback.bot, game.game_key, chat_id, challenge_msg.message_id)
             else:
                 try:
                     await callback.message.edit_text(
@@ -882,6 +909,7 @@ async def day_night_handler(callback: CallbackQuery):
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         chat_id = await _group_chat_id(session, game)
         if chat_id:
+            await _set_game_chat_lock(callback.bot, session, game, bool(settings and (settings.chat_lock or settings.night_lock)))
             await callback.bot.send_message(
                 chat_id, "🌙 فاز شب آغاز شد.",
                 reply_markup=continue_night_keyboard(game.game_key, settings.night_lock if settings else False, settings.chat_lock if settings else False),
@@ -910,6 +938,7 @@ async def night_lock_handler(callback: CallbackQuery):
         setattr(settings, field, not bool(getattr(settings, field)))
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock))
+        await _set_game_chat_lock(callback.bot, session, game, bool(settings.chat_lock or settings.night_lock))
         await callback.answer("تنظیم قفل ذخیره شد.")
 
 
@@ -939,7 +968,10 @@ async def night_start_day_handler(callback: CallbackQuery):
             await callback.answer("بازی تمام شد.")
             return
         await start_new_day_round(session, game)
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         if chat_id:
+            await _set_game_chat_lock(callback.bot, session, game, bool(settings and settings.chat_lock))
+
             await update_round_roster(callback.bot, session, game, chat_id)
             await update_main_roster(callback.bot, session, game, chat_id)
             await callback.bot.send_message(chat_id, f"🌅 روز جدید شروع شد. دور {await current_round(session, game.id)}")
