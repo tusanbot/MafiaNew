@@ -257,7 +257,14 @@ async def _reply_target(message: Message, session, game):
     return (player, target), None
 
 
-\n\ndef _turn_duration_local(game, kind: str) -> int:\n    if kind == "challenge":\n        return int(getattr(game, "challenge_seconds", 60) or 60)\n    if kind == "extra":\n        return int(getattr(game, "extra_challenge_seconds", 60) or 60)\n    return int(getattr(game, "turn_seconds", 120) or 120)\n\n\ndef _format_duration(seconds: int) -> str:\n    minutes, remainder = divmod(max(0, int(seconds)), 60)\n    return f"{minutes:02d}:{remainder:02d}"\nasync def _refresh_roster(bot, session, game, chat_id: int | None = None):
+
+
+def _turn_duration_local(game, kind: str) -> int:\n    if kind == "challenge":\n        return int(getattr(game, "challenge_seconds", 60) or 60)\n    if kind == "extra":\n        return int(getattr(game, "extra_challenge_seconds", 60) or 60)\n    return int(getattr(game, "turn_seconds", 120) or 120)\n
+
+def _format_duration(seconds: int) -> str:\n    minutes, remainder = divmod(max(0, int(seconds)), 60)\n    return f"{minutes:02d}:{remainder:02d}"
+
+
+async def _refresh_roster(bot, session, game, chat_id: int | None = None):
     try:
         from app.handlers.gameplay import update_round_roster
         if chat_id:
