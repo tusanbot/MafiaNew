@@ -52,6 +52,7 @@ class ScenarioAdminState(StatesGroup):
     extra_challenge_time = State()
     challenge = State()
     vote_threshold = State()
+    vote_rules = State()
     roles = State()
 
 
@@ -2168,7 +2169,7 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
         value = data.get("challenge_mode", "limited")
     await state.update_data(challenge_mode=value, challenge_limit=(1 if value == "limited" else None))
     await state.set_state(ScenarioAdminState.vote_threshold)
-    await callback.message.edit_text("حدنصاب رای برای رفتن به دفاع را وارد کنید. پیش‌فرض: ۲")
+    await callback.message.edit_text("قانون حدنصاب رای اول را وارد کنید:\n50 = حداقل ۵۰٪\n50+1 = در تعداد فرد، ۵۰٪ + ۱\n50-1 = در تعداد فرد، ۵۰٪ − ۱\nعدد = حدنصاب ثابت\nپیش‌فرض: 50")
     await callback.answer()
     return
 
@@ -2176,20 +2177,85 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
 async def scenario_form_vote_threshold(message: Message, state: FSMContext) -> None:
     if message.chat.type != "private":
         return
-    value = (message.text or "").strip()
+    value = (message.text or "").strip().replace(" ", "")
     data = await state.get_data()
     if value == "-":
-        value = str(data.get("current_vote_defense_threshold", 2))
+        value = str(data.get("current_vote_rule_input", "50"))
     try:
         threshold = int(value)
+        mode = "fixed"
+        threshold_value = threshold
     except ValueError:
-        await message.answer("حدنصاب باید یک عدد صحیح باشد.")
-        return
+        if value in {"50", "half", "نصف"}:
+            mode, threshold_value = "half_up", 0
+        elif value in {"50+1", "half+1", "نصف+1"}:
+            mode, threshold_value = "half_plus_one_odd", 0
+        elif value in {"50-1", "half-1", "نصف-1"}:
+            mode, threshold_value = "half_minus_one_odd", 0
+        else:
+            await message.answer("قانون نامعتبر است. یکی از 50، 50+1، 50-1 یا یک عدد ثابت را وارد کنید.")
+            return
     player_count = max(1, int(data.get("max_players") or 20))
-    if not 1 <= threshold <= player_count:
-        await message.answer("حدنصاب باید بین ۱ تا تعداد بازیکنان سناریو باشد.")
+    if mode == "fixed" and not 1 <= threshold <= player_count:
+        await message.answer("حدنصاب ثابت باید بین ۱ تا تعداد بازیکنان سناریو باشد.")
         return
-    await state.update_data(vote_defense_threshold=threshold)
+    try:
+        current_rules = json.loads(data.get("current_voting_rules", "{}") or "{}")
+    except (TypeError, ValueError):
+        current_rules = {}
+    rules = {
+        "vote1_threshold_mode": mode,
+        "vote1_threshold_value": threshold_value,
+        "vote2_single_threshold_mode": current_rules.get("vote2_single_threshold_mode", "same_as_vote1"),
+        "vote2_multi_resolution": current_rules.get("vote2_multi_resolution", "threshold"),
+        "vote2_multi_threshold_mode": current_rules.get("vote2_multi_threshold_mode", "same_as_vote1"),
+        "vote2_defenders_can_vote": bool(current_rules.get("vote2_defenders_can_vote", True)),
+        "vote2_visibility": current_rules.get("vote2_visibility", "public"),
+        "vote2_tie_policy": current_rules.get("vote2_tie_policy", "no_elimination"),
+    }
+    await state.update_data(vote_defense_threshold=(threshold if mode == "fixed" else 2), voting_rules=rules)
+    await state.set_state(ScenarioAdminState.vote_rules)
+    await message.answer(
+        "قوانین رای دوم را در یک خط تنظیم کنید. قالب:\n"
+        "چندمدافعی=threshold یا highest | مدافعان=بله یا خیر | مخفی=عمومی یا گرداننده یا ربات\n"
+        "مثال: چندمدافعی=highest مدافعان=بله مخفی=عمومی\n"
+        "برای بدون تغییر در ویرایش: -"
+    )
+
+
+@router.message(ScenarioAdminState.vote_rules)
+async def scenario_form_vote_rules(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private":
+        return
+    raw = (message.text or "").strip()
+    data = await state.get_data()
+    rules = dict(data.get("voting_rules") or {})
+    if raw == "-" and data.get("edit_id"):
+        try:
+            rules = json.loads(data.get("current_voting_rules", "{}") or "{}") or rules
+        except (TypeError, ValueError):
+            pass
+    elif raw != "-":
+        normalized = raw.replace("،", " ").replace("|", " ")
+        for token in normalized.split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            key = key.strip().lower()
+            value = value.strip().lower()
+            if key in {"چندمدافعی", "multi", "multi_resolution"}:
+                rules["vote2_multi_resolution"] = "highest" if value in {"highest", "بیشترین"} else "threshold"
+            elif key in {"مدافعان", "defenders"}:
+                rules["vote2_defenders_can_vote"] = value in {"بله", "yes", "true", "1"}
+            elif key in {"مخفی", "visibility"}:
+                rules["vote2_visibility"] = {
+                    "عمومی": "public", "public": "public",
+                    "گرداننده": "host_private", "host": "host_private",
+                    "ربات": "bot_private", "bot": "bot_private",
+                }.get(value, rules.get("vote2_visibility", "public"))
+            elif key in {"تساوی", "tie"}:
+                rules["vote2_tie_policy"] = "random" if value in {"قرعه", "random"} else "no_elimination"
+    await state.update_data(voting_rules=rules)
     await state.set_state(ScenarioAdminState.roles)
     current = data.get("current_roles_text", "")
     prompt = (
