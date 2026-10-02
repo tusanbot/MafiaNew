@@ -630,6 +630,32 @@ async def submit_vote(session, game, voter, target_user_id):
     await session.commit()
     return {"resolved": True, "winner": None, "eliminated": eliminated, "tie": len(leaders) != 1}
 
+async def advance_vote2(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote2":
+        raise ValueError("رای دوم فعال نیست.")
+    round_no = int(state["round_no"])
+    target_id = int(state["target_user_id"])
+    records = await _vote_records_for_target(session, game, round_no, "vote2", target_id)
+    queue = [int(x) for x in state.get("queue", [])]
+    idx = int(state.get("index", 0))
+    if idx + 1 < len(queue):
+        next_id = queue[idx + 1]
+        state["index"] = idx + 1
+        state["target_user_id"] = next_id
+        state["started_at"] = datetime.now(timezone.utc).isoformat()
+        state["status"] = "active"
+        await _event(session, game, "vote2_target_finished", {"round_no": round_no, "target_user_id": target_id, "vote_count": len(records)})
+        await _event(session, game, "vote_state", state)
+        await session.commit()
+        return {"finished": False, "target_user_id": next_id, "records": records}
+    state["status"] = "finished"
+    game.phase = "vote2_complete"
+    await _event(session, game, "vote2_target_finished", {"round_no": round_no, "target_user_id": target_id, "vote_count": len(records)})
+    await _event(session, game, "vote2_completed", {"round_no": round_no, "candidates": queue})
+    await session.commit()
+    return {"finished": True, "candidates": queue, "records": records}
+
 async def check_winner(session, game_id):
     alive = await alive_players(session, game_id)
     mafia = sum(1 for _, _, role in alive if role and role.team == "mafia")
