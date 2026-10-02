@@ -192,7 +192,7 @@ def game_features_menu(
     ))
     builder.row(
         InlineKeyboardButton(text=f"🗣 نوبت {turn_seconds // 60:02d}:{turn_seconds % 60:02d}", callback_data=f"gameadmin:time:{group_id}:turn"),
-        InlineKeyboardButton(text=f"⚔️ چالش {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"gameadmin:time:{group_id}:challenge"),
+        InlineKeyboardButton(text=f"🤏🏻 چالش {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"gameadmin:time:{group_id}:challenge"),
     )
     builder.row(InlineKeyboardButton(
         text=f"➕ چالش اضافه {extra_challenge_seconds // 60:02d}:{extra_challenge_seconds % 60:02d}",
@@ -493,18 +493,18 @@ def day_turn_keyboard(
     challenge_requests=None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    for event, data in (challenge_requests or []):
+        name = tg_plain_name(data.get("requester_name", "بازیکن"))
+        builder.row(InlineKeyboardButton(
+            text=f"🤏🏻 {name}",
+            callback_data=f"challenge:grant:{game_key}:{event.id}",
+        ))
     if challenge_enabled and allow_challenge:
         mark = ({"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "زرد": "🟡", "طلایی": "🟡"}.get(challenge_color, "") if turn_color_enabled else "") if challenge_emoji_enabled else ""
         builder.row(InlineKeyboardButton(
-            text=f"{mark} 🤏🏼 درخواست چالش".strip(),
+            text=f"{mark} 🤏🏻 درخواست چالش".strip(),
             callback_data=f"turn:request_challenge:{game_key}",
         ))
-        for event, data in (challenge_requests or []):
-            name = tg_plain_name(data.get("requester_name", "بازیکن"))
-            builder.row(InlineKeyboardButton(
-                text=f"🤏🏼 {name}",
-                callback_data=f"challenge:grant:{game_key}:{event.id}",
-            ))
     if is_current_speaker:
         mark = {"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "زرد": "🟡", "طلایی": "🟡"}.get(turn_color, "") if turn_color_enabled else ""
         builder.row(InlineKeyboardButton(
@@ -595,7 +595,7 @@ def new_game_settings_keyboard(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(
-        text=f"⚔️ چالش: {'فعال' if challenge_enabled else 'غیرفعال'}",
+        text=f"🤏🏻 چالش: {'فعال' if challenge_enabled else 'غیرفعال'}",
         callback_data=f"newgame:toggle_challenge:{group_id}",
     ))
     builder.row(
