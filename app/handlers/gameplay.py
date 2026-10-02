@@ -1032,7 +1032,6 @@ async def vote1_next_handler(callback: CallbackQuery):
         task = _vote_tasks.pop(key, None)
         if task: task.cancel()
         result = await advance_vote1(session, game)
-        await _finish_vote_message(callback.bot, session, game, next_button=True)
         if not result["finished"]:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
             _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
