@@ -586,22 +586,22 @@ async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
             "🎭 سناریوی جدید را انتخاب کنید:",
             reply_markup=scenario_select_keyboard(
                 group.id, scenarios,
-                back_callback=f"gameadmin:lobby:{game.game_key}",
-                callback_prefix="gameadmin:set_scenario",
+                back_callback=f"game:return_lobby:{game.game_key}",
+                callback_prefix=f"gameadmin:setscenario:{game.game_key}",
             ),
         )
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("gameadmin:set_scenario:"))
+@router.callback_query(lambda c: c.data.startswith("gameadmin:setscenario:"))
 async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 4:
+    if len(parts) != 5:
         await callback.answer("درخواست تغییر سناریو نامعتبر است.", show_alert=True)
         return
-    key, scenario_raw = parts[2], parts[3]
+    key, scenario_raw = parts[2], parts[4]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -655,22 +655,22 @@ async def gameadmin_host_select(callback: CallbackQuery) -> None:
             "🎙 گرداننده جدید را انتخاب کنید:",
             reply_markup=host_select_keyboard(
                 group.id, admins,
-                callback_prefix="gameadmin:set_host",
-                back_callback=f"gameadmin:lobby:{game.game_key}",
+                callback_prefix=f"gameadmin:sethost:{game.game_key}",
+                back_callback=f"game:return_lobby:{game.game_key}",
             ),
         )
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data.startswith("gameadmin:set_host:"))
+@router.callback_query(lambda c: c.data.startswith("gameadmin:sethost:"))
 async def gameadmin_set_host(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 4:
+    if len(parts) != 5:
         await callback.answer("درخواست تغییر گرداننده نامعتبر است.", show_alert=True)
         return
-    key, host_raw = parts[2], parts[3]
+    key, host_raw = parts[2], parts[4]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
