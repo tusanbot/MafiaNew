@@ -664,9 +664,24 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
         try:
-            await _finish_turn_message(callback.bot, session, game, turn)
-            await _delete_turn_challenge_messages(callback.bot, session, game, turn)
-            result = await next_turn(session, game)
+            if turn.get("kind") == "defense":
+                await _finish_turn_message(callback.bot, session, game, turn)
+                result = await advance_defense_turn(session, game)
+                if result.get("finished"):
+                    await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+                    _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
+                        _vote2_timer(callback.bot, key, callback.message.chat.id)
+                    )
+                    await callback.answer("دفاع تمام شد؛ رای دوم آغاز شد.")
+                    return
+                await _send_defense_message(
+                    callback.bot, session, game, callback.message.chat.id,
+                    int(result["target_user_id"]),
+                )
+            else:
+                await _finish_turn_message(callback.bot, session, game, turn)
+                await _delete_turn_challenge_messages(callback.bot, session, game, turn)
+                result = await next_turn(session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
@@ -1304,13 +1319,11 @@ async def vote2_begin_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده.", show_alert=True)
             return
         try:
-            await start_vote2(session, game)
+            first_defender = await start_vote2(session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        state = await _latest_vote_state(session, game.id)
-        if state:
-            await _send_defense_message(callback.bot, session, game, callback.message.chat.id, int(state["target_user_id"]))
+        await _send_defense_message(callback.bot, session, game, callback.message.chat.id, int(first_defender))
     await callback.answer("دور دفاع شروع شد.")
 
 
