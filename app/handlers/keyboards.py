@@ -619,6 +619,28 @@ def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardM
     builder.row(InlineKeyboardButton(text="🗳 رای میدم", callback_data=f"vote2:cast:{game_key}:{target_user_id}"))
     return builder.as_markup()
 
+def vote2_private_voters_keyboard(game_key: str, voters, voted_ids: set[int] | None = None) -> InlineKeyboardMarkup:
+    voted_ids = voted_ids or set()
+    builder = InlineKeyboardBuilder()
+    for user_id, name in voters:
+        mark = "✅" if int(user_id) in voted_ids else "🗳"
+        builder.row(InlineKeyboardButton(
+            text=f"{mark} {name}",
+            callback_data=f"vote2:private:voter:{game_key}:{int(user_id)}",
+        ))
+    return builder.as_markup()
+
+
+def vote2_private_targets_keyboard(game_key: str, voter_id: int, candidates) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user_id, name in candidates:
+        builder.row(InlineKeyboardButton(
+            text=name,
+            callback_data=f"vote2:private:cast:{game_key}:{int(voter_id)}:{int(user_id)}",
+        ))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"vote2:private:panel:{game_key}"))
+    return builder.as_markup()
+
 def vote2_ballot_keyboard(game_key: str, candidates, selected_user_id: int | None = None, host_only: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for user_id, name in candidates:
