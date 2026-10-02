@@ -74,12 +74,17 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def active_game_menu(group_id: int, back_callback: str | None = None) -> InlineKeyboardMarkup:
+def active_game_menu(group_id: int, back_callback: str | None = None, game_key: str | None = None, lobby_editable: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
     builder.row(InlineKeyboardButton(text="مدیریت بازیکنان", callback_data=f"gameadmin:players:{group_id}"))
     builder.row(InlineKeyboardButton(text="تنظیمات بازی", callback_data=f"gameadmin:features:{group_id}"))
     builder.row(InlineKeyboardButton(text="امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
+    if lobby_editable and game_key:
+        builder.row(
+            InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}"),
+            InlineKeyboardButton(text="🎙 تغییر گرداننده", callback_data=f"gameadmin:host:{game_key}"),
+        )
     _back(builder, back_callback or f"groupmgmt:select:games:{group_id}")
     return builder.as_markup()
 
@@ -373,9 +378,11 @@ def lobby_keyboard(game_key: str, can_start: bool = False) -> InlineKeyboardMark
     return builder.as_markup()
 
 
-def scenario_keyboard() -> InlineKeyboardMarkup:
+def scenario_keyboard(scenarios=()) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="کلاسیک", callback_data="scenario:classic"))
+    for scenario in scenarios:
+        builder.button(text=scenario.name_fa, callback_data=f"scenario:{scenario.id}")
+    if scenarios: builder.adjust(3)
     _back(builder)
     return builder.as_markup()
 
@@ -569,18 +576,22 @@ def vote1_target_keyboard(game_key: str, target_user_id: int, voter_count: int =
 
 def vote1_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="اتمام رای گیری", callback_data=f"vote1:finish:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🗳 شروع رای ۲", callback_data=f"vote2:start:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🌙 شروع فاز شب", callback_data=f"day:night:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🏁 اتمام بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
 
-def defense_selection_keyboard(game_key: str, players, selected_ids: set[int] | None = None) -> InlineKeyboardMarkup:
+def defense_selection_keyboard(game_key: str, players, selected_ids: set[int] | None = None, vote_counts: dict[int, int] | None = None) -> InlineKeyboardMarkup:
     selected_ids = selected_ids or set()
+    vote_counts = vote_counts or {}
     builder = InlineKeyboardBuilder()
     for player, user, *_ in players:
         if player.alive:
             name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
             mark = "✅" if user.id in selected_ids else "⬜"
-            builder.row(InlineKeyboardButton(text=f"{mark} {name}", callback_data=f"vote2:select:{game_key}:{user.id}"))
+            count = int(vote_counts.get(int(user.id), 0))
+            builder.row(InlineKeyboardButton(text=f"{mark} {name} — {count} رای", callback_data=f"vote2:select:{game_key}:{user.id}"))
     builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
     return builder.as_markup()
 
@@ -721,11 +732,12 @@ def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def scenario_select_keyboard(group_id: int, scenarios) -> InlineKeyboardMarkup:
+def scenario_select_keyboard(group_id: int, scenarios, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
-        builder.row(InlineKeyboardButton(text=scenario.name_fa, callback_data=f"newgame:setscenario:{group_id}:{scenario.id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+        builder.button(text=scenario.name_fa, callback_data=f"newgame:setscenario:{group_id}:{scenario.id}")
+    if scenarios: builder.adjust(3)
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
