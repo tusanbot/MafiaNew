@@ -1046,7 +1046,11 @@ async def vote1_finish_handler(callback: CallbackQuery):
         state = await _latest_vote_state(session, game.id)
         candidates = [int(x) for x in state.get("qualified_candidates", [])] if state else []
         players = [row for row in await alive_players(session, game.id) if row[1].id in candidates]
-        await callback.message.edit_text(f"🗳 <b>انتخاب بازیکنان برای رای دو</b>\n\nحدنصاب دفاع: {getattr(await session.get(Scenario, game.scenario_id), 'vote_defense_threshold', 2)}", reply_markup=defense_selection_keyboard(key, players, set(state.get("defense_candidates", [])) if state else set()), parse_mode="HTML")
+        await callback.message.edit_text(
+            "🗳 <b>تنظیمات رای گیری دوم</b>",
+            reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode),
+            parse_mode="HTML",
+        )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:select:"))
