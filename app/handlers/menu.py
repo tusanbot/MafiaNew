@@ -109,30 +109,29 @@ async def _selected_group(session, bot, user_id: int, group_id: int) -> Group | 
 
 def _jalali_date(dt: datetime) -> str:
     """Convert Gregorian datetime to Jalali date without an external dependency."""
-    g_y, g_m, g_d = dt.year, dt.month, dt.day
-    g_days_in_month = (0,31,59,90,120,151,181,212,243,273,304,334)
-    gy = g_y + 1
-    days = 365 * g_y + (g_y + 3) // 4 - (g_y + 99) // 100 + (g_y + 399) // 400
-    days += g_d + g_days_in_month[g_m - 1]
-    if g_m > 2 and ((g_y % 4 == 0 and g_y % 100 != 0) or g_y % 400 == 0):
-        days += 1
-    jy = -1595
-    days -= 79
-    jy += 33 * (days // 12053)
-    days %= 12053
-    jy += 4 * (days // 1461)
-    days %= 1461
-    if days > 365:
-        jy += (days - 1) // 365
-        days = (days - 1) % 365
-    if days < 186:
-        jm = 1 + days // 31
-        jd = 1 + days % 31
+    gy, gm, gd = dt.year - 1600, dt.month - 1, dt.day - 1
+    g_days_in_month = (31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    g_day_no = 365 * gy + (gy + 3) // 4 - (gy + 99) // 100 + (gy + 399) // 400
+    for month in range(gm):
+        g_day_no += g_days_in_month[month]
+    if gm > 1 and ((dt.year % 4 == 0 and dt.year % 100 != 0) or dt.year % 400 == 0):
+        g_day_no += 1
+    g_day_no += gd
+    j_day_no = g_day_no - 79
+    jy = 979 + 33 * (j_day_no // 12053)
+    j_day_no %= 12053
+    jy += 4 * (j_day_no // 1461)
+    j_day_no %= 1461
+    if j_day_no > 365:
+        jy += (j_day_no - 1) // 365
+        j_day_no = (j_day_no - 1) % 365
+    if j_day_no < 186:
+        jm = 1 + j_day_no // 31
+        jd = 1 + j_day_no % 31
     else:
-        jm = 7 + (days - 186) // 30
-        jd = 1 + (days - 186) % 30
+        jm = 7 + (j_day_no - 186) // 30
+        jd = 1 + (j_day_no - 186) % 30
     return f"{jy:04d}/{jm:02d}/{jd:02d}"
-
 
 def _tehran_datetime(value: datetime | None) -> datetime | None:
     if not value:
