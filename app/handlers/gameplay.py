@@ -1057,6 +1057,23 @@ async def vote2_select_handler(callback: CallbackQuery):
         await callback.message.edit_reply_markup(reply_markup=defense_selection_keyboard(key, players, set(selected)))
     await callback.answer()
 
+async def _send_defense_message(bot, session, game, chat_id: int, user_id: int):
+    user = await session.get(User, user_id)
+    if not user:
+        return None
+    turn = await current_turn(session, game.id)
+    if not turn:
+        return None
+    msg = await bot.send_message(
+        chat_id,
+        f"🛡 نوبت دفاع {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}\n\n⏱ {_duration_text(game.turn_seconds)}",
+        reply_markup=day_turn_keyboard(game.game_key, True, False, game.turn_color_enabled, game.turn_color, game.challenge_color, False, False),
+        parse_mode="HTML",
+    )
+    await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
+    return msg
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:start:"))
 async def vote2_start_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
