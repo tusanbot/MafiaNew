@@ -1171,5 +1171,5 @@ async def vote2_finish_handler(callback: CallbackQuery):
             await callback.message.answer("🗳 رای گیری دوم تمام شد.")
         else:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-            _vote_tasks[key] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
+            _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
     await callback.answer()
