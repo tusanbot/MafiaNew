@@ -37,6 +37,7 @@ from app.handlers.keyboards import (
     scenario_select_keyboard,
     host_select_keyboard,
     game_event_management_keyboard,
+    game_event_game_selector,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -152,16 +153,6 @@ async def _game_result_text(session, game, winner: str) -> str:
         .order_by(GamePlayer.seat)
     )).all())
 
-    leader_id = None
-    leader_event = await session.scalar(select(GameEvent).where(
-        GameEvent.game_id == game.id, GameEvent.event_type == "leader_selected"
-    ).order_by(GameEvent.id.desc()))
-    if leader_event:
-        try:
-            leader_id = int(json.loads(leader_event.payload or "{}").get("leader_user_id"))
-        except (TypeError, ValueError):
-            pass
-
     challenge_ids: set[int] = set()
     challenge_events = await session.execute(select(GameEvent).where(
         GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request"
@@ -208,15 +199,14 @@ async def _game_result_text(session, game, winner: str) -> str:
         if team == "mafia":
             badges.append("🩸")
         elif team == "citizen":
-            badges.append("🏆" if winner == "citizen" else "🔵")
+            pass
         elif team == "independent":
-            badges.append("🧭" if winner in {"independent", "citizen_independent"} else "🟣")
-        if player.alive and ((winner == "mafia" and team == "mafia") or
-                             (winner == "citizen" and team == "citizen") or
-                             (winner == "independent" and team == "independent") or
-                             (winner == "citizen_independent" and team in {"citizen", "independent"})):
-            if "🏆" not in badges:
-                badges.append("🏆")
+            pass
+        if ((winner == "mafia" and team == "mafia") or
+            (winner == "citizen" and team == "citizen") or
+            (winner == "independent" and team == "independent") or
+            (winner == "citizen_independent" and team in {"citizen", "independent"})):
+            badges.append("🏆")
         if not player.alive:
             badges.append("☠️")
             if player.exit_type == "kick" and emoji_settings.get("kick", True):
@@ -227,16 +217,10 @@ async def _game_result_text(session, game, winner: str) -> str:
                 badges.append("🗳")
             elif player.exit_type == "faceoff":
                 badges.append("🎭")
-        if user.id == leader_id:
-            badges.append("👑")
         if player.warning_count and emoji_settings.get("warning", True):
             badges.append(f"⚠️{player.warning_count}")
-        if player.silence_until_round is not None and emoji_settings.get("silence", True):
-            badges.append("🔇")
-        if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True):
-            badges.append("➕")
-        if user.id in challenge_ids and emoji_settings.get("challenge", True):
-            badges.append("🤏🏻")
+
+
         role_name = escape(role.name_fa if role else "بدون نقش")
         badge_text = "".join(dict.fromkeys(badges))
         lines.append(f"{index}. {name}    {role_name}{(' ' + badge_text) if badge_text else ''}")
@@ -976,35 +960,22 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
 
 
 
-@router.callback_query(lambda c: c.data.startswith("gameadmin:events:"))
-async def game_event_management(callback: CallbackQuery) -> None:
+@router.callback_query(lambda c: c.data.startswith("gameadmin:event_game:"))
+async def game_event_select(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    group_id = int(callback.data.rsplit(":", 1)[1])
+    game_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        game = await GameRepository.get_active(session, group.id) if group else None
-        if not game:
-            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+        game = await session.get(Game, game_id)
+        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        if not game or not actor or game.status != "running" or game.host_user_id != actor.id:
+            await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
             return
-        if game.auto_play:
-            await callback.answer("ثبت دستی اتفاقات فقط برای بازی غیرخودکار فعال است.", show_alert=True)
-            return
-        result = await session.execute(
-            select(GameEvent).where(
-                GameEvent.game_id == game.id,
-                GameEvent.event_type == "manual_game_event",
-            ).order_by(GameEvent.id.desc()).limit(10)
+        await callback.message.edit_text(
+            "📜 <b>مدیریت اتفاقات بازی</b>\n\nاتفاقات فقط برای همین بازی ثبت می‌شوند.",
+            reply_markup=game_event_management_keyboard(game.id, game.group_id),
+            parse_mode="HTML",
         )
-        events = list(result.scalars())
-        lines = ["📜 <b>اتفاقات ثبت‌شده بازی</b>", ""]
-        if not events:
-            lines.append("هنوز اتفاق دستی ثبت نشده است.")
-        else:
-            for event in reversed(events):
-                data = json.loads(event.payload or "{}")
-                lines.append(f"• دور {data.get('round_no', '-')} — {escape(str(data.get('text', '')))}")
-        await callback.message.edit_text("\n".join(lines), reply_markup=game_event_management_keyboard(group.id), parse_mode="HTML")
     await callback.answer()
 
 
@@ -1012,15 +983,18 @@ async def game_event_management(callback: CallbackQuery) -> None:
 async def game_event_add(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
-    group_id = int(callback.data.rsplit(":", 1)[1])
+    game_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
-        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
-        game = await GameRepository.get_active(session, group.id) if group else None
-        if not game or game.auto_play:
-            await callback.answer("ثبت اتفاق دستی برای این بازی فعال نیست.", show_alert=True)
+        game = await session.get(Game, game_id)
+        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        if not game or not actor or game.status != "running" or game.host_user_id != actor.id:
+            await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
+            return
+        if game.auto_play:
+            await callback.answer("ثبت دستی اتفاقات فقط برای بازی غیرخودکار فعال است.", show_alert=True)
             return
     await state.set_state(GameEventState.description)
-    await state.update_data(group_id=group_id)
+    await state.update_data(game_id=game_id)
     await callback.message.answer("متن اتفاق بازی را ارسال کنید:")
     await callback.answer()
 
@@ -1030,21 +1004,20 @@ async def game_event_add_text(message: Message, state: FSMContext) -> None:
     if not message.from_user or not message.text:
         return
     data = await state.get_data()
-    group_id = data.get("group_id")
+    game_id = data.get("game_id")
     async with session_factory() as session:
-        group = await _selected_group(session, message.bot, message.from_user.id, int(group_id)) if group_id else None
-        game = await GameRepository.get_active(session, group.id) if group else None
-        if not game or game.auto_play:
+        game = await session.get(Game, int(game_id)) if game_id else None
+        actor = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+        if not game or not actor or game.status != "running" or game.host_user_id != actor.id or game.auto_play:
             await state.clear()
             await message.answer("بازی فعال یا دسترسی لازم وجود ندارد.")
             return
-        actor = await UserRepository(session).get_by_telegram_id(message.from_user.id)
         await _event(
             session,
             game,
             "manual_game_event",
             {"round_no": await current_round(session, game.id), "text": message.text.strip()},
-            actor.id if actor else None,
+            actor.id,
         )
         await session.commit()
     await state.clear()
@@ -1147,14 +1120,12 @@ async def game_result_stats(callback: CallbackQuery) -> None:
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        rounds = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "round_started"))
-        challenges = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request"))
-        nights = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "night_resolved"))
-        votes = await session.scalar(select(func.count(GameEvent.id)).where(GameEvent.game_id == game.id, GameEvent.event_type == "voting_resolved"))
-        await callback.message.edit_text(f"📊 <b>آمار بازی</b>\n\nدورها: {rounds or 0}\nدرخواست‌های چالش: {challenges or 0}\nشب‌های حل‌شده: {nights or 0}\nرأی‌گیری‌های حل‌شده: {votes or 0}", reply_markup=game_result_back_keyboard(game.id))
+        await callback.message.edit_text(
+            "📊 <b>آمار بازی</b>",
+            reply_markup=game_result_back_keyboard(game.id),
+            parse_mode="HTML",
+        )
     await callback.answer()
-
-
 @router.callback_query(lambda c: c.data.startswith("gameresult:events:"))
 async def game_result_events(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -1165,17 +1136,57 @@ async def game_result_events(callback: CallbackQuery) -> None:
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        result = await session.execute(select(GameEvent).where(GameEvent.game_id == game.id).order_by(GameEvent.id.desc()).limit(25))
+        group = await session.get(Group, game.group_id)
+        if not group:
+            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
+            return
+        # Only curated gameplay events are exposed; internal state-machine
+        # events such as turn_state, challenge_request and vote_state are hidden.
+        result = await session.execute(select(GameEvent).where(
+            GameEvent.game_id == game.id,
+            GameEvent.event_type.in_(["night_action", "night_resolved", "manual_game_event"]),
+        ).order_by(GameEvent.id.asc()))
         events = list(result.scalars())
-        lines = ["📜 <b>اتفاقات بازی</b>", ""]
-        for event in reversed(events):
+        by_round: dict[int, dict] = {}
+        for event in events:
             data = json.loads(event.payload or "{}")
-            round_no = data.get("round_no", "-")
-            lines.append(f"دور {round_no} — {event.event_type}")
-        await callback.message.edit_text("\n".join(lines), reply_markup=game_result_back_keyboard(game.id))
+            round_no = int(data.get("round_no", 1) or 1)
+            by_round.setdefault(round_no, {"actions": [], "manual": []})
+            if event.event_type == "night_action":
+                by_round[round_no]["actions"].append((event, data))
+            elif event.event_type == "manual_game_event":
+                by_round[round_no]["manual"].append((event, data))
+        # Send one chronological message per round into the group.
+        for round_no in sorted(by_round):
+            groups = {"مافیا": [], "شهروند": [], "مستقل": [], "سایر": []}
+            for event, data in by_round[round_no]["actions"]:
+                actor = await session.get(User, event.actor_user_id) if event.actor_user_id else None
+                role = await session.scalar(select(Role).join(GamePlayer, GamePlayer.role_id == Role.id).where(
+                    GamePlayer.game_id == game.id, GamePlayer.user_id == event.actor_user_id
+                )) if event.actor_user_id else None
+                target = await session.get(User, int(data["target_user_id"])) if data.get("target_user_id") else None
+                target_name = target.display_name or target.first_name or "بازیکن" if target else "بازیکن"
+                labels = {
+                    "mafia_kill": "شات شب",
+                    "doctor_save": "دکتر",
+                    "detective_check": "کاراگاه",
+                }
+                label = labels.get(data.get("action_type"), data.get("action_type", "اقدام شب"))
+                team_label = "مافیا" if role and role.team == "mafia" else "شهروند" if role and role.team == "citizen" else "مستقل" if role and role.team == "independent" else "سایر"
+                groups[team_label].append(f"{label}: {escape(target_name)}")
+            for _event, data in by_round[round_no]["manual"]:
+                groups["سایر"].append(escape(str(data.get("text", ""))))
+            title = "🌙 شب معارفه" if round_no == 1 else f"🌙 شب {round_no}"
+            lines = [f"<b>{title}</b>", ""]
+            for team_label in ("مافیا", "شهروند", "مستقل", "سایر"):
+                if groups[team_label]:
+                    lines.append(f"<b>{team_label}:</b>")
+                    lines.extend(f"• {item}" for item in groups[team_label])
+                    lines.append("")
+            if len(lines) > 2:
+                await callback.bot.send_message(group.telegram_id, "\n".join(lines).strip(), parse_mode="HTML")
+        await callback.answer("اتفاقات بازی به ترتیب ثبت در گروه ارسال شد.")
     await callback.answer()
-
-
 @router.callback_query(lambda c: c.data.startswith("gameadmin:emoji:"))
 async def emoji_management(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -1275,12 +1286,20 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         if action == "events":
-            if game.auto_play:
-                await callback.answer("ثبت دستی اتفاقات فقط برای بازی غیرخودکار فعال است.", show_alert=True)
+            result = await session.execute(
+                select(Game, Scenario, Group)
+                .join(Scenario, Scenario.id == Game.scenario_id)
+                .join(Group, Group.id == Game.group_id)
+                .where(Game.status == "running", Game.host_user_id == (await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id)
+                .order_by(desc(Game.id))
+            )
+            games = list(result.all())
+            if not games:
+                await callback.answer("بازی فعالی که گرداننده آن شما باشید پیدا نشد.", show_alert=True)
                 return
             await callback.message.edit_text(
-                "📜 <b>مدیریت اتفاقات بازی</b>\n\nاتفاقات این بازی را از پنل خصوصی ثبت کنید.",
-                reply_markup=game_event_management_keyboard(group.id),
+                "🎯 <b>انتخاب بازی برای ثبت اتفاقات</b>\n\nابتدا بازی موردنظر را انتخاب کنید:",
+                reply_markup=game_event_game_selector(games),
                 parse_mode="HTML",
             )
             await callback.answer()
