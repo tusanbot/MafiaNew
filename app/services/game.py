@@ -113,7 +113,7 @@ async def role_messages(session: AsyncSession, game, assignments):
     now = datetime.now(ZoneInfo("Asia/Tehran"))
     jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
     scenario_name = scenario.name_fa if scenario else "نامشخص"
-    host_name = tg_name(host.display_name if host else "نامشخص")
+    host_name = tg_mention(host.telegram_id, host.display_name if host else "نامشخص") if host else "<b>نامشخص</b>"
 
     team_names = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}
     rows = []
