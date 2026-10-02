@@ -169,7 +169,7 @@ class GameEvent(Base):
 class Vote(Base):
     __tablename__ = "votes"
     __table_args__ = (
-        UniqueConstraint("game_id", "voter_user_id", "round_no", name="uq_vote_per_round"),
+        UniqueConstraint("game_id", "voter_user_id", "round_no", "phase", name="uq_vote_per_phase"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
