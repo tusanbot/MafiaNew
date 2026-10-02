@@ -475,6 +475,7 @@ def day_turn_keyboard(
             text=f"{mark} ⏩ نکست ترن".strip(),
             callback_data=f"turn:next:{game_key}",
         ))
+    return builder.as_markup()
 
 
 def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup:
