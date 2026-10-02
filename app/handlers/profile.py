@@ -107,9 +107,10 @@ async def _rich_ranking_html(rows, kind: str, custom_emoji: bool = False) -> str
         "citizen": "برترین‌های شهروند",
     }.get(kind, "رتبه‌بندی")
 
+    custom_emoji_id = os.getenv("MAFIA_CUSTOM_EMOJI_ID", "").strip()
     trophy = (
-        '<tg-emoji emoji-id="5368324170671202286">🏆</tg-emoji>'
-        if custom_emoji else "🏆"
+        f'<tg-emoji emoji-id="{custom_emoji_id}">🏆</tg-emoji>'
+        if custom_emoji and custom_emoji_id else "🏆"
     )
 
     rows_html = []
