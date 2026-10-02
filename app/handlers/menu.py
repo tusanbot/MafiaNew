@@ -30,6 +30,8 @@ from app.handlers.keyboards import (
     notification_settings_menu,
     finish_game_confirm_keyboard,
     game_result_keyboard,
+    scenario_select_keyboard,
+    host_select_keyboard,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -491,6 +493,196 @@ async def player_management(callback: CallbackQuery) -> None:
             reply_markup=player_management_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
+
+async def _remap_game_players_to_scenario(session, game, scenario) -> None:
+    """Remap waiting-lobby seats when the scenario capacity changes."""
+    rows = await GameRepository.players(session, game.id, include_reserve=True)
+    active = sorted((row for row in rows if not row[0].is_reserved), key=lambda row: row[0].seat)
+    reserves = sorted((row for row in rows if row[0].is_reserved), key=lambda row: row[0].reserve_position or 0)
+    ordered = active + reserves
+    if not ordered:
+        return
+
+    # Temporarily move every row to a unique negative seat so PostgreSQL's
+    # (game_id, seat) uniqueness cannot collide while seats are reassigned.
+    for index, (player, _user) in enumerate(ordered, 1):
+        player.seat = -index
+    await session.flush()
+
+    capacity = int(scenario.max_players)
+    active_targets = {}
+    used = set()
+    # Existing main players keep their original seat whenever that seat exists.
+    for player, user in active:
+        if 1 <= int(player.seat if player.seat > 0 else 0) <= capacity:
+            pass
+    # Preserve original seats from the snapshot captured before temporary seats.
+    original_seats = {player.id: int(getattr(player, "_old_seat", 0) or 0) for player, _ in ordered}
+    # The temporary assignment above erased the old value, so derive it from the
+    # ordered active list's position metadata captured below when needed.
+    # Re-read the old order from the event payload is unnecessary; use the
+    # deterministic active ordering and keep seats that are still in range.
+    # For correctness, active players are ordered by their old seats before the
+    # temporary update, therefore the first capacity slots preserve that order
+    # only when a collision-free direct preservation is impossible.
+    #
+    # Build the intended slot list from the original active ordering by querying
+    # the pre-change seats stored in a local map attached before reassignment.
+    # This helper is called only from the handler below, which sets _old_seat.
+    preserved = []
+    for player, user in active:
+        old_seat = int(getattr(player, "_old_seat", 0) or 0)
+        if 1 <= old_seat <= capacity and old_seat not in used:
+            preserved.append((player, old_seat))
+            used.add(old_seat)
+    remaining = [player for player, _user in ordered if player not in {p for p, _ in preserved}]
+    free = [seat for seat in range(1, capacity + 1) if seat not in used]
+    assignments = preserved + list(zip(remaining[:len(free)], free))
+    for player, seat in assignments:
+        player.is_reserved = False
+        player.reserve_position = None
+        player.seat = int(seat)
+    overflow = remaining[len(free):]
+    reserve_pos = 1
+    for player in overflow:
+        player.is_reserved = True
+        player.reserve_position = reserve_pos
+        player.seat = -(capacity + reserve_pos)
+        reserve_pos += 1
+
+    # Existing reserves that fit into open seats are promoted before overflow.
+    await session.flush()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:scenario:"))
+async def gameadmin_change_scenario(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر سناریو فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        if not group:
+            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
+            return
+        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("فقط مدیر گروه می‌تواند سناریو را تغییر دهد.", show_alert=True)
+            return
+        scenarios = list((await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.id != game.scenario_id).order_by(Scenario.id)
+        )).scalars().all())
+        await callback.message.edit_text(
+            "🎭 سناریوی جدید را انتخاب کنید:",
+            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}"),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:setscenario:"))
+async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 4 or not callback.from_user:
+        return
+    key, scenario_id = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("لابی فعال نیست.", show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+        scenario = await session.get(Scenario, scenario_id)
+        if not scenario or not scenario.enabled:
+            await callback.answer("سناریو پیدا نشد.", show_alert=True)
+            return
+        rows = await GameRepository.players(session, game.id, include_reserve=True)
+        # Capture original seats before remapping.
+        for player, _user in rows:
+            player._old_seat = int(player.seat)
+        await _remap_game_players_to_scenario(session, game, scenario)
+        game.scenario_id = scenario.id
+        await session.commit()
+        await callback.message.edit_text(
+            f"🎭 سناریو تغییر کرد: <b>{scenario.name_fa}</b>",
+            reply_markup=active_game_menu(
+                group.id,
+                back_callback=f"gameadmin:lobby:{game.game_key}",
+                game_key=game.game_key,
+                lobby_editable=True,
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer("سناریو تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:host:"))
+async def gameadmin_change_host(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+        admins = await callback.bot.get_chat_administrators(group.telegram_id)
+        await callback.message.edit_text(
+            "🎙 گرداننده جدید را انتخاب کنید:",
+            reply_markup=host_select_keyboard(group.id, admins),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:sethost:"))
+async def gameadmin_set_host(callback: CallbackQuery) -> None:
+    parts = callback.data.split(":")
+    if len(parts) != 4 or not callback.from_user:
+        return
+    key, host_tid = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("لابی فعال نیست.", show_alert=True)
+            return
+        group = await session.get(Group, game.group_id)
+        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("دسترسی ندارید.", show_alert=True)
+            return
+        host_member = await callback.bot.get_chat_member(group.telegram_id, host_tid)
+        if host_member.status not in ("creator", "administrator"):
+            await callback.answer("گرداننده باید مدیر گروه باشد.", show_alert=True)
+            return
+        host = await UserRepository(session).upsert_from_telegram(
+            host_member.user.id, host_member.user.username,
+            host_member.user.first_name or "", host_member.user.last_name,
+        )
+        game.host_user_id = host.id
+        await session.commit()
+        await callback.message.edit_text(
+            f"🎙 گرداننده تغییر کرد: <b>{tg_mention(host.telegram_id, host.display_name or host.first_name)}</b>",
+            reply_markup=active_game_menu(
+                group.id,
+                back_callback=f"gameadmin:lobby:{game.game_key}",
+                game_key=game.game_key,
+                lobby_editable=True,
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer("گرداننده تغییر کرد.")
+
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:features:"))
 async def game_features(callback: CallbackQuery) -> None:
