@@ -1088,6 +1088,37 @@ async def vote2_start_handler(callback: CallbackQuery):
         if state: await _send_defense_message(callback.bot, session, game, callback.message.chat.id, int(state["target_user_id"]))
     await callback.answer("دور دفاع شروع شد.")
 
+async def _vote2_timer(bot, game_key: str, chat_id: int):
+    try:
+        while True:
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.phase != "voting2":
+                    return
+                state = await _latest_vote_state(session, game.id)
+                if not state or state.get("phase") != "vote2":
+                    return
+                started = datetime.fromisoformat(state["started_at"])
+                remaining = max(0.0, float(game.vote_seconds or 10) - (datetime.now(timezone.utc) - started).total_seconds())
+            if remaining > 0:
+                await asyncio.sleep(min(remaining, 0.2))
+                continue
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.phase != "voting2":
+                    return
+                result = await finish_vote2(session, game)
+                await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                if result["finished"]:
+                    return
+                await _vote_target_message(bot, session, game, chat_id)
+                continue
+    except asyncio.CancelledError:
+        return
+    finally:
+        _vote_tasks.pop(f"vote2:{game_key}", None)
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:cast:"))
 async def vote2_cast_handler(callback: CallbackQuery):
     parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
