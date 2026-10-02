@@ -4,7 +4,7 @@ from app.utils.text import tg_plain_name
 
 
 def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> None:
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=callback_data))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=callback_data))
 
 
 def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
@@ -54,19 +54,19 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
-            text=f"قفل چت: {'فعال' if settings.chat_lock else 'غیرفعال'}",
+            text=f"{'🟢' if settings.chat_lock else '⚪'} 🔒 قفل چت: {'فعال' if settings.chat_lock else 'خاموش'}",
             callback_data=f"grouplock:toggle:{group_id}:chat_lock",
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"قفل شب: {'فعال' if settings.night_lock else 'غیرفعال'}",
+            text=f"{'🟢' if settings.night_lock else '⚪'} 🌙 قفل شب: {'فعال' if settings.night_lock else 'خاموش'}",
             callback_data=f"grouplock:toggle:{group_id}:night_lock",
         )
     )
     builder.row(
         InlineKeyboardButton(
-            text=f"قفل نوبت: {'فعال' if settings.turn_lock else 'غیرفعال'}",
+            text=f"{'🟢' if settings.turn_lock else '⚪'} 🗣️ قفل نوبت: {'فعال' if settings.turn_lock else 'خاموش'}",
             callback_data=f"grouplock:toggle:{group_id}:turn_lock",
         )
     )
@@ -244,11 +244,11 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
         callback_data=f"gameadmin:extra:{group_id}:auto_play",
     ))
     builder.row(InlineKeyboardButton(
-        text=f"تفکیک رنگ نوبت/چالش: {'فعال' if turn_color_enabled else 'غیرفعال'}",
+        text=f"{'🟢' if turn_color_enabled else '⚪'} 🎨 تفکیک رنگ نوبت/چالش: {'فعال' if turn_color_enabled else 'خاموش'}",
         callback_data=f"gameadmin:extra:{group_id}:turn_color_enabled",
     ))
-    builder.row(InlineKeyboardButton(text=f"تغییر رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
-    builder.row(InlineKeyboardButton(text=f"تغییر رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
+    builder.row(InlineKeyboardButton(text=f"🗣️ رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
+    builder.row(InlineKeyboardButton(text=f"🤏🏻 رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
@@ -386,8 +386,8 @@ def scenario_role_keyboard(roles, selected_ids: set[int] | dict[int, int] | None
             mark = "⬜" if count == 0 else f"✅×{count}"
             row.append(InlineKeyboardButton(text=f"{mark} {role.name_fa[:20]}", callback_data=f"scenario_admin:{action}:role:{role.id}"))
         builder.row(*row)
-    builder.row(InlineKeyboardButton(text="ادامه", callback_data=f"scenario_admin:{action}:roles_done"))
-    builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
+    builder.row(InlineKeyboardButton(text="➡️ ادامه", callback_data=f"scenario_admin:{action}:roles_done"))
+    builder.row(InlineKeyboardButton(text="❌ لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
 
 
@@ -407,7 +407,7 @@ def lobby_keyboard(game_key: str, can_start: bool = False) -> InlineKeyboardMark
         InlineKeyboardButton(text="🚪 ترک بازی", callback_data=f"game:leave:{game_key}"),
     )
     if can_start:
-        builder.row(InlineKeyboardButton(text="شروع بازی", callback_data=f"game:start:{game_key}"))
+        builder.row(InlineKeyboardButton(text="🚀 شروع بازی", callback_data=f"game:start:{game_key}"))
     return builder.as_markup()
 
 
@@ -452,7 +452,7 @@ def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🗳 رأی‌گیری", callback_data=f"day:vote:{game_key}"),
         InlineKeyboardButton(text="🌙 شروع فاز شب", callback_data=f"day:night:{game_key}"),
     )
-    builder.row(InlineKeyboardButton(text="🏁 اتمام بازی", callback_data=f"day:finish:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
 
@@ -493,18 +493,18 @@ def leader_players_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
 
 def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_locked: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
+    builder.row(InlineKeyboardButton(text="📤 ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
     builder.row(
         InlineKeyboardButton(
-            text=f"قفل شب: {'فعال' if night_locked else 'غیرفعال'}",
+            text=f"{'🟢' if night_locked else '⚪'} 🌙 قفل شب: {'فعال' if night_locked else 'خاموش'}",
             callback_data=f"night:lock:{game_key}:night_lock",
         ),
         InlineKeyboardButton(
-            text=f"قفل بازی: {'فعال' if chat_locked else 'غیرفعال'}",
+            text=f"{'🟢' if chat_locked else '⚪'} 🔒 قفل بازی: {'فعال' if chat_locked else 'خاموش'}",
             callback_data=f"night:lock:{game_key}:chat_lock",
         ),
     )
-    builder.row(InlineKeyboardButton(text="شروع روز", callback_data=f"night:start_day:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🌅 شروع روز", callback_data=f"night:start_day:{game_key}"))
     return builder.as_markup()
 
 
@@ -515,8 +515,8 @@ def challenge_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
 def challenge_response_keyboard(game_key: str, event_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="پذیرش چالش", callback_data=f"challenge:accept:{game_key}:{event_id}"),
-        InlineKeyboardButton(text="رد چالش", callback_data=f"challenge:reject:{game_key}:{event_id}"),
+        InlineKeyboardButton(text="✅ پذیرش چالش", callback_data=f"challenge:accept:{game_key}:{event_id}"),
+        InlineKeyboardButton(text="❌ رد چالش", callback_data=f"challenge:reject:{game_key}:{event_id}"),
     )
     return builder.as_markup()
 
@@ -611,7 +611,7 @@ def vote1_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🗳 شروع رای ۲", callback_data=f"vote2:start:{game_key}"))
     builder.row(InlineKeyboardButton(text="🌙 شروع فاز شب", callback_data=f"day:night:{game_key}"))
-    builder.row(InlineKeyboardButton(text="🏁 اتمام بازی", callback_data=f"day:finish:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
 
@@ -682,7 +682,7 @@ def vote2_private_targets_keyboard(game_key: str, voter_id: int, candidates) -> 
             text=name,
             callback_data=f"vote2:private:cast:{game_key}:{int(voter_id)}:{int(user_id)}",
         ))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"vote2:private:panel:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"vote2:private:panel:{game_key}"))
     return builder.as_markup()
 
 def vote2_ballot_keyboard(game_key: str, candidates, selected_user_id: int | None = None, host_only: bool = False) -> InlineKeyboardMarkup:
@@ -761,7 +761,7 @@ def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"newgame:settings:{group_id}"))
     builder.row(InlineKeyboardButton(text="امکانات اضافه", callback_data=f"newgame:extras:{group_id}"))
     builder.row(InlineKeyboardButton(text="🚀 ایجاد بازی", callback_data=f"newgame:create:{group_id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:root:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"groupstart:root:{group_id}"))
     return builder.as_markup()
 
 
@@ -770,7 +770,7 @@ def scenario_select_keyboard(group_id: int, scenarios, back_callback: str | None
     for scenario in scenarios:
         builder.button(text=scenario.name_fa, callback_data=f"{callback_prefix}:{group_id}:{scenario.id}")
     if scenarios: builder.adjust(3)
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
@@ -780,7 +780,7 @@ def host_select_keyboard(group_id: int, admins, callback_prefix: str = "newgame:
         user = member.user
         name = user.full_name or user.username or str(user.id)
         builder.row(InlineKeyboardButton(text=tg_plain_name(name[:60]), callback_data=f"{callback_prefix}:{group_id}:{user.id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
@@ -826,7 +826,7 @@ def new_game_settings_keyboard(
         text=f"➕ چالش اضافه: {extra_challenge_seconds // 60:02d}:{extra_challenge_seconds % 60:02d}",
         callback_data=f"newgame:time:{group_id}:extra_challenge",
     ))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 def duration_keyboard(prefix: str, group_id: int, kind: str, current: int, back_callback: str) -> InlineKeyboardMarkup:
@@ -852,7 +852,7 @@ def new_game_color_keyboard(group_id: int, kind: str, current: str = "پیش‌�
                 callback_data=f"newgame:set_{kind}_color:{group_id}:{value}",
             )
         )
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:extras:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"newgame:extras:{group_id}"))
     return builder.as_markup()
 
 
@@ -875,7 +875,7 @@ def new_game_extras_keyboard(
         text=f"🙂 اموجی‌های وضعیت: {'فعال' if emoji_enabled else 'غیرفعال'}",
         callback_data=f"newgame:emoji:{group_id}",
     ))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
@@ -971,7 +971,7 @@ def scenario_challenge_keyboard(action: str = "create", include_unchanged: bool 
     builder.row(InlineKeyboardButton(text="🚫 بدون چالش", callback_data=f"scenario_admin:{action}:challenge:off"))
     if include_unchanged:
         builder.row(InlineKeyboardButton(text="↩️ بدون تغییر", callback_data=f"scenario_admin:{action}:challenge:unchanged"))
-    builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
+    builder.row(InlineKeyboardButton(text="❌ لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
 
 def scenario_delete_confirm_keyboard(scenario_id: int) -> InlineKeyboardMarkup:
