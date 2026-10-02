@@ -49,7 +49,7 @@ from app.handlers.keyboards import (
     finish_game_keyboard,
     voting_setup_keyboard, voting_delay_keyboard, voting_duration_keyboard, voting_mode_keyboard,
     vote_rights_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
-    defense_selection_keyboard, vote2_target_keyboard, vote2_ballot_keyboard, vote2_complete_keyboard,
+    defense_selection_keyboard, vote2_target_keyboard, vote2_ballot_keyboard, vote2_private_voters_keyboard, vote2_private_targets_keyboard, vote2_complete_keyboard,
 )
 
 router = Router(name="gameplay")
@@ -825,6 +825,57 @@ async def _set_latest_vote_state_message(session, game, chat_id: int, message_id
     data["message_id"] = message_id
     event.payload = json.dumps(data, ensure_ascii=False)
     await session.commit()
+
+async def _send_vote2_private_controls(bot, session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote2":
+        return
+    rules = state.get("rules") or {}
+    visibility = rules.get("visibility", "public")
+    candidates = [int(x) for x in state.get("queue", [])]
+    users = {}
+    for uid in candidates:
+        user = await session.get(User, uid)
+        if user:
+            users[uid] = user
+    candidate_buttons = [
+        (uid, users[uid].display_name or users[uid].first_name or "بازیکن")
+        for uid in candidates if uid in users
+    ]
+    eligible = [int(x) for x in rules.get("eligible_voter_ids", [])]
+    if visibility == "host_private":
+        host = await session.get(User, int(game.host_user_id)) if game.host_user_id else None
+        if host:
+            voters = []
+            for uid in eligible:
+                user = await session.get(User, uid)
+                if user:
+                    voters.append((uid, user.display_name or user.first_name or "بازیکن"))
+            voted = {
+                int(voter_id) for voter_id, _ in await _vote_records_for_phase(session, game, int(state["round_no"]), "vote2")
+            }
+            await bot.send_message(
+                host.telegram_id,
+                "🗳 رای دوم مخفی\n\nابتدا رأی‌دهنده را انتخاب کنید:",
+                reply_markup=vote2_private_voters_keyboard(game.game_key, voters, voted),
+            )
+    elif visibility == "bot_private":
+        for uid in eligible:
+            user = await session.get(User, uid)
+            if not user:
+                continue
+            try:
+                await bot.send_message(
+                    user.telegram_id,
+                    "🗳 رای دوم مخفی\n\nیکی از مدافعان را برای خروج انتخاب کنید:",
+                    reply_markup=vote2_private_targets_keyboard(game.game_key, uid, candidate_buttons),
+                )
+            except Exception:
+                # A user who has not started the bot privately cannot receive
+                # the ballot. Their missing ballot does not change the
+                # electorate denominator.
+                pass
+
 
 async def _vote_target_message(bot, session, game, chat_id: int):
     state = await _latest_vote_state(session, game.id)
