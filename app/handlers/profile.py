@@ -153,7 +153,10 @@ async def _rich_ranking_html(rows, kind: str, custom_emoji: bool = False) -> str
         '<tg-button type="callback_data" style="primary" data="ranking:players">🏆 همه بازیکنان</tg-button>'
         '<tg-button type="callback_data" style="primary" data="ranking:mafia">🔴 مافیا</tg-button>'
         '<tg-button type="callback_data" style="success" data="ranking:citizen">🔵 شهروند</tg-button>'
-        "</tg-button-row>"
+        '</tg-button-row>'
+        '<tg-button-row align="center">'
+        '<tg-button type="callback_data" data="menu:root">↩️ بازگشت</tg-button>'
+        '</tg-button-row>'
     )
 
 
