@@ -589,7 +589,8 @@ async def start_match_handler(callback: CallbackQuery):
             try:
                 await callback.bot.send_message(
                     user.telegram_id,
-                    f"نقش شما\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
+                    f"<b>نقش شما</b>\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
+                    parse_mode="HTML",
                 )
             except Exception:
                 pass
