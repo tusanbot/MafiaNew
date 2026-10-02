@@ -1374,14 +1374,31 @@ async def vote1_next_handler(callback: CallbackQuery):
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
 async def vote1_finish_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
     async with session_factory() as session:
-        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
-        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
-        await callback.message.edit_text(
-            "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
-            reply_markup=vote1_complete_keyboard(key),
-            parse_mode="HTML",
-        )
+        game = await _load(session, key)
+        actor = (await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده.", show_alert=True)
+            return
+        task = _vote_tasks.pop(key, None)
+        if task:
+            task.cancel()
+        result = await advance_vote1(session, game)
+        if result["finished"]:
+            await callback.message.edit_text(
+                "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
+                reply_markup=vote1_complete_keyboard(key),
+                parse_mode="HTML",
+            )
+        else:
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[key] = asyncio.create_task(
+                _vote1_timer(callback.bot, key, callback.message.chat.id)
+            )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:select:"))
