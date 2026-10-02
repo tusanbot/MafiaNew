@@ -54,9 +54,9 @@ def threshold_for_count(count: int, mode: str, value: int = 0) -> int:
     if mode == "percentage":
         return max(0, ceil(count * int(value or 0) / 100))
     if mode == "half_plus_one_odd":
-        return (count // 2) + 1 if count % 2 else count // 2
+        return ceil(count / 2) + 1 if count % 2 else count // 2
     if mode == "half_minus_one_odd":
-        return max(0, (count // 2) - 1) if count % 2 else count // 2
+        return max(0, ceil(count / 2) - 1) if count % 2 else count // 2
 
     # Default: minimum 50%, rounded up for an odd population.
     return ceil(count / 2)
