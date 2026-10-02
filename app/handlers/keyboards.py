@@ -433,9 +433,20 @@ def leader_players_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"leader:menu:{game_key}"))
     return builder.as_markup()
 
-def continue_night_keyboard(game_key: str) -> InlineKeyboardMarkup:
+def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_locked: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
+    builder.row(
+        InlineKeyboardButton(
+            text=f"قفل شب: {'فعال' if night_locked else 'غیرفعال'}",
+            callback_data=f"night:lock:{game_key}:night_lock",
+        ),
+        InlineKeyboardButton(
+            text=f"قفل بازی: {'فعال' if chat_locked else 'غیرفعال'}",
+            callback_data=f"night:lock:{game_key}:chat_lock",
+        ),
+    )
+    builder.row(InlineKeyboardButton(text="شروع روز", callback_data=f"night:start_day:{game_key}"))
     return builder.as_markup()
 
 
@@ -461,6 +472,7 @@ def day_turn_keyboard(
     challenge_color: str = "پیش‌فرض",
     challenge_emoji_enabled: bool = True,
     allow_challenge: bool = True,
+    challenge_requests=None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if challenge_enabled and allow_challenge:
@@ -469,6 +481,12 @@ def day_turn_keyboard(
             text=f"{mark} 🤏🏼 درخواست چالش".strip(),
             callback_data=f"turn:request_challenge:{game_key}",
         ))
+        for event, data in (challenge_requests or []):
+            name = tg_plain_name(data.get("requester_name", "بازیکن"))
+            builder.row(InlineKeyboardButton(
+                text=f"🤏🏼 {name}",
+                callback_data=f"challenge:grant:{game_key}:{event.id}",
+            ))
     if is_current_speaker:
         mark = {"سبز": "🟢", "آبی": "🔵", "بنفش": "🟣", "قرمز": "🔴", "زرد": "🟡", "طلایی": "🟡"}.get(turn_color, "") if turn_color_enabled else ""
         builder.row(InlineKeyboardButton(
@@ -479,17 +497,21 @@ def day_turn_keyboard(
 
 
 def challenge_requests_keyboard(game_key: str, requests) -> InlineKeyboardMarkup:
+    return day_turn_keyboard(game_key, False, True, False, challenge_requests=requests)
+
+
+def challenge_placement_keyboard(game_key: str, event_id: int, requester_name: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for event, data in requests:
+    if requester_name:
         builder.row(InlineKeyboardButton(
-            text=f"🤏🏼 چالش {tg_plain_name(data.get('requester_name', 'بازیکن'))}",
-            callback_data=f"challenge:grant:{game_key}:{event.id}",
+            text=f"👤 {tg_plain_name(requester_name)}",
+            callback_data=f"challenge:select:{game_key}:{event_id}",
         ))
-    return builder.as_markup()
-
-
-def challenge_placement_keyboard(game_key: str, event_id: int) -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
+    else:
+        builder.row(InlineKeyboardButton(
+            text="انتخاب بازیکن",
+            callback_data=f"challenge:select:{game_key}:{event_id}",
+        ))
     builder.row(
         InlineKeyboardButton(text="قبل از صحبت", callback_data=f"challenge:place:{game_key}:{event_id}:before"),
         InlineKeyboardButton(text="بعد از صحبت", callback_data=f"challenge:place:{game_key}:{event_id}:after"),
