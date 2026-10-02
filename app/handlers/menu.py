@@ -35,7 +35,7 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import create_game
 from app.services.profile import sync_telegram_user
-from app.services.gameplay import current_round
+from app.services.gameplay import current_round, _event
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
