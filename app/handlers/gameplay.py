@@ -1109,12 +1109,22 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 game = await _load(session, game_key)
                 if not game or game.phase != "voting2":
                     return
-                result = await finish_vote2(session, game)
-                await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                if game.voting_mode == "auto":
+                    result = await advance_vote2(session, game)
+                else:
+                    state = await _latest_vote_state(session, game.id)
+                    result = await finish_vote2(session, game)
+                await _finish_vote_message(
+                    bot, session, game,
+                    next_button=True,
+                    final=bool(result.get("finished") and game.voting_mode == "auto"),
+                )
                 if result["finished"]:
                     return
-                await _vote_target_message(bot, session, game, chat_id)
-                continue
+                if game.voting_mode == "auto":
+                    await _vote_target_message(bot, session, game, chat_id)
+                    continue
+                return
     except asyncio.CancelledError:
         return
     finally:
