@@ -1078,8 +1078,15 @@ async def game_result_register(callback: CallbackQuery) -> None:
     game_id = int(callback.data.rsplit(":", 1)[1])
     async with session_factory() as session:
         game = await session.get(Game, game_id)
-        if not game:
+        if not game or not callback.from_user:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        group = await session.get(Group, game.group_id)
+        if not actor or not group or not (
+            game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id)
+        ):
+            await callback.answer("فقط گرداننده یا مدیر گروه می‌تواند بازی را ثبت کند.", show_alert=True)
             return
         exists = await session.scalar(select(GameEvent.id).where(
             GameEvent.game_id == game.id, GameEvent.event_type == "game_registered"
