@@ -382,15 +382,6 @@ async def _public_status_roster(session, game, *, include_state: bool = False, f
     except (TypeError, ValueError):
         emoji_settings = {}
     rows = await all_players(session, game.id)
-    leader_id = None
-    leader_event = await session.scalar(select(GameEvent).where(
-        GameEvent.game_id == game.id, GameEvent.event_type == "leader_selected"
-    ).order_by(GameEvent.id.desc()))
-    if leader_event:
-        try:
-            leader_id = int(json.loads(leader_event.payload or "{}").get("leader_user_id"))
-        except (TypeError, ValueError):
-            leader_id = None
     challenge_ids = set()
     result = await session.execute(select(GameEvent).where(
         GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request"
@@ -418,7 +409,6 @@ async def _public_status_roster(session, game, *, include_state: bool = False, f
         raw_name = user.display_name or user.first_name or user.username or "بازیکن"
         name = tg_mention(user.telegram_id, raw_name)
         marks = []
-        if user.id == leader_id: marks.append("👑")
         if player.alive:
             if player.silence_until_round is not None and emoji_settings.get("silence", True): marks.append("🔇")
             if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True): marks.append("➕")
@@ -426,7 +416,7 @@ async def _public_status_roster(session, game, *, include_state: bool = False, f
         else:
             if player.exit_type == "death" and emoji_settings.get("death", True): marks.append("💀")
             elif player.exit_type == "kick" and emoji_settings.get("kick", True): marks.append("⛔")
-            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True): marks.append("🩸")
+            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True): marks.append("🔪")
             elif player.exit_type == "vote": marks.append("🗳")
             elif player.exit_type == "faceoff": marks.append("🎭")
         if user.id in challenge_ids and emoji_settings.get("challenge", True): marks.append("🤏🏻")
