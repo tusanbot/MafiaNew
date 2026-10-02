@@ -43,6 +43,7 @@ from app.repositories.users import UserRepository
 from app.services.game import create_game
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round, _event
+from app.services.stats import leaderboard, rank_for_score
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
@@ -885,6 +886,14 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
             return
         game.status = "cancelled"
         game.phase = "finished"
+        try:
+            import app.handlers.gameplay as gameplay_module
+            for task_map in (gameplay_module._challenge_tasks, gameplay_module._turn_tasks, gameplay_module._turn_live_tasks):
+                task = task_map.pop(game.game_key, None)
+                if task and not task.done():
+                    task.cancel()
+        except Exception:
+            pass
         from datetime import datetime, timezone
         game.finished_at = datetime.now(timezone.utc)
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
@@ -1052,7 +1061,7 @@ async def game_result_back(callback: CallbackQuery) -> None:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         winner_event = await session.scalar(select(GameEvent).where(
-            GameEvent.game_id == game.id, GameEvent.event_type == "game_finished"
+            GameEvent.game_id == game.id, GameEvent.event_type.in_(["game_finished", "stats_recorded"])
         ).order_by(GameEvent.id.desc()))
         winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
         await callback.message.edit_text(
@@ -1077,13 +1086,56 @@ async def game_result_register(callback: CallbackQuery) -> None:
         if not exists:
             session.add(GameEvent(
                 game_id=game.id,
-                actor_user_id=None,
+                actor_user_id=(await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id if callback.from_user else None,
                 event_type="game_registered",
                 payload=json.dumps({"registered": True}, ensure_ascii=False),
             ))
             await session.commit()
         await callback.message.edit_reply_markup(reply_markup=None)
     await callback.answer("بازی ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:history:"))
+async def game_result_history(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        result = await session.execute(
+            select(Game, Scenario).join(Scenario, Scenario.id == Game.scenario_id)
+            .where(Game.group_id == game.group_id).order_by(desc(Game.id)).limit(10)
+        )
+        rows = list(result.all())
+        lines = ["📚 <b>تاریخچه بازی‌ها</b>", ""]
+        for item, scenario in rows:
+            lines.append(f"#{item.id} — {escape(scenario.name_fa)} — {item.status}")
+        await callback.message.edit_text("\n".join(lines), reply_markup=game_result_back_keyboard(game.id), parse_mode="HTML")
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:ranking:"))
+async def game_result_ranking(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        rows = await leaderboard(session, 10)
+        lines = ["🏆 <b>رتبه‌بندی بازیکنان</b>", ""]
+        if not rows:
+            lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
+        else:
+            for i, user in enumerate(rows, 1):
+                lines.append(f"{i}. {tg_name(user.display_name or user.first_name or 'بازیکن')} — {user.score} امتیاز — {rank_for_score(user.score)}")
+        await callback.message.edit_text("\n".join(lines), reply_markup=game_result_back_keyboard(game.id), parse_mode="HTML")
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("gameresult:stats:"))
