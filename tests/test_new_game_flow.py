@@ -188,3 +188,37 @@ def test_night_control_keyboard_has_locks_and_start_day() -> None:
     assert "night:lock:abc:night_lock" in callbacks
     assert "night:lock:abc:chat_lock" in callbacks
     assert "night:start_day:abc" in callbacks
+
+
+def test_voting_setup_defaults_and_modes() -> None:
+    from app.handlers.keyboards import voting_setup_keyboard, voting_mode_keyboard
+    callbacks = _callbacks(voting_setup_keyboard("abc"))
+    assert "vote:start1:abc" in callbacks
+    mode_callbacks = _callbacks(voting_mode_keyboard("abc", "manual"))
+    assert "votingset:set_mode:abc:manual" in mode_callbacks
+    assert "votingset:set_mode:abc:auto" in mode_callbacks
+
+
+def test_vote_target_keyboard_only_has_vote_action() -> None:
+    from app.handlers.keyboards import vote1_target_keyboard
+    callbacks = _callbacks(vote1_target_keyboard("abc", 42))
+    assert callbacks == ["vote1:cast:abc:42"]
+
+
+def test_defense_selection_and_post_vote_controls() -> None:
+    from app.handlers.keyboards import defense_selection_keyboard, vote2_result_keyboard
+    class Player:
+        alive = True
+        seat = 1
+    class User:
+        id = 42
+        display_name = "مهدی"
+        first_name = "مهدی"
+        username = None
+        telegram_id = 10042
+    callbacks = _callbacks(defense_selection_keyboard("abc", [(Player(), User())], {42}))
+    assert "vote2:select:abc:42" in callbacks
+    assert "vote2:start:abc" in callbacks
+    result_callbacks = _callbacks(vote2_result_keyboard("abc"))
+    assert "day:night:abc" in result_callbacks
+    assert "day:finish:abc" in result_callbacks
