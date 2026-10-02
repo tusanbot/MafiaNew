@@ -483,7 +483,8 @@ async def round_start_handler(callback: CallbackQuery) -> None:
 
         group = await session.get(Group, game.group_id)
         if group:
-            from app.handlers.gameplay import update_round_roster, _send_turn_message, _schedule_auto_next
+            from app.handlers.gameplay import update_round_roster, update_main_roster, _send_turn_message, _schedule_auto_next
+            await update_main_roster(callback.bot, session, game, group.telegram_id)
             await update_round_roster(callback.bot, session, game, group.telegram_id)
             if turn:
                 await _send_turn_message(callback.bot, session, game, group.telegram_id, turn)
@@ -508,9 +509,15 @@ async def lobby_game_management(callback: CallbackQuery) -> None:
             await callback.answer("این بخش فقط برای مدیران گروه است.", show_alert=True)
             return
         from app.handlers.keyboards import active_game_menu
+        waiting = game.status == "waiting"
         await callback.message.edit_text(
             f"مدیریت بازی فعال\nگروه: {group.title}",
-            reply_markup=active_game_menu(group.id),
+            reply_markup=active_game_menu(
+                group.id,
+                back_callback=f"groupmgmt:select:games:{group.id}",
+                game_key=game.game_key,
+                lobby_editable=waiting,
+            ),
         )
     await callback.answer()
 
