@@ -8,10 +8,12 @@ from app.db.session import engine
 from app.handlers import register_handlers
 from app.health import app as health_app
 from app.logging import configure_logging
+from app.services.rich_message import install_rich_message_transport
 
 async def run_bot() -> None:
     settings = get_settings()
     bot = Bot(settings.bot_token)
+    install_rich_message_transport()
     dispatcher = Dispatcher()
     register_handlers(dispatcher)
     try:
