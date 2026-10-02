@@ -1367,6 +1367,87 @@ async def vote2_next_handler(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:private:voter:"))
+async def vote2_private_voter_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 5 or not callback.from_user:
+        return
+    key, voter_id = parts[3], int(parts[4])
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده.", show_alert=True)
+            return
+        state = await _latest_vote_state(session, game.id)
+        if not state or state.get("phase") != "vote2" or state.get("status") != "active":
+            await callback.answer("رای دوم فعال نیست.", show_alert=True)
+            return
+        candidates = []
+        for uid in state.get("queue", []):
+            user = await session.get(User, int(uid))
+            if user:
+                candidates.append((int(uid), user.display_name or user.first_name or "بازیکن"))
+        await callback.message.edit_text(
+            f"🗳 رأی برای {tg_mention((await session.get(User, voter_id)).telegram_id, (await session.get(User, voter_id)).display_name or (await session.get(User, voter_id)).first_name or 'بازیکن')}",
+            reply_markup=vote2_private_targets_keyboard(key, voter_id, candidates),
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:private:cast:"))
+async def vote2_private_cast_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 6 or not callback.from_user:
+        return
+    key, voter_id, target_id = parts[3], int(parts[4]), int(parts[5])
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده.", show_alert=True)
+            return
+        try:
+            voter = await session.get(User, voter_id)
+            if not voter:
+                raise ValueError("رأی‌دهنده پیدا نشد.")
+            await cast_vote_phase(session, game, actor, target_id, "vote2", voter_id=voter_id)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        await callback.message.edit_text("✅ رای این بازیکن ثبت شد.")
+    await callback.answer("رای ثبت شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:private:panel:"))
+async def vote2_private_panel_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 3)[3]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده.", show_alert=True)
+            return
+        state = await _latest_vote_state(session, game.id)
+        if not state:
+            await callback.answer("رای دوم فعال نیست.", show_alert=True)
+            return
+        voters = []
+        for uid in state.get("rules", {}).get("eligible_voter_ids", []):
+            user = await session.get(User, int(uid))
+            if user:
+                voters.append((int(uid), user.display_name or user.first_name or "بازیکن"))
+        voted = {int(v.voter_user_id) for v, _ in await _vote_records_for_phase(session, game, int(state["round_no"]), "vote2")}
+        await callback.message.edit_text(
+            "🗳 رای دوم مخفی\n\nرأی‌دهنده را انتخاب کنید:",
+            reply_markup=vote2_private_voters_keyboard(key, voters, voted),
+        )
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:cast:"))
 async def vote2_cast_handler(callback: CallbackQuery):
     parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
