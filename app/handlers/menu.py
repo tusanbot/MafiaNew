@@ -715,7 +715,7 @@ async def game_features(callback: CallbackQuery) -> None:
                 game.turn_seconds,
                 game.challenge_seconds,
                 game.extra_challenge_seconds,
-                back_callback=f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
+                back_callback=f"gameadmin:lobby:{game.game_key}" if game.status == "waiting" or callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
             ),
         )
     await callback.answer()
