@@ -11,10 +11,9 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="مدیریت بازی فعال", callback_data="menu:active_game"))
     builder.row(InlineKeyboardButton(text="مدیریت گروه", callback_data="menu:group_management"))
-    builder.row(
-        InlineKeyboardButton(text="سناریوها", callback_data="menu:scenarios"),
-        InlineKeyboardButton(text="تنظیمات ربات", callback_data="menu:bot_settings"),
-    )
+    if show_admin:
+        builder.row(InlineKeyboardButton(text="سناریوها", callback_data="menu:scenarios"))
+    builder.row(InlineKeyboardButton(text="تنظیمات ربات", callback_data="menu:bot_settings"))
     builder.row(
         InlineKeyboardButton(text="پروفایل", callback_data="menu:profile"),
         InlineKeyboardButton(text="رتبه بندی", callback_data="menu:ranking"),
