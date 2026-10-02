@@ -675,23 +675,18 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
-            if game.auto_play:
-                try:
-                    await start_voting(session, game)
-                    await callback.bot.send_message(
-                        chat_id,
-                        "🗳 رأی‌گیری دور شروع شد.",
-                        reply_markup=vote_keyboard(game.game_key, await alive_players(session, game.id)),
-                    )
-                except ValueError as exc:
-                    await callback.answer(str(exc), show_alert=True)
-                    return
-            else:
-                await callback.bot.send_message(
-                    chat_id,
-                    "🗳 نوبت‌های این دور تمام شد.",
-                    reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
-                )
+            await callback.bot.send_message(
+                chat_id,
+                "🗳 نوبت‌های این دور تمام شد.",
+                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+            )
+        elif result["kind"] == "defense":
+            new_turn = await current_turn(session, game.id)
+            if new_turn:
+                await _send_defense_message(callback.bot, session, game, chat_id, int(new_turn["user_id"]))
+        elif result["kind"] == "voting2":
+            await _vote_target_message(callback.bot, session, game, chat_id)
+            _vote_tasks[f"vote2:{game.game_key}"] = asyncio.create_task(_vote2_timer(callback.bot, game.game_key, chat_id))
         else:
             new_turn = await current_turn(session, game.id)
             if new_turn:
