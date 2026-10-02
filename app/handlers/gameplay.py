@@ -1131,6 +1131,27 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
         _vote_tasks.pop(f"vote2:{game_key}", None)
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:next:"))
+async def vote2_next_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند رای بعدی را شروع کند.", show_alert=True)
+            return
+        task = _vote_tasks.pop(f"vote2:{key}", None)
+        if task:
+            task.cancel()
+        result = await advance_vote2(session, game)
+        await _finish_vote_message(callback.bot, session, game, next_button=True, final=result["finished"])
+        if not result["finished"]:
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:cast:"))
 async def vote2_cast_handler(callback: CallbackQuery):
     parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
@@ -1148,7 +1169,11 @@ async def vote2_finish_handler(callback: CallbackQuery):
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
-        await finish_vote2(session, game)
-        await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
-        await callback.message.answer("🗳 رای گیری دوم تمام شد.")
+        result = await advance_vote2(session, game)
+        if result["finished"]:
+            await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
+            await callback.message.answer("🗳 رای گیری دوم تمام شد.")
+        else:
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[key] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
     await callback.answer()
