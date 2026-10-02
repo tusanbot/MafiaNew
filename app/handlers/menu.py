@@ -196,7 +196,7 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
             lines.extend(f"{i}. {g.title or g.telegram_id} — {'فعال' if g.is_active else 'غیرفعال'}" for i, g in enumerate(rows, 1))
             await callback.message.edit_text("\n".join(lines) if rows else "هنوز گروهی ثبت نشده است.", reply_markup=admin_panel_menu())
         elif action == "scenarios":
-            scenarios = (await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all()
+            scenarios = (await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all()
             await callback.message.edit_text("🎭 مدیریت سناریوها\n\nوضعیت هر سناریو را انتخاب کنید.", reply_markup=admin_scenario_keyboard(scenarios))
         elif action == "scenario_toggle":
             pass
@@ -223,7 +223,7 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
                 return
             scenario.enabled = not scenario.enabled
             await session.commit()
-            scenarios = (await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all()
+            scenarios = (await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all()
             await callback.message.edit_text("🎭 مدیریت سناریوها\n\nوضعیت هر سناریو را انتخاب کنید.", reply_markup=admin_scenario_keyboard(scenarios))
         else:
             await callback.answer("بخش مدیریت ناشناخته است.", show_alert=True)
@@ -1305,7 +1305,7 @@ async def new_game_set_scenario(callback: CallbackQuery) -> None:
             return
         draft = await _ensure_draft(session, group, callback.from_user.id)
         scenario = await session.get(Scenario, scenario_id)
-        if not draft or not scenario or not scenario.enabled:
+        if not draft or not scenario or not scenario.enabled or scenario.key == "classic":
             await callback.answer("سناریو قابل انتخاب نیست.", show_alert=True)
             return
         draft.scenario_id = scenario.id
@@ -1893,7 +1893,7 @@ async def scenario_edit_list(callback: CallbackQuery) -> None:
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
-        scenarios = list((await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all())
+        scenarios = list((await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all())
     await callback.message.edit_text("✏️ سناریوی موردنظر را انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "edit"))
     await callback.answer()
 
@@ -1903,7 +1903,7 @@ async def scenario_delete_list(callback: CallbackQuery) -> None:
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
-        scenarios = list((await session.execute(select(Scenario).order_by(Scenario.id))).scalars().all())
+        scenarios = list((await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all())
     await callback.message.edit_text("🗑 سناریوی موردنظر را برای حذف انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "delete"))
     await callback.answer()
 
