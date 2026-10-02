@@ -129,6 +129,16 @@ async def apply_pending_status_actions(session, game, round_no: int | None = Non
             if target_user:
                 target_user.score -= penalty
             if target.warning_count >= 3:
+                # Automatic disciplinary vote loss is a penalty, not a reduction
+                # of the electorate denominator. The voting engine records it
+                # separately and removes only the ability to cast a ballot.
+                await _event(session, game, "vote_right_revoked", {
+                    "round_no": round_no,
+                    "user_id": target_id,
+                    "active": True,
+                    "reason": "automatic_warning",
+                    "warning_count": target.warning_count,
+                })
                 if game.auto_silence_warnings and target.warning_count >= 4:
                     target.silence_until_round = round_no + 1
                 if game.auto_kick_warnings and target.warning_count >= 5:
