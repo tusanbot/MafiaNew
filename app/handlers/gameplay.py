@@ -869,7 +869,7 @@ async def day_night_handler(callback: CallbackQuery):
             if not turn or turn.get("status") != "finished":
                 await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
                 return
-        elif game.phase != "vote2_complete":
+        elif game.phase not in {"vote1_complete", "vote2_complete"}:
             await callback.answer("شروع فاز شب در این مرحله امکان‌پذیر نیست.", show_alert=True)
             return
         game.phase = "night"
