@@ -588,34 +588,27 @@ async def next_turn_handler(callback: CallbackQuery):
         if not chat_id:
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
         if result["kind"] == "finished_day":
             old_task = _turn_tasks.pop(game.game_key, None)
             if old_task:
                 old_task.cancel()
-
-            await callback.bot.send_message(
-                chat_id,
-                "نوبت‌های اصلی این دور تمام شد. اکنون رأی‌گیری را می‌توانید شروع کنید.",
+            await callback.message.edit_text(
+                "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
                 reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
             )
         else:
             user = await session.get(User, result["user_id"])
             name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-            kind = "چالش" if result["kind"] == "challenge" else ("ترن اضافه" if result["kind"] == "extra" else "اصلی")
-            msg = await callback.bot.send_message(
-                chat_id,
-                f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری",
+            text = f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری"
+            await callback.message.edit_text(
+                text,
                 reply_markup=day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled,
                     game.turn_color_enabled, game.turn_color, game.challenge_color,
                     True, result["kind"] not in {"extra", "challenge"}
                 ),
             )
-            await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
+            await _schedule_auto_next(callback.bot, game.game_key, chat_id, callback.message.message_id)
         await callback.answer("نکست ترن انجام شد.")
 
 
