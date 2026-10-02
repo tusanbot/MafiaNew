@@ -167,6 +167,7 @@ def game_features_menu(
     challenge_seconds: int = 60,
     extra_challenge_seconds: int = 60,
     back_callback: str | None = None,
+    game_key: str | None = None,
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     challenge_label = "آزاد" if challenge_mode == "free" and challenge_enabled else "محدود" if challenge_enabled else "غیرفعال"
@@ -206,6 +207,11 @@ def game_features_menu(
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
     builder.row(InlineKeyboardButton(text="لغو واقعی بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
     builder.row(InlineKeyboardButton(text="مدیریت اموجی‌ها", callback_data=f"gameadmin:emoji:{group_id}"))
+    if game_key:
+        builder.row(
+            InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}"),
+            InlineKeyboardButton(text="🎙 تغییر گرداننده", callback_data=f"gameadmin:host:{game_key}"),
+        )
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
     return builder.as_markup()
 
@@ -340,7 +346,7 @@ def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup
             callback_data=f"scenario_admin:{action}:{scenario.id}",
         )
     if scenarios:
-        builder.adjust(2)
+        builder.adjust(3)
     _back(builder, "menu:scenarios")
     return builder.as_markup()
 
