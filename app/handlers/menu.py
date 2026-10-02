@@ -406,9 +406,10 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data == "menu:root")
 async def menu_root(callback: CallbackQuery) -> None:
-    if not callback.message:
+    if not callback.message or not callback.from_user:
         return
-    await callback.message.edit_text("منوی اصلی", reply_markup=main_menu())
+    show_admin = callback.message.chat.type == "private" and callback.from_user.id in get_settings().admin_id_set
+    await callback.message.edit_text("منوی اصلی", reply_markup=main_menu(show_admin=show_admin))
     await callback.answer()
 
 
