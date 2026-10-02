@@ -335,10 +335,12 @@ def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
         state = "فعال" if scenario.enabled else "غیرفعال"
-        builder.row(InlineKeyboardButton(
+        builder.button(
             text=f"{scenario.name_fa} — {state}",
             callback_data=f"scenario_admin:{action}:{scenario.id}",
-        ))
+        )
+    if scenarios:
+        builder.adjust(2)
     _back(builder, "menu:scenarios")
     return builder.as_markup()
 
