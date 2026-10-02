@@ -218,7 +218,7 @@ def test_defense_selection_and_post_vote_controls() -> None:
         telegram_id = 10042
     callbacks = _callbacks(defense_selection_keyboard("abc", [(Player(), User())], {42}))
     assert "vote2:select:abc:42" in callbacks
-    assert "vote2:start:abc" in callbacks
+    assert "vote2:begin:abc" in callbacks
     result_callbacks = _callbacks(vote2_result_keyboard("abc"))
     assert "day:night:abc" in result_callbacks
     assert "day:finish:abc" in result_callbacks
