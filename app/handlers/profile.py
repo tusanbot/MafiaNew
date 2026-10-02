@@ -7,7 +7,7 @@ import os
 import aiohttp
 from sqlalchemy import func, select
 
-from app.db.models import GroupSettings, Role, User, UserRoleStat
+from app.db.models import Group, GroupSettings, Role, User, UserRoleStat
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu, profile_menu
 from app.services.profile import sync_telegram_user
@@ -164,17 +164,18 @@ async def _send_rich_ranking(target, rows, kind: str, *, edit: bool = False, cus
     fully native to aiogram.
     """
     bot = target.bot if hasattr(target, "bot") else target
+    message = target.message if hasattr(target, "message") and target.message else target
     token = bot.token
     method = "editMessageText" if edit else "sendRichMessage"
     payload = {
-        "chat_id": int(target.chat.id),
+        "chat_id": int(message.chat.id),
         "rich_message": {
             "html": await _rich_ranking_html(rows, kind, custom_emoji=custom_emoji),
             "is_rtl": True,
         },
     }
     if edit:
-        payload["message_id"] = int(target.message_id)
+        payload["message_id"] = int(message.message_id)
 
     url = f"https://api.telegram.org/bot{token}/{method}"
     timeout = aiohttp.ClientTimeout(total=15)
@@ -195,13 +196,21 @@ async def _render_ranking(target, session, kind: str):
     # immediately resend/edit the same ranking with ordinary emoji.
     custom_emoji_enabled = False
     if isinstance(target, Message) and target.chat.type in {"group", "supergroup"}:
-        group_settings = await session.scalar(
-            select(GroupSettings).where(GroupSettings.group_id == target.chat.id)
+        group_id = await session.scalar(
+            select(Group.id).where(Group.telegram_id == target.chat.id)
+        )
+        group_settings = (
+            await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group_id))
+            if group_id is not None else None
         )
         custom_emoji_enabled = bool(group_settings and group_settings.custom_emoji)
     elif hasattr(target, "message") and target.message and target.message.chat.type in {"group", "supergroup"}:
-        group_settings = await session.scalar(
-            select(GroupSettings).where(GroupSettings.group_id == target.message.chat.id)
+        group_id = await session.scalar(
+            select(Group.id).where(Group.telegram_id == target.message.chat.id)
+        )
+        group_settings = (
+            await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group_id))
+            if group_id is not None else None
         )
         custom_emoji_enabled = bool(group_settings and group_settings.custom_emoji)
 
