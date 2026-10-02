@@ -212,9 +212,11 @@ async def text_start_round(message: Message, state: FSMContext) -> None:
             return
         from app.handlers.gameplay import (
             update_round_roster,
+            update_main_roster,
             _send_turn_message,
             _schedule_auto_next,
         )
+        await update_main_roster(message.bot, session, game, message.chat.id)
         await update_round_roster(message.bot, session, game, message.chat.id)
         turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(
             session, game.id
@@ -289,8 +291,9 @@ def _format_duration(seconds: int) -> str:
 
 async def _refresh_roster(bot, session, game, chat_id: int | None = None):
     try:
-        from app.handlers.gameplay import update_round_roster
+        from app.handlers.gameplay import update_round_roster, update_main_roster
         if chat_id:
+            await update_main_roster(bot, session, game, chat_id)
             await update_round_roster(bot, session, game, chat_id)
     except Exception:
         pass
