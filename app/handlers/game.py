@@ -74,6 +74,19 @@ async def group_management_from_lobby(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("game:return_lobby:"))
+async def return_to_lobby(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        await _render(callback, session, game, (await UserRepository(session).get_by_telegram_id(callback.from_user.id)).id)
+    await callback.answer()
+
 @router.callback_query(lambda c: c.data and c.data.startswith("game:join:"))
 async def join_game(callback: CallbackQuery) -> None:
     game_key = callback.data.split(":", 2)[2]
