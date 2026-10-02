@@ -198,7 +198,7 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     kind = str(turn.get("kind", "main"))
     requests = await pending_challenge_requests(session, game) if kind == "main" else []
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
-    text = (f"🗣 نوبت صحبت {tg_name(raw_name)}\n\n"
+    text = (f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n"
             f"⏱ {_duration_text(_turn_duration(game, kind))}{request_section}")
     msg = await bot.send_message(
         chat_id, text,
