@@ -1,6 +1,6 @@
 # Mafia Bot
 
-بازنویسی کامل ربات مافیا با Python، aiogram 3 و معماری ماژولار، با هدف اجرای پایدار روی Railway.
+ربات بازی مافیا با Python، aiogram 3 و معماری ماژولار، با هدف اجرای پایدار روی Railway.
 
 ## اصول معماری
 - Core بازی مستقل از Telegram و Runtime
@@ -16,3 +16,5 @@
 ## Railway
 Start command: `python -m app`
 متغیرهای اصلی در `.env.example` مشخص شده‌اند. توکن داخل Git ذخیره نشود.
+
+<!-- sync-check: 2026-10-02 -->
