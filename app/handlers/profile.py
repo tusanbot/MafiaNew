@@ -77,7 +77,7 @@ async def profile_handler(message: Message) -> None:
         await message.answer("👤 پروفایل شما\n\nبخش موردنظر را انتخاب کنید.", reply_markup=profile_menu())
 
 @router.callback_query(lambda c: c.data == "menu:profile")
-async def profile_menu(callback: CallbackQuery) -> None:
+async def profile_menu_handler(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     async with session_factory() as session:
