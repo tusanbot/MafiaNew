@@ -423,6 +423,25 @@ async def menu_group_management(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "menu:active_game")
+async def menu_active_game(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    async with session_factory() as session:
+        groups = await _manageable_groups(session, callback.bot, callback.from_user.id)
+        if not groups:
+            await callback.message.edit_text(
+                "هیچ گروه فعالی پیدا نشد که هم شما مدیر آن باشید و هم ربات در آن فعال باشد.",
+                reply_markup=main_menu(),
+            )
+        else:
+            await callback.message.edit_text(
+                "گروه موردنظر را برای مدیریت بازی فعال انتخاب کنید:",
+                reply_markup=group_list_keyboard(groups, "active"),
+            )
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data == "groupmgmt:games")
 async def group_management_games(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -483,6 +502,24 @@ async def select_group(callback: CallbackQuery) -> None:
                 f"قفل‌های گروه «{group.title or group.telegram_id}»",
                 reply_markup=group_lock_keyboard(group.id, settings),
             )
+        elif purpose == "active":
+            game = await GameRepository.get_active(session, group.id)
+            if not game:
+                await callback.message.edit_text(
+                    f"گروه: {group.title or group.telegram_id}\n\nدر حال حاضر بازی فعالی وجود ندارد.",
+                    reply_markup=group_management_menu(),
+                )
+            else:
+                scenario = await session.get(Scenario, game.scenario_id)
+                await callback.message.edit_text(
+                    f"مدیریت بازی فعال\nگروه: {group.title or group.telegram_id}\n"
+                    f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
+                    f"وضعیت: {game.status}\nمرحله: {game.phase}",
+                    reply_markup=active_game_menu(
+                        group.id,
+                        f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
+                    ),
+                )
         else:
             await callback.message.edit_text(
                 f"گروه: {group.title or group.telegram_id}\n\nبخش موردنظر را انتخاب کنید.",
@@ -1540,9 +1577,15 @@ async def menu_profile(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data == "menu:scenarios")
 async def menu_scenarios(callback: CallbackQuery) -> None:
-    if not callback.message:
+    if not callback.message or not callback.from_user:
         return
-    await callback.message.edit_text("🎭 مدیریت سناریوها\n\nایجاد، ویرایش یا حذف سناریوهای ذخیره‌شده در دیتابیس.", reply_markup=scenario_management_menu())
+    if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
+        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "🎭 مدیریت سناریوها\n\nایجاد، ویرایش یا حذف سناریوهای ذخیره‌شده در دیتابیس.",
+        reply_markup=scenario_management_menu(),
+    )
     await callback.answer()
 
 
