@@ -205,7 +205,7 @@ def game_features_menu(
         callback_data=f"gameadmin:time:{group_id}:extra_challenge",
     ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
-    builder.row(InlineKeyboardButton(text="لغو واقعی بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
     builder.row(InlineKeyboardButton(text="مدیریت اموجی‌ها", callback_data=f"gameadmin:emoji:{group_id}"))
     if game_key:
         builder.row(
@@ -284,12 +284,20 @@ def finish_game_confirm_keyboard(group_id: int, winner: str) -> InlineKeyboardMa
 
 def game_result_keyboard(group_id: int, game_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"groupgame:history:{group_id}"))
     builder.row(
+        InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"gameresult:history:{game_id}"),
         InlineKeyboardButton(text="آمار", callback_data=f"gameresult:stats:{game_id}"),
-        InlineKeyboardButton(text="رتبه‌بندی", callback_data="ranking:players"),
     )
-    builder.row(InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"))
+    builder.row(
+        InlineKeyboardButton(text="رتبه‌بندی", callback_data=f"gameresult:ranking:{game_id}"),
+        InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"),
+    )
+    builder.row(InlineKeyboardButton(text="📝 ثبت بازی", callback_data=f"gameresult:register:{game_id}"))
+    return builder.as_markup()
+
+def game_result_back_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به نتیجه بازی", callback_data=f"gameresult:back:{game_id}"))
     return builder.as_markup()
 
 
