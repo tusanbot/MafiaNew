@@ -720,6 +720,10 @@ async def resolve_vote2(session, game):
             if len(leaders) == 1:
                 eliminated = leaders
                 result_type = "highest_votes"
+            elif leaders and str(rules.get("vote2_tie_policy") or "no_elimination") == "random":
+                import secrets
+                eliminated = [secrets.choice(leaders)]
+                result_type = "tie_random"
             else:
                 result_type = "tie"
     for uid in eliminated:
