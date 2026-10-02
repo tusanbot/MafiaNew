@@ -958,7 +958,7 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         lines = [f"🏁 <b>پایان بازی</b> — {labels.get(winner, winner)}", ""]
         for player, user, role in rows.all():
             state = "زنده" if player.alive else player.exit_type or "حذف‌شده"
-            lines.append(f"\u200f{player.seat}. {tg_mention(user.telegram_id, user.display_name or user.first_name)} — {role.name_fa if role else "بدون نقش"} — {state}")
+            lines.append(f"\u200f{player.seat}. {tg_mention(user.telegram_id, user.display_name or user.first_name)} — {role.name_fa if role else 'بدون نقش'} — {state}")
         await callback.message.edit_text("\n".join(lines), reply_markup=game_result_keyboard(group.id, game.id), parse_mode="HTML")
     await callback.answer("نتیجه بازی ثبت شد.")
 
