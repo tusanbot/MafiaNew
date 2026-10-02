@@ -45,6 +45,7 @@ from app.services.game import create_game
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round, _event
 from app.services.stats import leaderboard, rank_for_score
+from app.services.rich_message import edit_rich_message
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
@@ -1024,11 +1025,27 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        await callback.message.edit_text(
-            await _game_result_text(session, game, winner),
-            reply_markup=game_result_keyboard(group.id, game.id),
-            parse_mode="HTML",
+        result_html = await _game_result_text(session, game, winner)
+        result_html = (
+            "<h2>🏁 نتیجه نهایی بازی</h2>"
+            "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
+            "<hr/>"
+            + result_html.replace("\\n", "<br/>")
         )
+        try:
+            await edit_rich_message(
+                callback.bot,
+                callback.message.chat.id,
+                callback.message.message_id,
+                result_html,
+                reply_markup=game_result_keyboard(group.id, game.id),
+            )
+        except Exception:
+            await callback.message.edit_text(
+                await _game_result_text(session, game, winner),
+                reply_markup=game_result_keyboard(group.id, game.id),
+                parse_mode="HTML",
+            )
     await callback.answer("نتیجه بازی ثبت شد.")
 
 
@@ -1116,11 +1133,27 @@ async def game_result_back(callback: CallbackQuery) -> None:
             GameEvent.game_id == game.id, GameEvent.event_type.in_(["game_finished", "stats_recorded"])
         ).order_by(GameEvent.id.desc()))
         winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
-        await callback.message.edit_text(
-            await _game_result_text(session, game, winner),
-            reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
-            parse_mode="HTML",
+        result_html = await _game_result_text(session, game, winner)
+        result_html = (
+            "<h2>🏁 نتیجه نهایی بازی</h2>"
+            "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
+            "<hr/>"
+            + result_html.replace("\\n", "<br/>")
         )
+        try:
+            await edit_rich_message(
+                callback.bot,
+                callback.message.chat.id,
+                callback.message.message_id,
+                result_html,
+                reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
+            )
+        except Exception:
+            await callback.message.edit_text(
+                await _game_result_text(session, game, winner),
+                reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
+                parse_mode="HTML",
+            )
     await callback.answer()
 
 
