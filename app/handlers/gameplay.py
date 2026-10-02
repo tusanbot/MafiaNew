@@ -957,7 +957,7 @@ async def night_start_day_handler(callback: CallbackQuery):
         if result["winner"]:
             await send_game_result_notifications(callback.bot, session, game)
             if chat_id:
-                await callback.bot.send_message(chat_id, "🏁 بازی تمام شد.")
+                await callback.bot.send_message(chat_id, "🏁 <b>بازی تموم شد!</b>\n\n🎬 بریم سراغ جمع‌بندی و اعلام نتیجه.", parse_mode="HTML")
             await delete_main_roster(callback.bot, session, game)
             await callback.message.edit_reply_markup(reply_markup=None)
             await callback.answer("🏁 بازی تموم شد!")
@@ -969,7 +969,7 @@ async def night_start_day_handler(callback: CallbackQuery):
 
             await update_round_roster(callback.bot, session, game, chat_id)
             await update_main_roster(callback.bot, session, game, chat_id)
-            await callback.bot.send_message(chat_id, f"🌅 روز جدید شروع شد. دور {await current_round(session, game.id)}")
+            await callback.bot.send_message(chat_id, f"🌅 <b>روز جدید شروع شد!</b>\n\n🎙️ دور <b>{await current_round(session, game.id)}</b> رو شروع می‌کنیم؛ حواستون جمع باشه 👀", parse_mode="HTML")
             await _send_turn_message(callback.bot, session, game, chat_id)
             await _schedule_auto_next(callback.bot, game.game_key, chat_id)
         await callback.message.edit_reply_markup(reply_markup=None)
