@@ -541,6 +541,11 @@ async def advance_defense_turn(session, game):
     state["started_at"] = datetime.now(timezone.utc).isoformat()
     state["status"] = "active"
     await _event(session, game, "vote2_state", state)
+    await _event(session, game, "turn_state", {
+        "round_no": int(state["round_no"]), "kind": "defense",
+        "user_id": queue[idx + 1], "status": "active",
+        "started_at": state["started_at"], "defense_index": idx + 1,
+    })
     await session.commit()
     return {"finished": False, "target_user_id": queue[idx + 1]}
 
