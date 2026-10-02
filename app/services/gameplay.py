@@ -457,6 +457,9 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
 
     rules = state.get("rules") or {}
     eligible_ids = {int(x) for x in rules.get("eligible_voter_ids", [])}
+    current_revoked = await _revoked_vote_ids(session, game.id, round_no)
+    if voter_id in current_revoked:
+        raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
     if voter_id not in eligible_ids:
         if voter_id in {int(x) for x in rules.get("revoked_voter_ids", [])}:
             raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
