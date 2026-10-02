@@ -3,13 +3,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select, func
 
-from app.db.models import Game, GamePlayer, Role, User
+from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, User
 from app.db.session import session_factory
 from app.handlers.keyboards import leader_choice_keyboard, leader_settings_keyboard, main_menu
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import render_lobby
-from app.services.gameplay import choose_leader, start_round, current_round, next_turn, _group_chat_id, _duration_text, _turn_duration, _schedule_auto_next, alive_players
+from app.services.gameplay import choose_leader, start_round, current_round, next_turn, alive_players
 from app.services.profile import sync_telegram_user
 from app.services.stats import leaderboard, rank_for_score, rank_progress
 import json
@@ -257,10 +257,9 @@ async def _reply_target(message: Message, session, game):
     return (player, target), None
 
 
-async def _refresh_roster(bot, session, game):
+\n\ndef _turn_duration_local(game, kind: str) -> int:\n    if kind == "challenge":\n        return int(getattr(game, "challenge_seconds", 60) or 60)\n    if kind == "extra":\n        return int(getattr(game, "extra_challenge_seconds", 60) or 60)\n    return int(getattr(game, "turn_seconds", 120) or 120)\n\n\ndef _format_duration(seconds: int) -> str:\n    minutes, remainder = divmod(max(0, int(seconds)), 60)\n    return f"{minutes:02d}:{remainder:02d}"\nasync def _refresh_roster(bot, session, game, chat_id: int | None = None):
     try:
         from app.handlers.gameplay import update_round_roster
-        chat_id = await _group_chat_id(session, game)
         if chat_id:
             await update_round_roster(bot, session, game, chat_id)
     except Exception:
@@ -361,7 +360,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         ))
         await session.commit()
         if game.status == "running":
-            await _refresh_roster(message.bot, session, game)
+            await _refresh_roster(message.bot, session, game, message.chat.id)
     await message.answer(response)
 
 
@@ -378,7 +377,7 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
             await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند قفل‌ها را تغییر دهد.")
             return
         user = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
-        group = await session.get(__import__("app.db.models", fromlist=["Group"]).Group, game.group_id)
+        group = await session.get(Group, game.group_id)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
         if not settings:
             settings = GroupSettings(group_id=group.id)
@@ -419,7 +418,7 @@ async def text_next(message: Message, state: FSMContext) -> None:
         except ValueError as exc:
             await message.answer(str(exc))
             return
-        chat_id = await _group_chat_id(session, game)
+        chat_id = message.chat.id
         if result["kind"] == "finished_day":
             await message.bot.send_message(chat_id, "نوبت‌های این دور تمام شد. اکنون رأی‌گیری را شروع کنید.")
         else:
@@ -427,12 +426,13 @@ async def text_next(message: Message, state: FSMContext) -> None:
             name = tg_name(user.display_name or user.first_name if user else "بازیکن")
             msg = await message.bot.send_message(
                 chat_id,
-                f"⏩ نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری",
+                f"⏩ نوبت صحبت {name}\n\n⏱ {_format_duration(_turn_duration_local(game, str(result.get('kind', 'main'))))} فرصت صحبت داری",
                 reply_markup=__import__("app.handlers.keyboards", fromlist=["day_turn_keyboard"]).day_turn_keyboard(
                     game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
                     game.turn_color, game.challenge_color, True, result["kind"] not in {"extra", "challenge"}
                 ),
             )
+            from app.handlers.gameplay import _schedule_auto_next
             await _schedule_auto_next(message.bot, game.game_key, chat_id, msg.message_id)
     await message.answer("⏩ نکست انجام شد.")
 
