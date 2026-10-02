@@ -237,6 +237,8 @@ async def text_cancel_game(message: Message, state: FSMContext) -> None:
             await message.answer("فقط گرداننده می‌تواند بازی را لغو کند.")
             return
         await GameRepository.cancel(session, game)
+        from app.handlers.gameplay import delete_main_roster
+        await delete_main_roster(message.bot, session, game)
     await message.answer("❌ بازی توسط گرداننده لغو شد.")
 
 
