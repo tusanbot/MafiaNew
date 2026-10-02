@@ -1388,8 +1388,12 @@ async def vote2_private_voter_handler(callback: CallbackQuery):
             user = await session.get(User, int(uid))
             if user:
                 candidates.append((int(uid), user.display_name or user.first_name or "بازیکن"))
+        voter = await session.get(User, voter_id)
+        if not voter:
+            await callback.answer("رأی‌دهنده پیدا نشد.", show_alert=True)
+            return
         await callback.message.edit_text(
-            f"🗳 رأی برای {tg_mention((await session.get(User, voter_id)).telegram_id, (await session.get(User, voter_id)).display_name or (await session.get(User, voter_id)).first_name or 'بازیکن')}",
+            f"🗳 رأی برای {tg_mention(voter.telegram_id, voter.display_name or voter.first_name or 'بازیکن')}",
             reply_markup=vote2_private_targets_keyboard(key, voter_id, candidates),
             parse_mode="HTML",
         )
