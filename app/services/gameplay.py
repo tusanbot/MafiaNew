@@ -280,6 +280,298 @@ async def start_voting(session, game):
     await _event(session, game, "phase_changed", {"to": "voting", "round_no": round_no})
     await session.commit()
 
+async def _latest_vote_state(session, game_id: int) -> dict | None:
+    result = await session.execute(
+        select(GameEvent).where(
+            GameEvent.game_id == game_id,
+            GameEvent.event_type == "vote_state",
+        ).order_by(GameEvent.id.desc())
+    )
+    event = result.scalars().first()
+    return _payload(event) if event else None
+
+
+async def _revoked_vote_ids(session, game_id: int, round_no: int) -> set[int]:
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game_id,
+        GameEvent.event_type == "vote_right_revoked",
+    ).order_by(GameEvent.id.desc()))
+    revoked = set()
+    for event in result.scalars():
+        data = _payload(event)
+        if int(data.get("round_no", -1)) != round_no:
+            continue
+        uid = int(data.get("user_id", -1))
+        if data.get("active", True):
+            revoked.add(uid)
+        else:
+            revoked.discard(uid)
+    return revoked
+
+
+async def vote1_start(session, game):
+    if game.phase not in {"day", "vote_setup"}:
+        raise ValueError("الان زمان آماده‌سازی رای گیری نیست.")
+    round_no = await current_round(session, game.id)
+    queue = await _latest_turn_queue(session, game.id, round_no)
+    if not queue:
+        raise ValueError("صف نوبت‌های این دور پیدا نشد.")
+    ordered = [int(uid) for uid in queue.get("queue", [])]
+    alive_ids = {user.id for _, user, _ in await alive_players(session, game.id)}
+    ordered = [uid for uid in ordered if uid in alive_ids]
+    if not ordered:
+        raise ValueError("بازیکن زنده‌ای برای رای گیری وجود ندارد.")
+    game.phase = "voting1"
+    await _event(session, game, "vote_state", {
+        "round_no": round_no,
+        "phase": "vote1",
+        "index": 0,
+        "queue": ordered,
+        "target_user_id": ordered[0],
+        "status": "active",
+        "started_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await _event(session, game, "voting_started", {
+        "round_no": round_no, "phase": "vote1",
+        "pre_delay_seconds": int(game.voting_pre_delay_seconds or 0),
+        "vote_seconds": int(game.vote_seconds or 10),
+        "mode": game.voting_mode,
+    })
+    await session.commit()
+    return ordered[0]
+
+
+async def vote1_current_target(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote1" or state.get("status") != "active":
+        return None
+    return int(state["target_user_id"])
+
+
+async def _vote_records_for_target(session, game, round_no: int, phase: str, target_id: int):
+    result = await session.execute(
+        select(Vote, User).join(User, User.id == Vote.voter_user_id).where(
+            Vote.game_id == game.id,
+            Vote.round_no == round_no,
+            Vote.phase == phase,
+            Vote.target_user_id == target_id,
+        ).order_by(Vote.id.asc())
+    )
+    return list(result.all())
+
+
+async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase: str):
+    if game.status != "running" or game.phase not in {"voting1", "voting2"}:
+        raise ValueError("الان زمان رای گیری نیست.")
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != phase or state.get("status") != "active":
+        raise ValueError("این رای گیری فعال نیست.")
+    current_target = int(state["target_user_id"])
+    if current_target != int(target_user_id):
+        raise ValueError("این بازیکن الان در حال رای گیری نیست.")
+    round_no = int(state["round_no"])
+    player = await session.scalar(select(GamePlayer).where(
+        GamePlayer.game_id == game.id, GamePlayer.user_id == voter.id, GamePlayer.alive.is_(True)
+    ))
+    if not player:
+        raise ValueError("فقط بازیکن زنده می‌تواند رای بدهد.")
+    if voter.id == current_target:
+        raise ValueError("بازیکن مورد رای خودش نمی‌تواند رای بدهد.")
+    if voter.id in await _revoked_vote_ids(session, game.id, round_no):
+        raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
+    existing = await session.scalar(select(Vote).where(
+        Vote.game_id == game.id, Vote.voter_user_id == voter.id,
+        Vote.round_no == round_no, Vote.phase == phase,
+    ))
+    if existing:
+        raise ValueError("رای شما قبلاً ثبت شده است.")
+    now = datetime.now(timezone.utc)
+    session.add(Vote(
+        game_id=game.id, voter_user_id=voter.id, target_user_id=current_target,
+        round_no=round_no, phase=phase, created_at=now,
+    ))
+    await session.flush()
+    records = await _vote_records_for_target(session, game, round_no, phase, current_target)
+    await session.commit()
+    return {
+        "target_user_id": current_target,
+        "records": records,
+        "count": len(records),
+        "voted_at": now,
+    }
+
+
+async def finish_vote1_target(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote1" or state.get("status") != "active":
+        raise ValueError("رای اول فعالی وجود ندارد.")
+    round_no = int(state["round_no"])
+    target_id = int(state["target_user_id"])
+    records = await _vote_records_for_target(session, game, round_no, "vote1", target_id)
+    scenario = await _current_scenario(session, game)
+    threshold = int(getattr(scenario, "vote_defense_threshold", 2) or 2)
+    qualified = len(records) >= threshold
+    state["status"] = "finished"
+    state["finished_at"] = datetime.now(timezone.utc).isoformat()
+    state["vote_count"] = len(records)
+    state["qualified_for_defense"] = qualified
+    await _event(session, game, "vote1_target_finished", {
+        "round_no": round_no, "target_user_id": target_id,
+        "vote_count": len(records), "threshold": threshold, "qualified": qualified,
+    })
+    await session.commit()
+    return {
+        "target_user_id": target_id,
+        "records": records,
+        "count": len(records),
+        "threshold": threshold,
+        "qualified": qualified,
+    }
+
+
+async def advance_vote1(session, game):
+    result = await finish_vote1_target(session, game)
+    state = await _latest_vote_state(session, game.id)
+    queue = list(state.get("queue", []))
+    next_index = int(state.get("index", 0)) + 1
+    if next_index >= len(queue):
+        candidates = []
+        events = await session.execute(select(GameEvent).where(
+            GameEvent.game_id == game.id,
+            GameEvent.event_type == "vote1_target_finished",
+        ).order_by(GameEvent.id.asc()))
+        for event in events.scalars():
+            data = _payload(event)
+            if int(data.get("round_no", -1)) == int(state["round_no"]) and data.get("qualified"):
+                uid = int(data["target_user_id"])
+                if uid not in candidates:
+                    candidates.append(uid)
+        state["phase"] = "vote1_complete"
+        state["status"] = "finished"
+        state["qualified_candidates"] = candidates
+        game.phase = "vote1_complete"
+        await _event(session, game, "vote1_completed", {
+            "round_no": int(state["round_no"]), "qualified_candidates": candidates,
+        })
+        await session.commit()
+        return {"finished": True, "candidates": candidates, "result": result}
+    target = int(queue[next_index])
+    state["index"] = next_index
+    state["target_user_id"] = target
+    state["status"] = "active"
+    state["started_at"] = datetime.now(timezone.utc).isoformat()
+    await _event(session, game, "vote_state", state)
+    await session.commit()
+    return {"finished": False, "target_user_id": target, "result": result}
+
+
+async def toggle_vote2_candidate(session, game, user_id: int):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote1_complete":
+        raise ValueError("مرحله انتخاب دفاع فعال نیست.")
+    candidates = {int(x) for x in state.get("qualified_candidates", [])}
+    if int(user_id) not in candidates:
+        raise ValueError("این بازیکن به حدنصاب دفاع نرسیده است.")
+    selected = {int(x) for x in state.get("defense_candidates", [])}
+    if int(user_id) in selected:
+        selected.remove(int(user_id))
+    else:
+        selected.add(int(user_id))
+    state["defense_candidates"] = list(selected)
+    await _event(session, game, "vote2_candidate_selection", {
+        "round_no": int(state["round_no"]), "user_id": int(user_id),
+        "selected": int(user_id) in selected,
+    })
+    await session.commit()
+    return sorted(selected)
+
+
+async def start_vote2(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote1_complete":
+        raise ValueError("ابتدا باید رای اول تمام شود.")
+    candidates = [int(x) for x in state.get("defense_candidates", [])]
+    if game.voting_mode == "auto" and not candidates:
+        candidates = [int(x) for x in state.get("qualified_candidates", [])]
+    if not candidates:
+        raise ValueError("حداقل یک بازیکن باید برای دفاع انتخاب شود.")
+    round_no = int(state["round_no"])
+    game.phase = "defense"
+    await _event(session, game, "vote2_started", {
+        "round_no": round_no, "candidates": candidates, "selection_mode": game.vote2_selection_mode,
+    })
+    await _event(session, game, "vote2_state", {
+        "round_no": round_no, "phase": "defense",
+        "index": 0, "queue": candidates, "target_user_id": candidates[0],
+        "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+    })
+    await session.commit()
+    return candidates[0]
+
+
+async def advance_defense_turn(session, game):
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "vote2_state"
+    ).order_by(GameEvent.id.desc()))
+    event = result.scalars().first()
+    if not event:
+        raise ValueError("نوبت دفاع پیدا نشد.")
+    state = _payload(event)
+    if state.get("status") != "active":
+        raise ValueError("نوبت دفاع فعال نیست.")
+    state["status"] = "finished"
+    idx = int(state.get("index", 0))
+    queue = [int(x) for x in state.get("queue", [])]
+    if idx + 1 >= len(queue):
+        game.phase = "voting2"
+        await _event(session, game, "vote_state", {
+            "round_no": int(state["round_no"]), "phase": "vote2",
+            "index": 0, "queue": queue, "target_user_id": queue[0],
+            "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+        })
+        await session.commit()
+        return {"finished": True, "target_user_id": queue[0], "candidates": queue}
+    state["index"] = idx + 1
+    state["target_user_id"] = queue[idx + 1]
+    state["started_at"] = datetime.now(timezone.utc).isoformat()
+    state["status"] = "active"
+    await _event(session, game, "vote2_state", state)
+    await session.commit()
+    return {"finished": False, "target_user_id": queue[idx + 1]}
+
+
+async def finish_vote2(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote2" or state.get("status") != "active":
+        raise ValueError("رای دوم فعال نیست.")
+    round_no = int(state["round_no"])
+    target_id = int(state["target_user_id"])
+    records = await _vote_records_for_target(session, game, round_no, "vote2", target_id)
+    state["status"] = "finished"
+    await _event(session, game, "vote2_target_finished", {
+        "round_no": round_no, "target_user_id": target_id, "vote_count": len(records),
+    })
+    queue = [int(x) for x in state.get("queue", [])]
+    idx = int(state.get("index", 0))
+    if idx + 1 < len(queue):
+        next_id = queue[idx + 1]
+        state["index"] = idx + 1
+        state["target_user_id"] = next_id
+        state["started_at"] = datetime.now(timezone.utc).isoformat()
+        state["status"] = "active"
+        await _event(session, game, "vote_state", state)
+        await session.commit()
+        return {"finished": False, "target_user_id": next_id, "records": records}
+    # Final vote2 result is intentionally resolved by the host/game engine later.
+    game.phase = "vote2_complete"
+    state["status"] = "finished"
+    await _event(session, game, "vote2_completed", {
+        "round_no": round_no, "candidates": queue,
+    })
+    await session.commit()
+    return {"finished": True, "candidates": queue, "records": records}
+
+
 async def submit_vote(session, game, voter, target_user_id):
     if game.status != "running" or game.phase != "voting": raise ValueError("الان زمان رأی‌گیری نیست.")
     round_no = await current_round(session, game.id)
