@@ -81,6 +81,138 @@ def _duration_text(seconds: int) -> str:
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
 
+async def _register_turn_message(session, game, *, chat_id: int, message_id: int, turn: dict) -> None:
+    """Persist the public message belonging to this exact turn."""
+    payload = {
+        "round_no": int(turn.get("round_no", 0)),
+        "user_id": int(turn.get("user_id")),
+        "kind": str(turn.get("kind", "main")),
+        "chat_id": int(chat_id),
+        "message_id": int(message_id),
+        "status": "active",
+    }
+    session.add(
+        GameEvent(
+            game_id=game.id,
+            event_type="turn_message",
+            payload=json.dumps(payload, ensure_ascii=False),
+        )
+    )
+    await session.commit()
+
+
+async def _turn_message(session, game, turn: dict | None = None):
+    """Find the public message for the current turn."""
+    turn = turn or await current_turn(session, game.id)
+    if not turn:
+        return None, None
+    result = await session.execute(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "turn_message")
+        .order_by(GameEvent.id.desc())
+    )
+    for event in result.scalars():
+        data = json.loads(event.payload or "{}")
+        if (
+            data.get("status") == "active"
+            and int(data.get("round_no", -1)) == int(turn.get("round_no", -2))
+            and int(data.get("user_id", -1)) == int(turn.get("user_id", -2))
+            and data.get("kind") == str(turn.get("kind", "main"))
+        ):
+            return event, data
+    return None, None
+
+
+async def _finish_turn_message(bot, session, game, turn: dict | None = None) -> None:
+    """Turn messages are immutable history except for their final state."""
+    event, data = await _turn_message(session, game, turn)
+    if not event or not data:
+        return
+    try:
+        user = await session.get(User, int(turn.get("user_id"))) if turn else None
+        name = tg_name(user.display_name or user.first_name if user else "بازیکن")
+        await bot.edit_message_text(
+            f"🗣 نوبت {name} تموم شد",
+            chat_id=int(data["chat_id"]),
+            message_id=int(data["message_id"]),
+            reply_markup=None,
+        )
+    except Exception:
+        pass
+    data["status"] = "finished"
+    event.payload = json.dumps(data, ensure_ascii=False)
+    await session.commit()
+
+
+async def _delete_turn_challenge_messages(bot, session, game, turn: dict | None = None) -> None:
+    """Delete every challenge-request message belonging to the finished turn."""
+    turn = turn or await current_turn(session, game.id)
+    if not turn:
+        return
+    round_no = int(turn.get("round_no", 0))
+    turn_user_id = int(turn.get("user_id", -1))
+    result = await session.execute(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request")
+        .order_by(GameEvent.id.asc())
+    )
+    changed = False
+    for event in result.scalars():
+        data = json.loads(event.payload or "{}")
+        if (
+            int(data.get("round_no", -1)) != round_no
+            or int(data.get("target_turn_user_id", -1)) != turn_user_id
+        ):
+            continue
+        chat_id = data.get("chat_id")
+        message_id = data.get("message_id")
+        if chat_id and message_id:
+            try:
+                await bot.delete_message(chat_id=int(chat_id), message_id=int(message_id))
+            except Exception:
+                pass
+        if data.get("status") not in {"finished", "deleted"}:
+            data["status"] = "deleted"
+            event.payload = json.dumps(data, ensure_ascii=False)
+            changed = True
+    if changed:
+        await session.commit()
+
+
+async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None = None):
+    turn = turn or await current_turn(session, game.id)
+    if not turn:
+        return None
+    user = await session.get(User, int(turn["user_id"]))
+    name = tg_name(user.display_name or user.first_name if user else "بازیکن")
+    kind = str(turn.get("kind", "main"))
+    text = (
+        f"🗣 نوبت صحبت {name}\n\n"
+        f"⏱ {_duration_text(_turn_duration(game, kind))} فرصت صحبت داری"
+    )
+    msg = await bot.send_message(
+        chat_id,
+        text,
+        reply_markup=day_turn_keyboard(
+            game.game_key,
+            True,
+            game.challenge_enabled,
+            game.turn_color_enabled,
+            game.turn_color,
+            game.challenge_color,
+            True,
+            kind not in {"extra", "challenge"},
+        ),
+    )
+    await _register_turn_message(
+        session,
+        game,
+        chat_id=chat_id,
+        message_id=msg.message_id,
+        turn=turn,
+    )
+    return msg
+
 async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, message_id: int | None = None):
     async def runner():
         while True:
@@ -90,7 +222,7 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                 if not game or game.status != "running":
                     return
                 turn = await current_turn(session, game.id)
-                if not turn or turn.get("status") != "active":
+                if not turn or turn.get("status") not in ("active", "paused"):
                     return
                 started_at = turn.get("started_at")
                 if not started_at:
@@ -103,23 +235,12 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     started = started.replace(tzinfo=timezone.utc)
                 elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
                 remaining = max(0, _turn_duration(game, str(turn.get("kind", "main"))) - elapsed)
-                if chat_id and message_id:
-                    user = await session.get(User, int(turn["user_id"]))
-                    name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-                    minutes, seconds = divmod(remaining, 60)
-                    try:
-                        await bot.edit_message_text(
-                            f"🗣 نوبت صحبت {name}\n\n⏱ {minutes:02d}:{seconds:02d} فرصت صحبت داری",
-                            chat_id=chat_id,
-                            message_id=message_id,
-                            reply_markup=_day_keyboard(game, True),
-                        )
-                    except Exception:
-                        pass
                 if remaining > 0:
                     continue
                 if not game.next_auto_enabled:
                     return
+                await _finish_turn_message(bot, session, game, turn)
+                await _delete_turn_challenge_messages(bot, session, game, turn)
                 try:
                     result = await next_turn(session, game)
                 except ValueError:
@@ -128,33 +249,22 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 if result["kind"] == "finished_day":
                     if message_id:
+                        # Keep the finished turn as history; the voting prompt is separate.
                         try:
-                            await bot.edit_message_text(
+                            await bot.send_message(
+                                chat_id,
                                 "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
-                                chat_id=chat_id,
-                                message_id=message_id,
-                                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                                reply_markup=day_keyboard(
+                                    game.game_key,
+                                    await alive_players(session, game.id),
+                                ),
                             )
                         except Exception:
                             pass
                     return
-                user = await session.get(User, result["user_id"])
-                name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-                text = f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری"
-                if message_id:
-                    try:
-                        await bot.edit_message_text(
-                            text,
-                            chat_id=chat_id,
-                            message_id=message_id,
-                            reply_markup=_day_keyboard(game, True),
-                        )
-                        await _schedule_auto_next(bot, game_key, chat_id, message_id)
-                        return
-                    except Exception:
-                        pass
-                msg = await bot.send_message(chat_id, text, reply_markup=_day_keyboard(game, True))
-                await _schedule_auto_next(bot, game_key, chat_id, msg.message_id)
+                new_turn = await current_turn(session, game.id)
+                if new_turn:
+                    await _send_turn_message(bot, session, game, chat_id, new_turn)
                 return
     old = _turn_tasks.get(game_key)
     if old and old is not asyncio.current_task():
@@ -350,12 +460,9 @@ async def night_callback(callback: CallbackQuery):
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
-                    msg = await callback.bot.send_message(
-                        chat_id,
-                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ {int(game.turn_seconds or 120) // 60:02d}:{int(game.turn_seconds or 120) % 60:02d} فرصت صحبت داری",
-                        reply_markup=_day_keyboard(game, True),
-                    )
-                    await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
+                    await callback.bot.send_message(chat_id, text)
+                    await _send_turn_message(callback.bot, session, game, chat_id)
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id)
                 else:
                     await callback.bot.send_message(chat_id, text)
             await callback.answer("شب بررسی شد.")
@@ -388,12 +495,9 @@ async def night_callback(callback: CallbackQuery):
                     turn = await current_turn(session, game.id)
                     speaker = await session.get(User, int(turn["user_id"])) if turn else None
                     name = speaker.display_name or speaker.first_name if speaker else "بازیکن"
-                    msg = await callback.bot.send_message(
-                        chat_id,
-                        f"{text}\n\n{await _public_status_roster(session, game)}\n\n🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(turn.get('kind', 'main'))))} فرصت صحبت داری",
-                        reply_markup=_day_keyboard(game, True),
-                    )
-                    await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
+                    await callback.bot.send_message(chat_id, text)
+                    await _send_turn_message(callback.bot, session, game, chat_id, turn)
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id)
                 else:
                     await callback.bot.send_message(chat_id, text)
         await callback.answer("اقدام شب ثبت شد.")
@@ -433,10 +537,6 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             reply_markup=challenge_requests_keyboard(game.game_key, [(event, request_data)]),
         )
         await attach_challenge_request_message(session, event.id, callback.message.chat.id, msg.message_id)
-        try:
-            await callback.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
         await callback.answer("درخواست چالش در گروه ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
@@ -493,10 +593,19 @@ async def challenge_grant_handler(callback: CallbackQuery):
                     chat_id = await _group_chat_id(timer_session, timer_game)
                     req = await timer_session.get(User, result["requester_id"])
                     if chat_id and req:
-                        await callback.bot.send_message(
-                            chat_id,
-                            f"زمان انتخاب نشد؛ چالش {tg_name(req.display_name or req.first_name)} بعد از صحبت اجرا می‌شود.",
-                        )
+                        req_event = await timer_session.get(GameEvent, result["request_event_id"])
+                        req_data = json.loads(req_event.payload or "{}") if req_event else {}
+                        message_id = req_data.get("message_id")
+                        if message_id:
+                            try:
+                                await callback.bot.edit_message_text(
+                                    f"⚔️ چالش برای {tg_name(req.display_name or req.first_name)} تأیید شد.\n\n"
+                                    "زمان انتخاب نشد؛ بعد از پایان نوبت اجرا می‌شود.",
+                                    chat_id=int(chat_id),
+                                    message_id=int(message_id),
+                                )
+                            except Exception:
+                                pass
         task = asyncio.create_task(auto_after())
         _challenge_tasks[result["request_event_id"]] = task
 
@@ -532,18 +641,37 @@ async def challenge_place_handler(callback: CallbackQuery):
         )
         if chat_id:
             if result["placement"] == "before":
-                msg = await callback.bot.send_message(
-                    chat_id,
-                    f"⚔️ چالش برای {name} اجرا شد.\n\n⏱ {_duration_text(_turn_duration(game, 'challenge'))} فرصت صحبت داری",
-                    reply_markup=day_turn_keyboard(
-                        game.game_key, True, game.challenge_enabled,
-                        game.turn_color_enabled, game.turn_color, game.challenge_color,
-                        True, False
-                    ),
-                )
-                await _schedule_auto_next(callback.bot, game.game_key, chat_id, msg.message_id)
+                challenge_turn = await current_turn(session, game.id)
+                if challenge_turn:
+                    try:
+                        await callback.message.edit_text(
+                            f"⚔️ چالش برای {name} اجرا شد.\n\n"
+                            f"⏱ {_duration_text(_turn_duration(game, 'challenge'))} فرصت صحبت داری",
+                            reply_markup=day_turn_keyboard(
+                                game.game_key, True, game.challenge_enabled,
+                                game.turn_color_enabled, game.turn_color, game.challenge_color,
+                                True, False
+                            ),
+                        )
+                    except Exception:
+                        pass
+                    await _register_turn_message(
+                        session,
+                        game,
+                        chat_id=chat_id,
+                        message_id=callback.message.message_id,
+                        turn=challenge_turn,
+                    )
+                    await _schedule_auto_next(
+                        callback.bot, game.game_key, chat_id, callback.message.message_id
+                    )
             else:
-                await callback.bot.send_message(chat_id, f"چالش {name} بعد از پایان این نوبت اجرا می‌شود.")
+                try:
+                    await callback.message.edit_text(
+                        f"⚔️ چالش برای {name} تأیید شد.\n\nبعد از پایان نوبت اصلی اجرا می‌شود."
+                    )
+                except Exception:
+                    pass
         await callback.answer("زمان چالش ثبت شد.")
 
 
@@ -559,7 +687,9 @@ async def next_turn_handler(callback: CallbackQuery):
         return
     async with session_factory() as session:
         game = await _load(session, key)
-        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        actor = (await session.execute(
+            select(User).where(User.telegram_id == callback.from_user.id)
+        )).scalar_one_or_none()
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
@@ -580,6 +710,8 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
         try:
+            await _finish_turn_message(callback.bot, session, game, turn)
+            await _delete_turn_challenge_messages(callback.bot, session, game, turn)
             result = await next_turn(session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
@@ -589,29 +721,17 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
             return
         if result["kind"] == "finished_day":
-            old_task = _turn_tasks.pop(game.game_key, None)
-            if old_task:
-                old_task.cancel()
-            await callback.message.edit_text(
+            await callback.bot.send_message(
+                chat_id,
                 "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
                 reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
             )
         else:
-            user = await session.get(User, result["user_id"])
-            name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-            text = f"🗣 نوبت صحبت {name}\n\n⏱ {_duration_text(_turn_duration(game, str(result.get('kind', 'main'))))} فرصت صحبت داری"
-            await callback.message.edit_text(
-                text,
-                reply_markup=day_turn_keyboard(
-                    game.game_key, True, game.challenge_enabled,
-                    game.turn_color_enabled, game.turn_color, game.challenge_color,
-                    True, result["kind"] not in {"extra", "challenge"}
-                ),
-            )
-            await _schedule_auto_next(callback.bot, game.game_key, chat_id, callback.message.message_id)
-        await callback.answer("نکست ترن انجام شد.")
-
-
+            new_turn = await current_turn(session, game.id)
+            if new_turn:
+                await _send_turn_message(callback.bot, session, game, chat_id, new_turn)
+                await _schedule_auto_next(callback.bot, game.game_key, chat_id)
+        await callback.answer("نوبت بعدی شروع شد.")
 @router.callback_query(lambda c: c.data and c.data.startswith("day:night:"))
 async def day_night_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
