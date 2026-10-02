@@ -206,6 +206,7 @@ def game_features_menu(
     ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
     builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="📜 ثبت اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
     builder.row(InlineKeyboardButton(text="مدیریت اموجی‌ها", callback_data=f"gameadmin:emoji:{group_id}"))
     if game_key:
         builder.row(
@@ -249,6 +250,13 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
     builder.row(InlineKeyboardButton(text=f"تغییر رنگ نوبت: {turn_color}", callback_data=f"gameadmin:extra:{group_id}:turn_color"))
     builder.row(InlineKeyboardButton(text=f"تغییر رنگ چالش: {challenge_color}", callback_data=f"gameadmin:extra:{group_id}:challenge_color"))
     _back(builder, back_callback or f"gameadmin:active:{group_id}")
+    return builder.as_markup()
+
+
+def game_event_management_keyboard(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ ثبت اتفاق جدید", callback_data=f"gameadmin:event_add:{group_id}"))
+    _back(builder, f"gameadmin:features:{group_id}")
     return builder.as_markup()
 
 
