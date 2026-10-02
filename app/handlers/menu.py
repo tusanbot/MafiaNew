@@ -578,7 +578,7 @@ async def gameadmin_change_scenario(callback: CallbackQuery) -> None:
         )).scalars().all())
         await callback.message.edit_text(
             "🎭 سناریوی جدید را انتخاب کنید:",
-            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}", "gameadmin:setscenario"),
+            reply_markup=scenario_select_keyboard(group.id, scenarios, f"gameadmin:lobby:{game.game_key}", f"gameadmin:setscenario:{game.game_key}"),
         )
     await callback.answer()
 
@@ -586,9 +586,9 @@ async def gameadmin_change_scenario(callback: CallbackQuery) -> None:
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:setscenario:"))
 async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
-    if len(parts) != 4 or not callback.from_user:
+    if len(parts) != 5 or not callback.from_user:
         return
-    key, scenario_id = parts[2], int(parts[3])
+    key, scenario_id = parts[2], int(parts[4])
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -642,7 +642,7 @@ async def gameadmin_change_host(callback: CallbackQuery) -> None:
         admins = await callback.bot.get_chat_administrators(group.telegram_id)
         await callback.message.edit_text(
             "🎙 گرداننده جدید را انتخاب کنید:",
-            reply_markup=host_select_keyboard(group.id, admins, "gameadmin:sethost", f"gameadmin:lobby:{game.game_key}"),
+            reply_markup=host_select_keyboard(group.id, admins, f"gameadmin:sethost:{game.game_key}", f"gameadmin:lobby:{game.game_key}"),
         )
     await callback.answer()
 
@@ -650,9 +650,9 @@ async def gameadmin_change_host(callback: CallbackQuery) -> None:
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:sethost:"))
 async def gameadmin_set_host(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
-    if len(parts) != 4 or not callback.from_user:
+    if len(parts) != 5 or not callback.from_user:
         return
-    key, host_tid = parts[2], int(parts[3])
+    key, host_tid = parts[2], int(parts[4])
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
