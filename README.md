@@ -23,3 +23,5 @@ Start command: `python -m app`
 Rich Message transport is globally enabled with an automatic Bot API fallback.
 
 <!-- rich-transport-sync-2 -->
+
+<!-- rich-menu-navigation-sync -->
