@@ -137,6 +137,11 @@ def _rich_inline_keyboard(markup: Any) -> str | None:
     return "".join(rows)
 
 
+def _is_inline_keyboard(markup: Any) -> bool:
+    data = _model_dump(markup)
+    return isinstance(data, Mapping) and bool(data.get("inline_keyboard"))
+
+
 def _rich_content_with_markup(
     text: str | None,
     parse_mode: str | None,
@@ -178,6 +183,8 @@ def _send_rich_payload(kwargs: Mapping[str, Any]) -> dict[str, Any]:
         "suggested_post_parameters",
         "reply_parameters",
     )))
+    if kwargs.get("reply_markup") is not None and not _is_inline_keyboard(kwargs["reply_markup"]):
+        payload["reply_markup"] = _model_dump(kwargs["reply_markup"])
     return {k: v for k, v in payload.items() if v is not None}
 
 
@@ -190,6 +197,8 @@ def _edit_rich_payload(kwargs: Mapping[str, Any]) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "rich_message": {**content, "is_rtl": True}
     }
+    if kwargs.get("reply_markup") is not None and not _is_inline_keyboard(kwargs["reply_markup"]):
+        payload["reply_markup"] = _model_dump(kwargs["reply_markup"])
     for name in (
         "business_connection_id",
         "chat_id",
