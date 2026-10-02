@@ -449,7 +449,6 @@ async def text_next(message: Message, state: FSMContext) -> None:
             )
             from app.handlers.gameplay import _schedule_auto_next
             await _schedule_auto_next(message.bot, game.game_key, chat_id, msg.message_id)
-    await message.answer("⏩ نکست انجام شد.")
 
 @router.message(_exact("دستورات", "دستورها"))
 async def text_commands(message: Message, state: FSMContext) -> None:
