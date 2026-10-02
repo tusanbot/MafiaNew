@@ -9,6 +9,7 @@ def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> N
 
 def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="مدیریت بازی فعال", callback_data="menu:active_game"))
     builder.row(InlineKeyboardButton(text="مدیریت گروه", callback_data="menu:group_management"))
     builder.row(
         InlineKeyboardButton(text="سناریوها", callback_data="menu:scenarios"),
@@ -28,7 +29,7 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
 def group_management_menu(back_callback: str = "menu:group_management") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="مدیریت بازی", callback_data="groupmgmt:games"))
-    builder.row(InlineKeyboardButton(text="قفل گروه", callback_data="groupmgmt:locks"))
+    builder.row(InlineKeyboardButton(text="تنظیمات و قفل‌های گروه", callback_data="groupmgmt:locks"))
     _back(builder, back_callback)
     return builder.as_markup()
 
