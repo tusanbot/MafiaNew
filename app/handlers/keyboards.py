@@ -732,22 +732,22 @@ def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def scenario_select_keyboard(group_id: int, scenarios, back_callback: str | None = None) -> InlineKeyboardMarkup:
+def scenario_select_keyboard(group_id: int, scenarios, back_callback: str | None = None, callback_prefix: str = "newgame:setscenario") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
-        builder.button(text=scenario.name_fa, callback_data=f"newgame:setscenario:{group_id}:{scenario.id}")
+        builder.button(text=scenario.name_fa, callback_data=f"{callback_prefix}:{group_id}:{scenario.id}")
     if scenarios: builder.adjust(3)
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
-def host_select_keyboard(group_id: int, admins) -> InlineKeyboardMarkup:
+def host_select_keyboard(group_id: int, admins, callback_prefix: str = "newgame:sethost", back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for member in admins:
         user = member.user
         name = user.full_name or user.username or str(user.id)
-        builder.row(InlineKeyboardButton(text=tg_plain_name(name[:60]), callback_data=f"newgame:sethost:{group_id}:{user.id}"))
-    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"newgame:menu:{group_id}"))
+        builder.row(InlineKeyboardButton(text=tg_plain_name(name[:60]), callback_data=f"{callback_prefix}:{group_id}:{user.id}"))
+    builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
 
 
