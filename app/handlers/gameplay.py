@@ -47,8 +47,9 @@ from app.handlers.keyboards import (
     continue_night_keyboard,
     finish_game_keyboard,
     voting_setup_keyboard, voting_delay_keyboard, voting_duration_keyboard, voting_mode_keyboard,
-    vote_rights_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
+    vote_rights_keyboard, vote_right_confirm_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
     defense_selection_keyboard, vote2_target_keyboard, vote2_ballot_keyboard, vote2_private_voters_keyboard, vote2_private_targets_keyboard, vote2_complete_keyboard,
+    vote2_setup_keyboard, vote2_result_keyboard,
 )
 
 router = Router(name="gameplay")
@@ -71,7 +72,9 @@ def _day_keyboard(game, current: bool = False):
 
 _challenge_tasks = {}
 _turn_tasks = {}
+_turn_live_tasks = {}
 TURN_UPDATE_SECONDS = 10
+TURN_LIVE_UPDATE_SECONDS = 1
 
 def _turn_duration(game, kind: str) -> int:
     if kind == "challenge":
@@ -132,10 +135,14 @@ async def _turn_message(session, game, turn: dict | None = None):
 
 
 async def _finish_turn_message(bot, session, game, turn: dict | None = None) -> None:
-    """Turn messages are immutable history except for their final state."""
+    """Finalize the exact turn message and stop its live countdown."""
     event, data = await _turn_message(session, game, turn)
     if not event or not data:
         return
+    if turn:
+        task = _turn_live_tasks.pop(game.game_key, None)
+        if task and task is not asyncio.current_task():
+            task.cancel()
     try:
         user = await session.get(User, int(turn.get("user_id"))) if turn else None
         name = tg_name(user.display_name or user.first_name if user else "بازیکن")
@@ -209,6 +216,20 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     return msg
 
 
+def _turn_remaining(game, turn: dict) -> int:
+    started_at = turn.get("started_at")
+    if not started_at:
+        return _turn_duration(game, str(turn.get("kind", "main")))
+    try:
+        started = datetime.fromisoformat(started_at)
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed = max(0, int((datetime.now(timezone.utc) - started).total_seconds()))
+        return max(0, _turn_duration(game, str(turn.get("kind", "main"))) - elapsed)
+    except (TypeError, ValueError):
+        return _turn_duration(game, str(turn.get("kind", "main")))
+
+
 async def _refresh_turn_message(bot, session, game, turn: dict | None = None) -> None:
     turn = turn or await current_turn(session, game.id)
     if not turn:
@@ -221,7 +242,8 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
     kind = str(turn.get("kind", "main"))
     requests = await pending_challenge_requests(session, game) if kind == "main" else []
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
-    text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(_turn_duration(game, kind))}{request_section}"
+    remaining = _turn_remaining(game, turn)
+    text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
     try:
         await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
                                     reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
@@ -229,6 +251,61 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
                                     parse_mode="HTML")
     except Exception:
         pass
+
+
+async def _turn_live_countdown(bot, game_key: str):
+    try:
+        last_text = None
+        while True:
+            await asyncio.sleep(TURN_LIVE_UPDATE_SECONDS)
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.status != "running":
+                    return
+                turn = await current_turn(session, game.id)
+                if not turn or turn.get("status") not in {"active", "paused"}:
+                    return
+                remaining = _turn_remaining(game, turn)
+                event, data = await _turn_message(session, game, turn)
+                if not event or not data:
+                    return
+                user = await session.get(User, int(turn["user_id"]))
+                raw_name = user.display_name or user.first_name if user else "بازیکن"
+                kind = str(turn.get("kind", "main"))
+                requests = await pending_challenge_requests(session, game) if kind == "main" else []
+                request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
+                text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
+                if text == last_text:
+                    continue
+                last_text = text
+                try:
+                    await bot.edit_message_text(
+                        text,
+                        chat_id=int(data["chat_id"]),
+                        message_id=int(data["message_id"]),
+                        reply_markup=day_turn_keyboard(
+                            game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                            game.turn_color, game.challenge_color, True,
+                            kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests
+                        ),
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
+    except asyncio.CancelledError:
+        return
+    finally:
+        current = _turn_live_tasks.get(game_key)
+        if current is asyncio.current_task():
+            _turn_live_tasks.pop(game_key, None)
+
+
+async def _schedule_turn_live(bot, game_key: str):
+    old = _turn_live_tasks.get(game_key)
+    if old and old is not asyncio.current_task():
+        old.cancel()
+    _turn_live_tasks[game_key] = asyncio.create_task(_turn_live_countdown(bot, game_key))
+
 
 async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, message_id: int | None = None):
     async def runner():
@@ -1252,6 +1329,7 @@ async def _send_defense_message(bot, session, game, chat_id: int, user_id: int):
         parse_mode="HTML",
     )
     await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
+    await _schedule_turn_live(bot, game.game_key)
     return msg
 
 
