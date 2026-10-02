@@ -466,36 +466,29 @@ async def round_start_handler(callback: CallbackQuery) -> None:
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
+
         leader = await session.get(User, result["leader_user_id"])
-        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
-        from app.handlers.keyboards import day_turn_keyboard
-        await callback.message.edit_text(
-            f"▶️ دور {result['round_no']} شروع شد.\n"
-            f"👑 سردست: {tg_name(leader.display_name if leader else 'بازیکن')}\n\n"
-            "🗣 نوبت صحبت‌ها آغاز شد.",
-            reply_markup=None,
+        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(
+            session, game.id
         )
-        group = await session.get(Group, game.group_id)
-        if group:
-            from app.handlers.gameplay import update_round_roster, _schedule_auto_next, _duration_text
-            await update_round_roster(callback.bot, session, game, group.telegram_id)
-            speaker = await session.get(User, int(turn["user_id"])) if turn else None
-            msg = await callback.bot.send_message(
-                group.telegram_id,
+        try:
+            await callback.message.edit_text(
                 f"▶️ دور {result['round_no']} شروع شد.\n"
                 f"👑 سردست: {tg_name(leader.display_name if leader else 'بازیکن')}\n\n"
-                f"🗣 نوبت صحبت {tg_name((speaker.display_name or speaker.first_name) if speaker else 'بازیکن')}\n\n"
-                f"⏱ {_duration_text(int(game.turn_seconds or 120))} فرصت صحبت داری",
-                reply_markup=day_turn_keyboard(
-                    game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                    game.turn_color, game.challenge_color, True,
-                    bool(turn and turn.get("kind") != "extra"),
-                ),
+                "🗣 نوبت صحبت‌ها آغاز شد.",
+                reply_markup=None,
             )
-            await _schedule_auto_next(callback.bot, game.game_key, group.telegram_id, msg.message_id)
-        await callback.answer("دور شروع شد.")
+        except Exception:
+            pass
 
-
+        group = await session.get(Group, game.group_id)
+        if group:
+            from app.handlers.gameplay import update_round_roster, _send_turn_message, _schedule_auto_next
+            await update_round_roster(callback.bot, session, game, group.telegram_id)
+            if turn:
+                await _send_turn_message(callback.bot, session, game, group.telegram_id, turn)
+                await _schedule_auto_next(callback.bot, game.game_key, group.telegram_id)
+    await callback.answer("دور شروع شد.")
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:lobby:"))
 async def lobby_game_management(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
