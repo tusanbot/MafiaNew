@@ -212,7 +212,7 @@ async def _game_result_text(session, game, winner: str) -> str:
             if player.exit_type == "kick" and emoji_settings.get("kick", True):
                 badges.append("⛔")
             elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True):
-                badges.append("🩸")
+                badges.append("🔪")
             elif player.exit_type == "vote":
                 badges.append("🗳")
             elif player.exit_type == "faceoff":
