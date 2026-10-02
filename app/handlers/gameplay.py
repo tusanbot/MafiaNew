@@ -222,7 +222,7 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
     kind = str(turn.get("kind", "main"))
     requests = await pending_challenge_requests(session, game) if kind == "main" else []
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
-    text = f"🗣 نوبت صحبت {tg_name(raw_name)}\n\n⏱ {_duration_text(_turn_duration(game, kind))}{request_section}"
+    text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(_turn_duration(game, kind))}{request_section}"
     try:
         await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
                                     reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
