@@ -31,7 +31,7 @@ from app.services.gameplay import (
     next_turn,
     send_game_result_notifications,
 )
-from app.utils.text import tg_name
+from app.utils.text import tg_name, tg_mention
 
 from app.handlers.keyboards import (
     day_keyboard,
@@ -136,6 +136,7 @@ async def _finish_turn_message(bot, session, game, turn: dict | None = None) -> 
             chat_id=int(data["chat_id"]),
             message_id=int(data["message_id"]),
             reply_markup=None,
+            parse_mode="HTML",
         )
     except Exception:
         pass
@@ -184,34 +185,42 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     if not turn:
         return None
     user = await session.get(User, int(turn["user_id"]))
-    name = tg_name(user.display_name or user.first_name if user else "بازیکن")
+    raw_name = user.display_name or user.first_name if user else "بازیکن"
     kind = str(turn.get("kind", "main"))
-    text = (
-        f"🗣 نوبت صحبت {name}\n\n"
-        f"⏱ {_duration_text(_turn_duration(game, kind))} فرصت صحبت داری"
-    )
+    requests = await pending_challenge_requests(session, game) if kind == "main" else []
+    request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
+    text = (f"🗣 نوبت صحبت {tg_name(raw_name)}\n\n"
+            f"⏱ {_duration_text(_turn_duration(game, kind))}{request_section}")
     msg = await bot.send_message(
-        chat_id,
-        text,
-        reply_markup=day_turn_keyboard(
-            game.game_key,
-            True,
-            game.challenge_enabled,
-            game.turn_color_enabled,
-            game.turn_color,
-            game.challenge_color,
-            True,
-            kind not in {"extra", "challenge"},
-        ),
+        chat_id, text,
+        reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                                       game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"}, requests),
+        parse_mode="HTML",
     )
-    await _register_turn_message(
-        session,
-        game,
-        chat_id=chat_id,
-        message_id=msg.message_id,
-        turn=turn,
-    )
+    await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
     return msg
+
+
+async def _refresh_turn_message(bot, session, game, turn: dict | None = None) -> None:
+    turn = turn or await current_turn(session, game.id)
+    if not turn:
+        return
+    event, data = await _turn_message(session, game, turn)
+    if not event or not data:
+        return
+    user = await session.get(User, int(turn["user_id"]))
+    raw_name = user.display_name or user.first_name if user else "بازیکن"
+    kind = str(turn.get("kind", "main"))
+    requests = await pending_challenge_requests(session, game) if kind == "main" else []
+    request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
+    text = f"🗣 نوبت صحبت {tg_name(raw_name)}\n\n⏱ {_duration_text(_turn_duration(game, kind))}{request_section}"
+    try:
+        await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
+                                    reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+                                                                   game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"}, requests),
+                                    parse_mode="HTML")
+    except Exception:
+        pass
 
 async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, message_id: int | None = None):
     async def runner():
@@ -295,32 +304,26 @@ async def _public_status_roster(session, game) -> str:
             leader_id = int(json.loads(leader_event.payload or "{}").get("leader_user_id"))
         except (TypeError, ValueError):
             leader_id = None
-    lines = ["👥 لیست بازیکنان حاضر در بازی", ""]
+    lines = ["\u200f👥 <b>لیست بازیکنان حاضر در بازی</b>", ""]
     for player, user, _role in rows:
         if player.is_reserved:
             continue
-        name = tg_name(user.display_name or user.first_name or user.username or "بازیکن")
+        raw_name = user.display_name or user.first_name or user.username or "بازیکن"
+        name = tg_mention(user.telegram_id, raw_name)
         marks = []
         if user.id == leader_id:
             marks.append("👑")
         if player.alive:
-            if player.silence_until_round is not None and emoji_settings.get("silence", True):
-                marks.append("🔇")
-            if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True):
-                marks.append("➕")
-            if player.warning_count and emoji_settings.get("warning", True):
-                marks.append(f"⚠️{player.warning_count}")
+            if player.silence_until_round is not None and emoji_settings.get("silence", True): marks.append("🔇")
+            if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True): marks.append("➕")
+            if player.warning_count and emoji_settings.get("warning", True): marks.append(f"⚠️{player.warning_count}")
             state = "زنده"
         else:
-            if player.exit_type == "death" and emoji_settings.get("death", True):
-                marks.append("💀")
-            elif player.exit_type == "kick" and emoji_settings.get("kick", True):
-                marks.append("⛔")
-            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True):
-                marks.append("🩸")
-            # Face-off is a hidden act and is never exposed in the public roster.
+            if player.exit_type == "death" and emoji_settings.get("death", True): marks.append("💀")
+            elif player.exit_type == "kick" and emoji_settings.get("kick", True): marks.append("⛔")
+            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True): marks.append("🩸")
             state = "حذف‌شده"
-        lines.append(f"{player.seat:02d}. {' '.join(marks)} {name} — {state}".strip())
+        lines.append(f"\u200f{player.seat:02d}. {' '.join(marks)} {name} — {state}".strip())
     return "\n".join(lines)
 
 async def update_round_roster(bot, session, game, chat_id: int | None = None) -> None:
@@ -342,12 +345,12 @@ async def update_round_roster(bot, session, game, chat_id: int | None = None) ->
     roster_text = await _public_status_roster(session, game)
     if event and data.get("message_id"):
         try:
-            await bot.edit_message_text(roster_text, chat_id=int(target_chat), message_id=int(data["message_id"]))
+            await bot.edit_message_text(roster_text, chat_id=int(target_chat), message_id=int(data["message_id"]), parse_mode="HTML")
             return
         except Exception:
             pass
     try:
-        msg = await bot.send_message(int(target_chat), roster_text)
+        msg = await bot.send_message(int(target_chat), roster_text, parse_mode="HTML")
     except Exception:
         return
     payload = {"round_no": int(round_no), "chat_id": int(target_chat), "message_id": msg.message_id}
@@ -529,15 +532,8 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         request_data["message_id"] = None
         event.payload = json.dumps(request_data, ensure_ascii=False)
         await session.commit()
-        msg = await callback.bot.send_message(
-            callback.message.chat.id,
-            f"🤏🏼 درخواست چالش: {tg_name(actor.display_name or actor.first_name)}\n"
-            f"صاحب ترن اصلی: {tg_name(turn_owner.display_name or turn_owner.first_name)}\n\n"
-            "صاحب ترن یکی از درخواست‌ها را انتخاب می‌کند.",
-            reply_markup=challenge_requests_keyboard(game.game_key, [(event, request_data)]),
-        )
-        await attach_challenge_request_message(session, event.id, callback.message.chat.id, msg.message_id)
-        await callback.answer("درخواست چالش در گروه ثبت شد.")
+        await _refresh_turn_message(callback.bot, session, game, await current_turn(session, game.id))
+        await callback.answer("درخواست چالش ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
 async def challenge_grant_handler(callback: CallbackQuery):
