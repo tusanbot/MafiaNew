@@ -2746,7 +2746,7 @@ async def notification_toggle(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
         return
     field = callback.data.split(":")[-1]
-    allowed = {"notify_game_result","notify_achievements","notify_rank_changes"}
+    allowed = {"notify_game_result","notify_achievements","notify_rank_changes","notify_challenges","notify_turns"}
     if field not in allowed:
         await callback.answer("گزینه نامعتبر است.", show_alert=True)
         return
