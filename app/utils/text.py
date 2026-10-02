@@ -12,3 +12,9 @@ def tg_name(name: str | None) -> str:
 def tg_plain_name(name: str | None) -> str:
     """Direction-isolate a name for plain text contexts such as inline buttons."""
     return f"{LRM}{name or 'بازیکن'}{LRM}"
+
+
+
+def tg_mention(user_id: int, name: str | None) -> str:
+    """Return a bold Telegram HTML mention for a known user."""
+    return f'<a href="tg://user?id={int(user_id)}"><b>{escape(name or "بازیکن")}</b></a>'
