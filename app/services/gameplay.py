@@ -452,6 +452,9 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
         if target_id not in candidates:
             raise ValueError("این بازیکن در دفاعیه نیست.")
 
+    if voter_id == target_id:
+        raise ValueError("بازیکن نمی‌تواند به خودش رای بدهد.")
+
     rules = state.get("rules") or {}
     eligible_ids = {int(x) for x in rules.get("eligible_voter_ids", [])}
     if voter_id not in eligible_ids:
