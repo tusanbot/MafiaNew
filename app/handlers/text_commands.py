@@ -206,7 +206,18 @@ async def text_start_round(message: Message, state: FSMContext) -> None:
         except ValueError as exc:
             await message.answer(str(exc))
             return
-    await message.answer(f"▶️ دور {result['round_no']} شروع شد.")
+        from app.handlers.gameplay import (
+            update_round_roster,
+            _send_turn_message,
+            _schedule_auto_next,
+        )
+        await update_round_roster(message.bot, session, game, message.chat.id)
+        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(
+            session, game.id
+        )
+        if turn:
+            await _send_turn_message(message.bot, session, game, message.chat.id, turn)
+            await _schedule_auto_next(message.bot, game.game_key, message.chat.id)
 
 
 @router.message(_exact("لغو بازی"))
@@ -414,7 +425,9 @@ async def text_next(message: Message, state: FSMContext) -> None:
         if not game or not actor:
             await message.answer("بازی یا کاربر پیدا نشد.")
             return
-        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(
+            session, game.id
+        )
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
         if not turn:
             await message.answer("نوبت فعالی وجود ندارد.")
@@ -429,26 +442,35 @@ async def text_next(message: Message, state: FSMContext) -> None:
             await message.answer("نکست بازیکن غیرفعال است.")
             return
         try:
+            from app.handlers.gameplay import (
+                _finish_turn_message,
+                _delete_turn_challenge_messages,
+                _send_turn_message,
+                _schedule_auto_next,
+            )
+            await _finish_turn_message(message.bot, session, game, turn)
+            await _delete_turn_challenge_messages(message.bot, session, game, turn)
             result = await next_turn(session, game)
         except ValueError as exc:
             await message.answer(str(exc))
             return
         chat_id = message.chat.id
         if result["kind"] == "finished_day":
-            await message.bot.send_message(chat_id, "نوبت‌های این دور تمام شد. اکنون رأی‌گیری را شروع کنید.")
-        else:
-            user = await session.get(User, result["user_id"])
-            name = tg_name(user.display_name or user.first_name if user else "بازیکن")
-            msg = await message.bot.send_message(
+            await message.bot.send_message(
                 chat_id,
-                f"⏩ نوبت صحبت {name}\n\n⏱ {_format_duration(_turn_duration_local(game, str(result.get('kind', 'main'))))} فرصت صحبت داری",
-                reply_markup=__import__("app.handlers.keyboards", fromlist=["day_turn_keyboard"]).day_turn_keyboard(
-                    game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                    game.turn_color, game.challenge_color, True, result["kind"] not in {"extra", "challenge"}
+                "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
+                reply_markup=__import__("app.handlers.keyboards", fromlist=["day_keyboard"]).day_keyboard(
+                    game.game_key, await alive_players(session, game.id)
                 ),
             )
-            from app.handlers.gameplay import _schedule_auto_next
-            await _schedule_auto_next(message.bot, game.game_key, chat_id, msg.message_id)
+        else:
+            new_turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(
+                session, game.id
+            )
+            if new_turn:
+                await _send_turn_message(message.bot, session, game, chat_id, new_turn)
+                await _schedule_auto_next(message.bot, game.game_key, chat_id)
+
 
 @router.message(_exact("دستورات", "دستورها"))
 async def text_commands(message: Message, state: FSMContext) -> None:
