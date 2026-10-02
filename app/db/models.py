@@ -81,6 +81,7 @@ class Scenario(Base):
     challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
     turn_seconds: Mapped[int] = mapped_column(Integer, default=120)
     challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    vote_defense_threshold: Mapped[int] = mapped_column(Integer, default=2)
     extra_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
     training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -125,6 +126,10 @@ class Game(Base):
     auto_silence_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
     auto_kick_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
     turn_color_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    voting_pre_delay_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    vote_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    voting_mode: Mapped[str] = mapped_column(String(20), default="manual")
+    vote2_selection_mode: Mapped[str] = mapped_column(String(20), default="manual")
     emoji_settings: Mapped[str] = mapped_column(Text, default='{"death": true, "kick": true, "slaughter": true, "challenge": true, "silence": true, "extra_turn": true, "warning": true}')
     status: Mapped[str] = mapped_column(String(30), default="waiting")
     phase: Mapped[str] = mapped_column(String(30), default="lobby")
@@ -171,6 +176,7 @@ class Vote(Base):
     voter_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     target_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     round_no: Mapped[int] = mapped_column(Integer, default=1)
+    phase: Mapped[str] = mapped_column(String(20), default="vote1")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
