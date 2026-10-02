@@ -1456,7 +1456,14 @@ async def vote2_cast_handler(callback: CallbackQuery):
         if not game or not actor: await callback.answer("بازی پیدا نشد.", show_alert=True); return
         try: await cast_vote_phase(session, game, actor, target_id, "vote2")
         except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
-        await _refresh_vote_target_message(callback.bot, session, game)
+        state = await _latest_vote_state(session, game.id)
+        if (state.get("rules") or {}).get("visibility", "public") == "public":
+            await _refresh_vote_target_message(callback.bot, session, game)
+        else:
+            try:
+                await callback.message.edit_text("✅ رای شما ثبت شد.")
+            except Exception:
+                pass
     await callback.answer("رای ثبت شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:finish:"))
