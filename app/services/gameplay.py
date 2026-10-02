@@ -1129,7 +1129,7 @@ async def send_game_result_notifications(bot, session, game) -> None:
         stats = report.get("stats") or {}
         lines = []
         if user.notify_game_result:
-            lines = ["📊 گزارش عملکرد بازی", "", "🏆 برد" if stats.get("won") else "نتیجه: این بازی را نبردید", f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}", f"⭐ امتیاز فعلی: {report.get('score_after', user.score)}", "", f"🎯 شات: {stats.get('kills', 0)}", f"🩺 نجات: {stats.get('saves', 0)}", f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}", f"🎯 رأی درست: {stats.get('correct_votes', 0)}", f"⚔️ چالش پذیرفته: {stats.get('accepted_challenges', 0)}", f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد", f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}", "", f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30", f"🏅 رتبه: {report.get('rank_after', '')}"]
+            lines = ["📊 گزارش عملکرد بازی", "", "🏆 برد" if stats.get("won") else "نتیجه: این بازی را نبردید", f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}", f"⭐ امتیاز فعلی: {report.get('score_after', user.score)}", "", f"🎯 شات: {stats.get('kills', 0)}", f"🩺 نجات: {stats.get('saves', 0)}", f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}", f"🎯 رأی درست: {stats.get('correct_votes', 0)}", f"🤏🏻 چالش پذیرفته: {stats.get('accepted_challenges', 0)}", f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد", f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}", "", f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30", f"🏅 رتبه: {report.get('rank_after', '')}"]
         if report.get("rank_after") != report.get("rank_before") and user.notify_rank_changes:
             if not lines:
                 lines = ["🏆 تغییر رتبه"]
