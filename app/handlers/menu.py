@@ -612,11 +612,16 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
         if not group or not scenario or not scenario.enabled or scenario.key == "classic":
             await callback.answer("سناریو قابل انتخاب نیست.", show_alert=True)
             return
-        try:
-            await GameRepository.change_scenario_seats(session, game, scenario)
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
+        rows = await GameRepository.players(session, game.id, include_reserve=True)
+        old_seats = {int(player.id): int(player.seat) for player, _user in rows if not player.is_reserved}
+        old_scenario = await session.get(Scenario, game.scenario_id)
+        await _remap_game_players_to_scenario(
+            session, game, scenario,
+            old_scenario.max_players if old_scenario else scenario.max_players,
+            old_seats,
+        )
+        game.scenario_id = scenario.id
+        await session.commit()
         await callback.answer("سناریو تغییر کرد و صندلی‌ها تطبیق داده شدند.")
         # Render the actual lobby in the same group-management message.
         from app.services.game import render_lobby
