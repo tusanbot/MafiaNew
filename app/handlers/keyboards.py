@@ -619,6 +619,20 @@ def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardM
     builder.row(InlineKeyboardButton(text="🗳 رای میدم", callback_data=f"vote2:cast:{game_key}:{target_user_id}"))
     return builder.as_markup()
 
+def vote2_ballot_keyboard(game_key: str, candidates, selected_user_id: int | None = None, host_only: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user_id, name in candidates:
+        mark = "🔘" if selected_user_id is not None and int(user_id) == int(selected_user_id) else "⚪"
+        builder.row(InlineKeyboardButton(
+            text=f"{mark} {name}",
+            callback_data=f"vote2:cast:{game_key}:{int(user_id)}",
+        ))
+    builder.row(InlineKeyboardButton(
+        text="اتمام رای گیری",
+        callback_data=f"vote2:finish:{game_key}",
+    ))
+    return builder.as_markup()
+
 
 def vote2_next_keyboard(game_key: str, final: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
