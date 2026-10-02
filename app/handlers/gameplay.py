@@ -811,87 +811,284 @@ async def day_finish_handler(callback: CallbackQuery):
         await callback.answer("نتیجه نهایی را انتخاب کنید.")
 
 
+_vote_tasks = {}
+
+def _vote_time(dt: datetime) -> str:
+    local = dt.astimezone() if dt.tzinfo else dt
+    return local.strftime("%H:%M - %S:%f")[:-4]
+
+async def _set_latest_vote_state_message(session, game, chat_id: int, message_id: int):
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
+    ).order_by(GameEvent.id.desc()))
+    event = result.scalars().first()
+    if not event:
+        return
+    data = json.loads(event.payload or "{}")
+    data["chat_id"] = chat_id
+    data["message_id"] = message_id
+    event.payload = json.dumps(data, ensure_ascii=False)
+    await session.commit()
+
+async def _vote_target_message(bot, session, game, chat_id: int):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") not in {"vote1", "vote2"} or state.get("status") != "active":
+        return None
+    target_id = int(state["target_user_id"])
+    target = await session.get(User, target_id)
+    if not target:
+        return None
+    phase = state["phase"]
+    records = await _vote_records_for_target(session, game, int(state["round_no"]), phase, target_id)
+    lines = [f"🗳 رای برای {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", "", "کسانی که رای دادن:"]
+    if records:
+        lines.extend(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')} — {_vote_time(vote.created_at)}" for vote, user in records)
+    else:
+        lines.append("هنوز کسی رای نداده")
+    markup = vote1_target_keyboard(game.game_key, target_id) if phase == "vote1" else vote2_target_keyboard(game.game_key, target_id)
+    msg = await bot.send_message(chat_id, "\n".join(lines), reply_markup=markup, parse_mode="HTML")
+    await _set_latest_vote_state_message(session, game, chat_id, msg.message_id)
+    return msg
+
+async def _refresh_vote_target_message(bot, session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") not in {"vote1", "vote2"} or state.get("status") != "active":
+        return
+    chat_id, message_id = state.get("chat_id"), state.get("message_id")
+    if not chat_id or not message_id:
+        return
+    target_id = int(state["target_user_id"])
+    target = await session.get(User, target_id)
+    records = await _vote_records_for_target(session, game, int(state["round_no"]), state["phase"], target_id)
+    lines = [f"🗳 رای برای {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", "", "کسانی که رای دادن:"]
+    if records:
+        lines.extend(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')} — {_vote_time(vote.created_at)}" for vote, user in records)
+    else:
+        lines.append("هنوز کسی رای نداده")
+    markup = vote1_target_keyboard(game.game_key, target_id) if state["phase"] == "vote1" else vote2_target_keyboard(game.game_key, target_id)
+    try:
+        await bot.edit_message_text("\n".join(lines), chat_id=int(chat_id), message_id=int(message_id), reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+
+async def _finish_vote_message(bot, session, game, *, next_button: bool, final: bool = False):
+    state = await _latest_vote_state(session, game.id)
+    if not state or not state.get("message_id"):
+        return
+    target = await session.get(User, int(state["target_user_id"]))
+    records = await _vote_records_for_target(session, game, int(state["round_no"]), state["phase"], int(state["target_user_id"]))
+    lines = [f"پایان زمان رای به {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", f"تعداد رای {len(records)}", "", "کسایی که رای دادن"]]
+    if records:
+        lines.extend(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}" for _, user in records)
+    else:
+        lines.append("کسی رای نداده است")
+    if final:
+        markup = vote2_complete_keyboard(game.game_key)
+    elif next_button:
+        markup = vote1_complete_keyboard(game.game_key) if state.get("index", 0) + 1 >= len(state.get("queue", [])) else InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="بازیکن بعدی", callback_data=f"vote1:next:{game.game_key}")]])
+    else:
+        markup = None
+    try:
+        await bot.edit_message_text("\n".join(lines), chat_id=int(state["chat_id"]), message_id=int(state["message_id"]), reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        pass
+
+async def _start_vote1_after_delay(bot, game_key: str, chat_id: int, delay: int):
+    await asyncio.sleep(max(0, delay))
+    async with session_factory() as session:
+        game = await _load(session, game_key)
+        if not game or game.status != "running":
+            return
+        if game.phase != "day":
+            return
+        await vote1_start(session, game)
+        await _vote_target_message(bot, session, game, chat_id)
+        _vote_tasks[game_key] = asyncio.create_task(_vote1_timer(bot, game_key, chat_id))
+
+async def _vote1_timer(bot, game_key: str, chat_id: int):
+    try:
+        while True:
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.phase != "voting1": return
+                state = await _latest_vote_state(session, game.id)
+                started = datetime.fromisoformat(state["started_at"])
+                remaining = max(0.0, float(game.vote_seconds or 10) - (datetime.now(timezone.utc) - started).total_seconds())
+            if remaining > 0:
+                await asyncio.sleep(min(remaining, 0.2))
+                continue
+            async with session_factory() as session:
+                game = await _load(session, game_key)
+                if not game or game.phase != "voting1": return
+                result = await advance_vote1(session, game)
+                await _finish_vote_message(bot, session, game, next_button=True)
+                if result["finished"]: return
+                if game.voting_mode == "auto":
+                    await _vote_target_message(bot, session, game, chat_id)
+                    continue
+                return
+    except asyncio.CancelledError:
+        return
+    finally:
+        _vote_tasks.pop(game_key, None)
+
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
-    if not callback.from_user:
-        return
     async with session_factory() as session:
         game = await _load(session, key)
-        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        if not game or not actor:
-            await callback.answer("بازی پیدا نشد.", show_alert=True)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند تنظیمات رای گیری را باز کند.", show_alert=True)
             return
-        host = await session.get(User, game.host_user_id) if game.host_user_id else None
-        if not host or host.id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند رأی‌گیری را شروع کند.", show_alert=True)
-            return
-        try:
-            await start_voting(session, game)
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        players = await alive_players(session, game.id)
-        await callback.message.edit_text(
-            f"🗳 رأی‌گیری دور {await current_round(session, game.id)}\n\nهر بازیکن زنده یک رأی دارد. هدف را انتخاب کنید:",
-            reply_markup=vote_keyboard(game.game_key, players),
-        )
-        await callback.answer("رأی‌گیری شروع شد.")
+        game.phase = "vote_setup"
+        await session.commit()
+        await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(game.game_key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+    await callback.answer()
 
-
-@router.callback_query(lambda c: c.data and c.data.startswith("vote:"))
-async def vote_handler(callback: CallbackQuery):
+@router.callback_query(lambda c: c.data and c.data.startswith("votingset:"))
+async def voting_settings_handler(callback: CallbackQuery):
     parts = callback.data.split(":")
-    if len(parts) != 3 or not callback.from_user:
-        return
-    key, target_id = parts[1], int(parts[2])
+    if not callback.from_user: return
+    key = parts[2] if len(parts) > 2 else ""
     async with session_factory() as session:
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        if not game or not actor:
-            await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
-            return
-        try:
-            result = await submit_vote(session, game, actor, target_id)
-        except (ValueError, TypeError) as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        if not result["resolved"]:
-            await callback.answer("رأی شما ثبت شد.")
-            return
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند تنظیمات رای گیری را تغییر دهد.", show_alert=True); return
+        action = parts[1] if len(parts) > 1 else ""
+        if action == "menu":
+            await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        elif action == "delay":
+            await callback.message.edit_text("زمان انتظار قبل از شروع رای:", reply_markup=voting_delay_keyboard(key, game.voting_pre_delay_seconds))
+        elif action == "duration":
+            await callback.message.edit_text("زمان هر رای:", reply_markup=voting_duration_keyboard(key, game.vote_seconds))
+        elif action == "mode":
+            await callback.message.edit_text("نوع رای گیری:", reply_markup=voting_mode_keyboard(key, game.voting_mode))
+        elif action == "set_delay":
+            game.voting_pre_delay_seconds = int(parts[3]); await session.commit()
+            await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        elif action == "set_duration":
+            game.vote_seconds = int(parts[3]); await session.commit()
+            await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        elif action == "set_mode":
+            game.voting_mode = parts[3]; await session.commit()
+            await callback.message.edit_text("🗳 <b>تنظیمات رای گیری</b>", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        elif action == "revoke":
+            players = await alive_players(session, game.id)
+            revoked = await _revoked_vote_ids(session, game.id, await current_round(session, game.id))
+            await callback.message.edit_text("بازیکنی را که می‌خواهید حق رای او گرفته شود انتخاب کنید:", reply_markup=vote_rights_keyboard(key, players, revoked))
+        elif action == "revoke_target":
+            uid = int(parts[3]); user = await session.get(User, uid)
+            await callback.message.edit_text(f"حق رای <b>{tg_name(user.display_name or user.first_name)}</b> گرفته شود؟", reply_markup=vote_right_confirm_keyboard(key, uid), parse_mode="HTML")
+        elif action == "confirm_revoke":
+            uid = int(parts[3]); round_no = await current_round(session, game.id)
+            await _event(session, game, "vote_right_revoked", {"round_no": round_no, "user_id": uid, "active": True}, actor.id)
+            await session.commit()
+            await callback.message.edit_text("حق رای بازیکن برای این دور گرفته شد.", reply_markup=voting_setup_keyboard(key, game.voting_pre_delay_seconds, game.vote_seconds, game.voting_mode), parse_mode="HTML")
+        await callback.answer()
 
-        if result["winner"]:
-            await send_game_result_notifications(callback.bot, session, game)
-            winner_label = {
-                "mafia": "مافیا",
-                "citizen": "شهروند",
-                "independent": "مستقل",
-                "citizen_independent": "شهروند و مستقل",
-                "draw": "مساوی",
-            }.get(result["winner"], result["winner"])
-            await callback.message.edit_text(
-                f"🏁 بازی تمام شد.\n\nبرنده: {winner_label}\n\n"
-                "آمار و نتیجه نهایی ثبت شد."
-            )
+@router.callback_query(lambda c: c.data and c.data.startswith("vote:start1:"))
+async def vote_start1_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user: return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or actor is None or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند رای گیری را شروع کند.", show_alert=True); return
+        delay = int(game.voting_pre_delay_seconds or 0)
+        if delay:
+            await callback.message.edit_text(f"🗳 رای گیری بعد از <b>{delay} ثانیه</b> شروع می‌شود.", parse_mode="HTML")
+            task = asyncio.create_task(_start_vote1_after_delay(callback.bot, key, callback.message.chat.id, delay))
+            _vote_tasks[key] = task
         else:
-            if result["eliminated"]:
-                name = tg_mention(result["eliminated"].telegram_id, result["eliminated"].display_name or result["eliminated"].first_name)
-                text = f"🗳 رأی‌گیری تمام شد.\n\nبازیکن {name} حذف شد."
-            else:
-                text = "🗳 رأی‌گیری تمام شد.\n\nرأی‌گیری مساوی شد و کسی حذف نشد."
-            await update_round_roster(callback.bot, session, game, callback.message.chat.id)
-            text += "\n\n🌙 شب بعد آغاز شد."
-            await callback.message.edit_text(text)
-            group_settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
-            await callback.bot.send_message(
-                callback.message.chat.id,
-                "🌙 فاز شب آغاز شد.",
-                reply_markup=continue_night_keyboard(
-                    game.game_key,
-                    group_settings.night_lock if group_settings else False,
-                    group_settings.chat_lock if group_settings else False,
-                ),
-            )
-            if game.auto_play:
-                await _send_night_menus(callback.bot, session, game)
-        await callback.answer("رأی ثبت شد.")
+            await vote1_start(session, game)
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote1:cast:"))
+async def vote1_cast_handler(callback: CallbackQuery):
+    parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor: await callback.answer("بازی پیدا نشد.", show_alert=True); return
+        try: await cast_vote_phase(session, game, actor, target_id, "vote1")
+        except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
+        await _refresh_vote_target_message(callback.bot, session, game)
+    await callback.answer("رای ثبت شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote1:next:"))
+async def vote1_next_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        task = _vote_tasks.pop(key, None)
+        if task: task.cancel()
+        result = await advance_vote1(session, game)
+        await _finish_vote_message(callback.bot, session, game, next_button=True)
+        if not result["finished"]:
+            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+            _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
+async def vote1_finish_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        state = await _latest_vote_state(session, game.id)
+        candidates = [int(x) for x in state.get("qualified_candidates", [])] if state else []
+        players = [row for row in await alive_players(session, game.id) if row[1].id in candidates]
+        await callback.message.edit_text(f"🗳 <b>انتخاب بازیکنان برای رای دو</b>\n\nحدنصاب دفاع: {getattr(await session.get(Scenario, game.scenario_id), 'vote_defense_threshold', 2)}", reply_markup=defense_selection_keyboard(key, players, set(state.get("defense_candidates", [])) if state else set()), parse_mode="HTML")
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:select:"))
+async def vote2_select_handler(callback: CallbackQuery):
+    parts = callback.data.split(":"); key, uid = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        selected = await toggle_vote2_candidate(session, game, uid)
+        players = [row for row in await alive_players(session, game.id) if row[1].id in {int(x) for x in (await _latest_vote_state(session, game.id)).get("qualified_candidates", [])}]
+        await callback.message.edit_reply_markup(reply_markup=defense_selection_keyboard(key, players, set(selected)))
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:start:"))
+async def vote2_start_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        try: await start_vote2(session, game)
+        except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
+        target = await current_turn(session, game.id)
+        # Defense turns use the same public turn message system but never expose challenge controls.
+        state = await _latest_vote_state(session, game.id)
+        if state: await _send_defense_message(callback.bot, session, game, callback.message.chat.id, int(state["target_user_id"]))
+    await callback.answer("دور دفاع شروع شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:cast:"))
+async def vote2_cast_handler(callback: CallbackQuery):
+    parts = callback.data.split(":"); key, target_id = parts[2], int(parts[3])
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor: await callback.answer("بازی پیدا نشد.", show_alert=True); return
+        try: await cast_vote_phase(session, game, actor, target_id, "vote2")
+        except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
+        await _refresh_vote_target_message(callback.bot, session, game)
+    await callback.answer("رای ثبت شد.")
+
+@router.callback_query(lambda c: c.data and c.data.startswith("vote2:finish:"))
+async def vote2_finish_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
+        if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
+        await finish_vote2(session, game)
+        await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
+        await callback.message.answer("🗳 رای گیری دوم تمام شد.")
+    await callback.answer()
