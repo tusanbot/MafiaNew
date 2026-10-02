@@ -43,6 +43,7 @@ from app.handlers.keyboards import (
     challenge_requests_keyboard,
     challenge_placement_keyboard,
     continue_night_keyboard,
+    finish_game_keyboard,
 )
 
 router = Router(name="gameplay")
@@ -774,19 +775,16 @@ async def day_finish_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        host = await session.get(User, game.host_user_id) if game.host_user_id else None
-        if not host or host.id != actor.id:
+        if game.host_user_id != actor.id:
             await callback.answer("فقط گرداننده می‌تواند بازی را تمام کند.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
         if not turn or turn.get("status") != "finished":
             await callback.answer("تا پایان نوبت‌های این دور امکان اتمام بازی نیست.", show_alert=True)
             return
-        await __import__("app.services.gameplay", fromlist=["finalize_game"]).finalize_game(session, game, "draw")
-        await session.commit()
-        await send_game_result_notifications(callback.bot, session, game)
-        await callback.message.edit_text("🏁 بازی توسط گرداننده به پایان رسید. نتیجه: بدون برنده.")
-        await callback.answer("بازی تمام شد.")
+        await callback.message.edit_text("🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:", reply_markup=finish_game_keyboard(game.group_id), parse_mode="HTML")
+        await callback.answer("نتیجه نهایی را انتخاب کنید.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
