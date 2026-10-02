@@ -725,7 +725,7 @@ def new_game_settings_keyboard(
     ))
     builder.row(
         InlineKeyboardButton(text=f"🗣 نوبت: {turn_seconds // 60:02d}:{turn_seconds % 60:02d}", callback_data=f"newgame:time:{group_id}:turn"),
-        InlineKeyboardButton(text=f"⚔️ چالش: {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"newgame:time:{group_id}:challenge"),
+        InlineKeyboardButton(text=f"🤏🏻 چالش: {challenge_seconds // 60:02d}:{challenge_seconds % 60:02d}", callback_data=f"newgame:time:{group_id}:challenge"),
     )
     builder.row(InlineKeyboardButton(
         text=f"➕ چالش اضافه: {extra_challenge_seconds // 60:02d}:{extra_challenge_seconds % 60:02d}",
@@ -773,7 +773,7 @@ def new_game_extras_keyboard(
         callback_data=f"newgame:turn_color:{group_id}",
     ))
     builder.row(InlineKeyboardButton(
-        text=f"⚔️ رنگ چالش: {challenge_color}",
+        text=f"🤏🏻 رنگ چالش: {challenge_color}",
         callback_data=f"newgame:challenge_color:{group_id}",
     ))
     builder.row(InlineKeyboardButton(
@@ -870,8 +870,8 @@ def admin_scenario_keyboard(scenarios) -> InlineKeyboardMarkup:
 def scenario_challenge_keyboard(action: str = "create", include_unchanged: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="⚔️ چالش محدود", callback_data=f"scenario_admin:{action}:challenge:limited"),
-        InlineKeyboardButton(text="⚔️ چالش آزاد", callback_data=f"scenario_admin:{action}:challenge:free"),
+        InlineKeyboardButton(text="🤏🏻 چالش محدود", callback_data=f"scenario_admin:{action}:challenge:limited"),
+        InlineKeyboardButton(text="🤏🏻 چالش آزاد", callback_data=f"scenario_admin:{action}:challenge:free"),
     )
     builder.row(InlineKeyboardButton(text="🚫 بدون چالش", callback_data=f"scenario_admin:{action}:challenge:off"))
     if include_unchanged:
