@@ -343,6 +343,59 @@ class GameRepository:
         return True
 
     @staticmethod
+    async def change_scenario_seats(session: AsyncSession, game: Game, scenario: Scenario) -> dict:
+        """Switch a waiting game's scenario while preserving existing seat numbers when possible."""
+        if game.status != "waiting":
+            raise ValueError("تغییر سناریو فقط در لابی امکان‌پذیر است.")
+
+        rows = await GameRepository.players(session, game.id, include_reserve=True)
+        active = [(p, u) for p, u in rows if not p.is_reserved]
+        reserves = [(p, u) for p, u in rows if p.is_reserved]
+        snapshot = [(p, u, int(p.seat)) for p, u in active]
+
+        kept = [(p, u, seat) for p, u, seat in snapshot if 1 <= seat <= int(scenario.max_players)]
+        overflow = [(p, u, seat) for p, u, seat in snapshot if seat > int(scenario.max_players) or seat < 1]
+        used = {seat for _, _, seat in kept}
+        free = [seat for seat in range(1, int(scenario.max_players) + 1) if seat not in used]
+
+        # Avoid the unique (game_id, seat) constraint while remapping.
+        for p, _, _ in snapshot:
+            p.seat = -int(p.id)
+        await session.flush()
+
+        for p, _, old_seat in kept:
+            p.is_reserved = False
+            p.reserve_position = None
+            p.seat = old_seat
+
+        free_iter = iter(free)
+        for p, _, _ in overflow:
+            try:
+                p.is_reserved = False
+                p.reserve_position = None
+                p.seat = next(free_iter)
+            except StopIteration:
+                p.is_reserved = True
+                p.seat = 0
+                p.reserve_position = None
+
+        # Existing reserves keep their order; newly overflowed players are appended.
+        reserve_players = [(p, u) for p, u in reserves if p.is_reserved]
+        newly_reserved = [(p, u) for p, u, _ in overflow if p.is_reserved]
+        reserve_players.extend(newly_reserved)
+        for position, (p, _) in enumerate(reserve_players, 1):
+            p.is_reserved = True
+            p.seat = 0
+            p.reserve_position = position
+
+        game.scenario_id = scenario.id
+        await session.commit()
+        return {
+            "active_count": len(snapshot) - len(newly_reserved),
+            "reserve_count": len(reserve_players),
+        }
+
+    @staticmethod
     async def mark_removed(session: AsyncSession, player: GamePlayer, exit_type: str) -> None:
         player.alive = False
         player.exit_type = exit_type
