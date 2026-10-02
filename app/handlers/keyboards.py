@@ -253,9 +253,18 @@ def game_extras_menu(group_id: int, auto_play: bool = False, turn_color: str = "
     return builder.as_markup()
 
 
-def game_event_management_keyboard(group_id: int) -> InlineKeyboardMarkup:
+def game_event_game_selector(games) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="➕ ثبت اتفاق جدید", callback_data=f"gameadmin:event_add:{group_id}"))
+    for game, scenario, group in games:
+        label = f"#{game.id} | {group.title[:20]} | {scenario.name_fa[:24]}"
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"gameadmin:event_game:{game.id}"))
+    _back(builder, "menu:root")
+    return builder.as_markup()
+
+
+def game_event_management_keyboard(game_id: int, group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ ثبت اتفاق جدید", callback_data=f"gameadmin:event_add:{game_id}"))
     _back(builder, f"gameadmin:features:{group_id}")
     return builder.as_markup()
 
