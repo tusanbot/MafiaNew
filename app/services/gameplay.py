@@ -6,6 +6,7 @@ from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenari
 from app.core.game.engine import GameEngine, GameEnginePhase, GameState
 from app.services.roles import assign_roles
 from app.services.stats import record_game_result
+from app.services.voting_rules import normalize_rules, build_phase_rules, resolve_single_vote2, resolve_multi_vote2, threshold_for_count
 
 def _payload(event: GameEvent) -> dict:
     try:
@@ -309,6 +310,52 @@ async def _revoked_vote_ids(session, game_id: int, round_no: int) -> set[int]:
     return revoked
 
 
+async def _scenario_voting_rules(session, game) -> dict:
+    scenario = await _current_scenario(session, game)
+    try:
+        raw = json.loads(getattr(scenario, "voting_rules", "") or "{}")
+    except (TypeError, ValueError):
+        raw = {}
+    return normalize_rules(raw)
+
+
+async def _vote1_rule_snapshot(session, game, round_no: int, ordered: list[int]) -> dict:
+    revoked = await _revoked_vote_ids(session, game.id, round_no)
+    # IMPORTANT: revoked players remain in voter_base. Their disciplinary
+    # penalty must not make the threshold easier for their team.
+    base_ids = list(ordered)
+    eligible_ids = [uid for uid in base_ids if uid not in revoked]
+    rules = await _scenario_voting_rules(session, game)
+    return build_phase_rules(
+        rules,
+        phase="vote1",
+        voter_base_ids=base_ids,
+        eligible_voter_ids=eligible_ids,
+        revoked_voter_ids=sorted(revoked),
+    )
+
+
+async def _vote2_rule_snapshot(session, game, round_no: int, defenders: list[int]) -> dict:
+    alive_ids = [user.id for _, user, _ in await alive_players(session, game.id)]
+    rules = await _scenario_voting_rules(session, game)
+    defenders_set = {int(x) for x in defenders}
+    # Whether defenders are part of the electorate is a scenario rule.
+    if bool(rules.get("vote2_defenders_can_vote", True)):
+        base_ids = alive_ids
+    else:
+        base_ids = [uid for uid in alive_ids if uid not in defenders_set]
+    revoked = await _revoked_vote_ids(session, game.id, round_no)
+    eligible_ids = [uid for uid in base_ids if uid not in revoked]
+    return build_phase_rules(
+        rules,
+        phase="vote2",
+        voter_base_ids=base_ids,
+        eligible_voter_ids=eligible_ids,
+        revoked_voter_ids=sorted(revoked),
+        defenders=defenders,
+    )
+
+
 async def vote1_start(session, game):
     if game.phase not in {"day", "vote_setup"}:
         raise ValueError("الان زمان آماده‌سازی رای گیری نیست.")
@@ -321,6 +368,7 @@ async def vote1_start(session, game):
     ordered = [uid for uid in ordered if uid in alive_ids]
     if not ordered:
         raise ValueError("بازیکن زنده‌ای برای رای گیری وجود ندارد.")
+    rule_snapshot = await _vote1_rule_snapshot(session, game, round_no, ordered)
     game.phase = "voting1"
     await _event(session, game, "vote_state", {
         "round_no": round_no,
@@ -330,12 +378,15 @@ async def vote1_start(session, game):
         "target_user_id": ordered[0],
         "status": "active",
         "started_at": datetime.now(timezone.utc).isoformat(),
+        "rules": rule_snapshot,
     })
     await _event(session, game, "voting_started", {
         "round_no": round_no, "phase": "vote1",
         "pre_delay_seconds": int(game.voting_pre_delay_seconds or 0),
         "vote_seconds": int(game.vote_seconds or 10),
         "mode": game.voting_mode,
+        "voter_base_count": rule_snapshot["voter_base_count"],
+        "eligible_voter_count": rule_snapshot["eligible_voter_count"],
     })
     await session.commit()
     return ordered[0]
@@ -360,42 +411,75 @@ async def _vote_records_for_target(session, game, round_no: int, phase: str, tar
     return list(result.all())
 
 
+async def _vote_records_for_phase(session, game, round_no: int, phase: str):
+    result = await session.execute(
+        select(Vote, User).join(User, User.id == Vote.voter_user_id).where(
+            Vote.game_id == game.id,
+            Vote.round_no == round_no,
+            Vote.phase == phase,
+        ).order_by(Vote.id.asc())
+    )
+    return list(result.all())
+
+
 async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase: str):
     if game.status != "running" or game.phase not in {"voting1", "voting2"}:
         raise ValueError("الان زمان رای گیری نیست.")
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") != phase or state.get("status") != "active":
         raise ValueError("این رای گیری فعال نیست.")
-    current_target = int(state["target_user_id"])
-    if current_target != int(target_user_id):
-        raise ValueError("این بازیکن الان در حال رای گیری نیست.")
     round_no = int(state["round_no"])
-    player = await session.scalar(select(GamePlayer).where(
-        GamePlayer.game_id == game.id, GamePlayer.user_id == voter.id, GamePlayer.alive.is_(True)
-    ))
-    if not player:
-        raise ValueError("فقط بازیکن زنده می‌تواند رای بدهد.")
-    if voter.id == current_target:
-        raise ValueError("بازیکن مورد رای خودش نمی‌تواند رای بدهد.")
-    if voter.id in await _revoked_vote_ids(session, game.id, round_no):
-        raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
-    existing = await session.scalar(select(Vote).where(
-        Vote.game_id == game.id, Vote.voter_user_id == voter.id,
-        Vote.target_user_id == current_target,
-        Vote.round_no == round_no, Vote.phase == phase,
-    ))
+    target_id = int(target_user_id)
+    if phase == "vote1":
+        current_target = int(state["target_user_id"])
+        if current_target != target_id:
+            raise ValueError("این بازیکن الان در حال رای گیری نیست.")
+        if voter.id == current_target:
+            raise ValueError("بازیکن مورد رای خودش نمی‌تواند رای بدهد.")
+    else:
+        candidates = {int(x) for x in state.get("queue", [])}
+        if target_id not in candidates:
+            raise ValueError("این بازیکن در دفاعیه نیست.")
+
+    rules = state.get("rules") or {}
+    eligible_ids = {int(x) for x in rules.get("eligible_voter_ids", [])}
+    if voter.id not in eligible_ids:
+        if voter.id in {int(x) for x in rules.get("revoked_voter_ids", [])}:
+            raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
+        raise ValueError("شما در این مرحله حق رای ندارید.")
+
+    # Vote 1 allows the same voter to vote once for each separately presented
+    # target. Vote 2 is a single ballot across all defenders.
+    if phase == "vote2":
+        existing = await session.scalar(select(Vote).where(
+            Vote.game_id == game.id,
+            Vote.voter_user_id == voter.id,
+            Vote.round_no == round_no,
+            Vote.phase == phase,
+        ))
+    else:
+        existing = await session.scalar(select(Vote).where(
+            Vote.game_id == game.id, Vote.voter_user_id == voter.id,
+            Vote.target_user_id == target_id,
+            Vote.round_no == round_no, Vote.phase == phase,
+        ))
     if existing:
         raise ValueError("رای شما قبلاً ثبت شده است.")
+
     now = datetime.now(timezone.utc)
     session.add(Vote(
-        game_id=game.id, voter_user_id=voter.id, target_user_id=current_target,
+        game_id=game.id, voter_user_id=voter.id, target_user_id=target_id,
         round_no=round_no, phase=phase, created_at=now,
     ))
     await session.flush()
-    records = await _vote_records_for_target(session, game, round_no, phase, current_target)
+    records = (
+        await _vote_records_for_target(session, game, round_no, phase, target_id)
+        if phase == "vote1"
+        else await _vote_records_for_phase(session, game, round_no, phase)
+    )
     await session.commit()
     return {
-        "target_user_id": current_target,
+        "target_user_id": target_id,
         "records": records,
         "count": len(records),
         "voted_at": now,
@@ -409,13 +493,18 @@ async def finish_vote1_target(session, game):
     round_no = int(state["round_no"])
     target_id = int(state["target_user_id"])
     records = await _vote_records_for_target(session, game, round_no, "vote1", target_id)
-    scenario = await _current_scenario(session, game)
-    threshold = int(getattr(scenario, "vote_defense_threshold", 2) or 2)
+    rule_snapshot = state.get("rules") or {}
+    threshold = int(rule_snapshot.get("threshold") or threshold_for_count(
+        int(rule_snapshot.get("voter_base_count", 0)),
+        str(rule_snapshot.get("threshold_mode") or "half_up"),
+        int(rule_snapshot.get("threshold_value") or 0),
+    ))
     qualified = len(records) >= threshold
     state["status"] = "finished"
     state["finished_at"] = datetime.now(timezone.utc).isoformat()
     state["vote_count"] = len(records)
     state["qualified_for_defense"] = qualified
+    state["threshold"] = threshold
     state_result = await session.execute(select(GameEvent).where(
         GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
     ).order_by(GameEvent.id.desc()))
@@ -425,6 +514,9 @@ async def finish_vote1_target(session, game):
     await _event(session, game, "vote1_target_finished", {
         "round_no": round_no, "target_user_id": target_id,
         "vote_count": len(records), "threshold": threshold, "qualified": qualified,
+        "voter_base_count": int(rule_snapshot.get("voter_base_count", 0)),
+        "eligible_voter_count": int(rule_snapshot.get("eligible_voter_count", 0)),
+        "revoked_voter_count": len(rule_snapshot.get("revoked_voter_ids", [])),
     })
     await session.commit()
     return {
@@ -445,12 +537,13 @@ async def advance_vote1(session, game):
     else:
         target_id = int(state["target_user_id"])
         records = await _vote_records_for_target(session, game, int(state["round_no"]), "vote1", target_id)
+        rules = state.get("rules") or {}
         result = {
             "target_user_id": target_id,
             "records": records,
             "count": len(records),
-            "threshold": int((await _current_scenario(session, game)).vote_defense_threshold or 2),
-            "qualified": False,
+            "threshold": int(state.get("threshold") or rules.get("threshold") or 0),
+            "qualified": bool(state.get("qualified_for_defense", False)),
         }
     state = await _latest_vote_state(session, game.id)
     queue = list(state.get("queue", []))
@@ -473,6 +566,7 @@ async def advance_vote1(session, game):
         game.phase = "vote1_complete"
         await _event(session, game, "vote1_completed", {
             "round_no": int(state["round_no"]), "qualified_candidates": candidates,
+            "voter_base_count": int((state.get("rules") or {}).get("voter_base_count", 0)),
         })
         await session.commit()
         return {"finished": True, "candidates": candidates, "result": result}
@@ -517,14 +611,17 @@ async def start_vote2(session, game):
     if not candidates:
         raise ValueError("حداقل یک بازیکن باید برای دفاع انتخاب شود.")
     round_no = int(state["round_no"])
+    rule_snapshot = await _vote2_rule_snapshot(session, game, round_no, candidates)
     game.phase = "defense"
     await _event(session, game, "vote2_started", {
         "round_no": round_no, "candidates": candidates, "selection_mode": game.vote2_selection_mode,
+        "rules": rule_snapshot,
     })
     await _event(session, game, "vote2_state", {
         "round_no": round_no, "phase": "defense",
         "index": 0, "queue": candidates, "target_user_id": candidates[0],
         "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+        "rules": rule_snapshot,
     })
     await _event(session, game, "turn_state", {
         "round_no": round_no, "kind": "defense", "user_id": candidates[0],
@@ -554,6 +651,7 @@ async def advance_defense_turn(session, game):
             "round_no": int(state["round_no"]), "phase": "vote2",
             "index": 0, "queue": queue, "target_user_id": queue[0],
             "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+            "rules": state.get("rules") or {},
         })
         await session.commit()
         return {"finished": True, "target_user_id": queue[0], "candidates": queue}
@@ -571,57 +669,91 @@ async def advance_defense_turn(session, game):
     return {"finished": False, "target_user_id": queue[idx + 1]}
 
 
+async def resolve_vote2(session, game):
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote2":
+        raise ValueError("رای دوم فعال نیست.")
+    round_no = int(state["round_no"])
+    candidates = [int(x) for x in state.get("queue", [])]
+    records = await _vote_records_for_phase(session, game, round_no, "vote2")
+    counts = {uid: 0 for uid in candidates}
+    for vote, _user in records:
+        counts[int(vote.target_user_id)] = counts.get(int(vote.target_user_id), 0) + 1
+    rules = await _scenario_voting_rules(session, game)
+    phase_rules = state.get("rules") or {}
+    eliminated: list[int] = []
+    result_type = "none"
+    if len(candidates) == 1:
+        single = resolve_single_vote2(counts.get(candidates[0], 0), int(phase_rules.get("voter_base_count", 0)), rules)
+        if single["qualified"]:
+            eliminated = [candidates[0]]
+        result_type = "single_threshold"
+        threshold = single["threshold"]
+    else:
+        resolution = resolve_multi_vote2(counts, rules)
+        threshold = 0
+        if resolution["resolution"] == "threshold":
+            mode = resolution["threshold_mode"]
+            value = resolution["threshold_value"]
+            threshold = threshold_for_count(int(phase_rules.get("voter_base_count", 0)), mode, value)
+            eliminated = [uid for uid, count in counts.items() if count >= threshold]
+            result_type = "multi_threshold"
+        else:
+            leaders = resolution.get("leaders", [])
+            if len(leaders) == 1:
+                eliminated = leaders
+                result_type = "highest_votes"
+            else:
+                result_type = "tie"
+    for uid in eliminated:
+        player = await session.scalar(select(GamePlayer).where(
+            GamePlayer.game_id == game.id, GamePlayer.user_id == uid, GamePlayer.alive.is_(True)
+        ))
+        if player:
+            player.alive = False
+            player.exit_type = "vote"
+    state["status"] = "finished"
+    state["result"] = {
+        "counts": counts,
+        "eliminated_ids": eliminated,
+        "result_type": result_type,
+        "threshold": threshold,
+        "voter_base_count": int(phase_rules.get("voter_base_count", 0)),
+        "eligible_voter_count": int(phase_rules.get("eligible_voter_count", 0)),
+    }
+    game.phase = "vote2_complete"
+    await _event(session, game, "vote2_completed", {
+        "round_no": round_no,
+        "candidates": candidates,
+        **state["result"],
+    })
+    state_event_result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
+    ).order_by(GameEvent.id.desc()))
+    state_event = state_event_result.scalars().first()
+    if state_event:
+        state_event.payload = json.dumps(state, ensure_ascii=False)
+    await session.commit()
+    return state["result"]
+
+
 async def finish_vote2(session, game):
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") != "vote2" or state.get("status") != "active":
         raise ValueError("رای دوم فعال نیست.")
-    round_no = int(state["round_no"])
-    target_id = int(state["target_user_id"])
-    records = await _vote_records_for_target(session, game, round_no, "vote2", target_id)
-    state["status"] = "finished"
-    state_result = await session.execute(select(GameEvent).where(
-        GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
-    ).order_by(GameEvent.id.desc()))
-    state_event = state_result.scalars().first()
-    if state_event:
-        state_event.payload = json.dumps(state, ensure_ascii=False)
-    await _event(session, game, "vote2_target_finished", {
-        "round_no": round_no, "target_user_id": target_id, "vote_count": len(records),
-    })
-    await session.commit()
-    return {
-        "finished": int(state.get("index", 0)) + 1 >= len(state.get("queue", [])),
-        "target_user_id": target_id,
-        "records": records,
-    }
-
+    result = await resolve_vote2(session, game)
+    return {"finished": True, "candidates": list(state.get("queue", [])), "result": result}
 
 
 async def advance_vote2(session, game):
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") != "vote2":
         raise ValueError("رای دوم فعال نیست.")
-    round_no = int(state["round_no"])
-    target_id = int(state["target_user_id"])
-    records = await _vote_records_for_target(session, game, round_no, "vote2", target_id)
-    queue = [int(x) for x in state.get("queue", [])]
-    idx = int(state.get("index", 0))
-    if idx + 1 < len(queue):
-        next_id = queue[idx + 1]
-        state["index"] = idx + 1
-        state["target_user_id"] = next_id
-        state["started_at"] = datetime.now(timezone.utc).isoformat()
-        state["status"] = "active"
-        await _event(session, game, "vote2_target_finished", {"round_no": round_no, "target_user_id": target_id, "vote_count": len(records)})
-        await _event(session, game, "vote_state", state)
-        await session.commit()
-        return {"finished": False, "target_user_id": next_id, "records": records}
-    state["status"] = "finished"
-    game.phase = "vote2_complete"
-    await _event(session, game, "vote2_target_finished", {"round_no": round_no, "target_user_id": target_id, "vote_count": len(records)})
-    await _event(session, game, "vote2_completed", {"round_no": round_no, "candidates": queue})
-    await session.commit()
-    return {"finished": True, "candidates": queue, "records": records}
+    if state.get("status") == "active":
+        result = await resolve_vote2(session, game)
+    else:
+        result = state.get("result") or {}
+    return {"finished": True, "candidates": list(state.get("queue", [])), "result": result}
 
 async def check_winner(session, game_id):
     alive = await alive_players(session, game_id)
