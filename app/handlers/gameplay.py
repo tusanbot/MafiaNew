@@ -883,6 +883,17 @@ async def _vote_target_message(bot, session, game, chat_id: int):
         return None
     phase = state["phase"]
     round_no = int(state["round_no"])
+    if phase == "vote2" and (state.get("rules") or {}).get("visibility", "public") != "public":
+        visibility = (state.get("rules") or {}).get("visibility")
+        label = "گرداننده" if visibility == "host_private" else "ربات"
+        msg = await bot.send_message(
+            chat_id,
+            f"🗳 رای گیری دوم مخفی است. ثبت رای توسط {label} در PV انجام می‌شود.",
+            reply_markup=vote2_complete_keyboard(game.game_key),
+        )
+        await _set_latest_vote_state_message(session, game, chat_id, msg.message_id)
+        await _send_vote2_private_controls(bot, session, game)
+        return msg
     if phase == "vote1":
         target_id = int(state["target_user_id"])
         target = await session.get(User, target_id)
