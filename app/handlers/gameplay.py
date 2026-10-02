@@ -552,58 +552,51 @@ async def challenge_grant_handler(callback: CallbackQuery):
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        for req_event, req_data in result["requests"]:
-            chat_id = req_data.get("chat_id")
-            message_id = req_data.get("message_id")
-            requester = await session.get(User, int(req_data["requester_id"]))
-            name = requester.display_name or requester.first_name if requester else "بازیکن"
-            if chat_id and message_id:
-                try:
-                    if req_event.id == result["request_event_id"]:
-                        await callback.bot.edit_message_text(
-                            f"🤏🏼 چالش برای {name} تأیید شد.\n\nزمان اجرای چالش را انتخاب کنید:",
-                            chat_id=chat_id,
-                            message_id=message_id,
-                            reply_markup=challenge_placement_keyboard(game.game_key, req_event.id),
-                        )
-                    else:
-                        await callback.bot.edit_message_text(
-                            f"درخواست چالش {name} رد شد؛ چالش به بازیکن دیگری داده شد.",
-                            chat_id=chat_id,
-                            message_id=message_id,
-                        )
-                except Exception:
-                    pass
-        await callback.answer("چالش داده شد.")
-        async def auto_after():
-            await asyncio.sleep(20)
-            async with session_factory() as timer_session:
-                timer_game = await _load(timer_session, key)
-                if not timer_game:
-                    return
-                try:
-                    placed = await auto_place_challenge_after(timer_session, timer_game, result["request_event_id"])
-                except ValueError:
-                    return
-                if placed:
-                    chat_id = await _group_chat_id(timer_session, timer_game)
-                    req = await timer_session.get(User, result["requester_id"])
-                    if chat_id and req:
-                        req_event = await timer_session.get(GameEvent, result["request_event_id"])
-                        req_data = json.loads(req_event.payload or "{}") if req_event else {}
-                        message_id = req_data.get("message_id")
-                        if message_id:
-                            try:
-                                await callback.bot.edit_message_text(
-                                    f"⚔️ چالش برای {tg_name(req.display_name or req.first_name)} تأیید شد.\n\n"
-                                    "زمان انتخاب نشد؛ بعد از پایان نوبت اجرا می‌شود.",
-                                    chat_id=int(chat_id),
-                                    message_id=int(message_id),
-                                )
-                            except Exception:
-                                pass
-        task = asyncio.create_task(auto_after())
-        _challenge_tasks[result["request_event_id"]] = task
+        requester = await session.get(User, result["requester_id"])
+        requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
+        turn = await current_turn(session, game.id)
+        turn_event, turn_data = await _turn_message(session, game, turn)
+        if turn_event and turn_data:
+            try:
+                await callback.bot.edit_message_text(
+                    f"🗣 نوبت صحبت {tg_name((await session.get(User, int(turn["user_id"]))).display_name)}\n\n"
+                    "⚔️ <b>درخواست چالش انتخاب شد.</b>",
+                    chat_id=int(turn_data["chat_id"]), message_id=int(turn_data["message_id"]),
+                    reply_markup=None, parse_mode="HTML"
+                )
+            except Exception:
+                pass
+        chat_id = await _group_chat_id(session, game)
+        if chat_id:
+            await callback.bot.send_message(
+                chat_id,
+                f"⚔️ چالش به {tg_name(requester_name)} داده شد.",
+                reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
+                parse_mode="HTML",
+            )
+        await callback.answer("چالش به بازیکن انتخاب‌شده داده شد.")
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("challenge:select:"))
+async def challenge_select_handler(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    if len(parts) != 4 or not callback.from_user:
+        return
+    _, _, key, event_id = parts
+    async with session_factory() as session:
+        game = await _load(session, key)
+        if not game or not callback.message:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        event = await session.get(GameEvent, int(event_id))
+        if not event or event.game_id != game.id:
+            await callback.answer("درخواست چالش پیدا نشد.", show_alert=True)
+            return
+        data = json.loads(event.payload or "{}")
+        requester = await session.get(User, int(data.get("requester_id", 0)))
+        name = requester.display_name or requester.first_name if requester else "بازیکن"
+        await callback.message.edit_reply_markup(reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), name))
+        await callback.answer("زمان اجرای چالش را انتخاب کنید.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:place:"))
