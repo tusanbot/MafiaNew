@@ -18,3 +18,6 @@ Start command: `python -m app`
 متغیرهای اصلی در `.env.example` مشخص شده‌اند. توکن داخل Git ذخیره نشود.
 
 <!-- sync-check: 2026-10-02 -->
+
+
+Rich Message transport is globally enabled with an automatic Bot API fallback.
