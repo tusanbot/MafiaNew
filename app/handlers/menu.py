@@ -1016,7 +1016,11 @@ async def game_event_add_text(message: Message, state: FSMContext) -> None:
     async with session_factory() as session:
         game = await session.get(Game, int(game_id)) if game_id else None
         actor = await UserRepository(session).get_by_telegram_id(message.from_user.id)
-        if not game or not actor or game.status != "running" or game.host_user_id != actor.id or game.auto_play:
+        group = await session.get(Group, game.group_id) if game else None
+        allowed = bool(game and actor and group and game.status == "running" and (
+            game.host_user_id == actor.id or await _is_group_admin(message.bot, group, actor.telegram_id)
+        ))
+        if not allowed or game.auto_play:
             await state.clear()
             await message.answer("بازی فعال یا دسترسی لازم وجود ندارد.")
             return
