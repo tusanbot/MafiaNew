@@ -79,10 +79,6 @@ def test_host_callback_shape_matches_handler() -> None:
     assert int(parts[2]) == group_id
     assert int(parts[3]) == host_id
 
-def test_host_callback_shape_matches_handler() -> None:
-    assert int(parts[3]) == host_id
-
-
 def test_new_game_color_callbacks_have_four_parts() -> None:
     turn = "newgame:set_turn_color:123:قرمز".split(":")
     challenge = "newgame:set_challenge_color:123:آبی".split(":")
@@ -162,9 +158,33 @@ def test_round_controls_use_automatic_leader_and_finish_button() -> None:
 
     leader_markup = leader_settings_keyboard("abc", GameStub())
     callbacks = [button.callback_data for row in leader_markup.inline_keyboard for button in row]
-    assert "leader:auto:abc" in callbacks
-    assert not any(":manual:" in x for x in callbacks if x)
+    assert "leader:menu:abc" in callbacks
 
     day_markup = day_keyboard("abc")
     day_callbacks = [button.callback_data for row in day_markup.inline_keyboard for button in row]
     assert "day:finish:abc" in day_callbacks
+
+
+def test_turn_keyboard_contains_challenge_and_next_buttons() -> None:
+    from app.handlers.keyboards import day_turn_keyboard
+    callbacks = _callbacks(day_turn_keyboard("abc", True, True, True, "پیش‌فرض", "پیش‌فرض", True, True))
+    assert "turn:request_challenge:abc" in callbacks
+    assert "turn:next:abc" in callbacks
+
+
+def test_challenge_requests_are_rendered_on_turn_keyboard() -> None:
+    from app.handlers.keyboards import day_turn_keyboard
+    class Event:
+        id = 17
+    markup = day_turn_keyboard("abc", True, True, True, "پیش‌فرض", "پیش‌فرض", True, True, [(Event(), {"requester_name": "رضا"})])
+    callbacks = _callbacks(markup)
+    assert "challenge:grant:abc:17" in callbacks
+
+
+def test_night_control_keyboard_has_locks_and_start_day() -> None:
+    from app.handlers.keyboards import continue_night_keyboard
+    callbacks = _callbacks(continue_night_keyboard("abc", True, False))
+    assert "night:resolve:abc" in callbacks
+    assert "night:lock:abc:night_lock" in callbacks
+    assert "night:lock:abc:chat_lock" in callbacks
+    assert "night:start_day:abc" in callbacks
