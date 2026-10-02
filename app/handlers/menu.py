@@ -62,7 +62,7 @@ def _ui_box(title: str, *lines: str) -> str:
     if clean:
         body.append(mid)
         body.extend(f"│ {x.ljust(width)} │" for x in clean)
-    return "\\n".join([top, *body, bottom])
+    return "\n".join([top, *body, bottom])
 
 
 def _ui_title(emoji: str, title: str, subtitle: str | None = None) -> str:
@@ -688,7 +688,7 @@ async def player_management(callback: CallbackQuery) -> None:
             _ui_box(
                 "👥 مدیریت بازیکنان",
                 *(lines if lines else ["📭 بازیکنی در بازی نیست."]),
-            ) + "\\n\\n👇 عملیات موردنظرت رو انتخاب کن:",
+            ) + "\n\n👇 عملیات موردنظرت رو انتخاب کن:",
             reply_markup=player_management_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
