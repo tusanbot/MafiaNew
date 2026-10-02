@@ -42,14 +42,14 @@ async def _is_host(session, game, user) -> bool:
 
 @router.message(_exact("پیوی", "پی وی", "پنل"))
 async def text_private_panel(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or await state.get_state():
+    if message.chat.type != "private":
         return
     await message.answer("👤 پنل شخصی", reply_markup=main_menu())
 
 
 @router.message(_exact("پروفایل", "profile"))
 async def text_profile(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or not message.from_user or await state.get_state():
+    if message.chat.type != "private" or not message.from_user:
         return
     async with session_factory() as session:
         user = await sync_telegram_user(
@@ -77,7 +77,7 @@ async def text_profile(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("رتبه", "رتبه بندی", "رتبه‌بندی", "rank", "ranking"))
 async def text_ranking(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or await state.get_state():
+    if message.chat.type != "private":
         return
     async with session_factory() as session:
         rows = await leaderboard(session, 10, None)
@@ -95,7 +95,7 @@ async def text_ranking(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("نقش", "نقش من", "role", "myrole"))
 async def text_role(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or not message.from_user or await state.get_state():
+    if message.chat.type != "private" or not message.from_user:
         return
     async with session_factory() as session:
         user = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
@@ -126,7 +126,7 @@ async def text_role(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("حاضری", "بازیکنان"))
 async def text_players(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"}:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -147,7 +147,7 @@ async def text_players(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("لابی"))
 async def text_lobby(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"}:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -160,7 +160,7 @@ async def text_lobby(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("انتخاب سردست", "سردست"))
 async def text_leader_menu(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -173,7 +173,7 @@ async def text_leader_menu(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("تنظیمات بازی"))
 async def text_game_settings(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -193,7 +193,7 @@ async def text_game_settings(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("شروع دور"))
 async def text_start_round(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -211,7 +211,7 @@ async def text_start_round(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("لغو بازی"))
 async def text_cancel_game(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or not message.from_user or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -283,7 +283,7 @@ async def _refresh_roster(bot, session, game, chat_id: int | None = None):
 
 @router.message(_exact("تذکر", "تذکر-", "کیک بازیکن", "سکوت بازیکن", "ترن اضافه", "تولد بازیکن", "حذف بازیکن"))
 async def text_reply_management(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"}:
         return
     if not message.reply_to_message:
         await message.answer("این دستور باید به پیام بازیکن ریپلای شود.")
@@ -381,7 +381,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("قفل بازی", "قفل شب", "قفل نوبت"))
 async def text_toggle_lock(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"}:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
@@ -406,7 +406,7 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("نکست"))
 async def text_next(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"} or await state.get_state():
+    if message.chat.type not in {"group", "supergroup"}:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
