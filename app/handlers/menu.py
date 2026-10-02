@@ -97,6 +97,29 @@ async def _manageable_groups(session, bot, user_id: int) -> list[Group]:
     return groups
 
 
+async def _game_player(session, game_id: int, telegram_user_id: int):
+    user = await session.scalar(select(User).where(User.telegram_id == telegram_user_id))
+    if not user:
+        return None
+    return await session.scalar(select(GamePlayer).where(
+        GamePlayer.game_id == game_id,
+        GamePlayer.user_id == user.id,
+    ))
+
+
+async def _is_game_participant(session, game_id: int, telegram_user_id: int) -> bool:
+    return (await _game_player(session, game_id, telegram_user_id)) is not None
+
+
+async def _can_manage_game_events(session, bot, game: Game, actor: User, group: Group) -> bool:
+    if not game or game.status != "running" or not actor or not group:
+        return False
+    is_moderator = game.host_user_id == actor.id or await _is_group_admin(bot, group, actor.telegram_id)
+    if not is_moderator:
+        return False
+    return not await _is_game_participant(session, game.id, actor.telegram_id)
+
+
 async def _selected_group(session, bot, user_id: int, group_id: int) -> Group | None:
     group = await session.get(Group, group_id)
     if not group or not group.is_active or group.registered_at is None:
@@ -969,11 +992,9 @@ async def game_event_select(callback: CallbackQuery) -> None:
         game = await session.get(Game, game_id)
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
         group = await session.get(Group, game.group_id) if game else None
-        allowed = bool(game and actor and group and game.status == "running" and (
-            game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id)
-        ))
+        allowed = bool(game and actor and group and await _can_manage_game_events(session, callback.bot, game, actor, group))
         if not allowed:
-            await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
+            await callback.answer("مدیرِ بازیکنِ این بازی اجازه مشاهده یا ثبت اتفاقات مخفی را ندارد.", show_alert=True)
             return
         await callback.message.edit_text(
             "📜 <b>مدیریت اتفاقات بازی</b>\n\nاتفاقات فقط برای همین بازی ثبت می‌شوند.",
@@ -992,11 +1013,9 @@ async def game_event_add(callback: CallbackQuery, state: FSMContext) -> None:
         game = await session.get(Game, game_id)
         actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
         group = await session.get(Group, game.group_id) if game else None
-        allowed = bool(game and actor and group and game.status == "running" and (
-            game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id)
-        ))
+        allowed = bool(game and actor and group and await _can_manage_game_events(session, callback.bot, game, actor, group))
         if not allowed:
-            await callback.answer("این بازی برای شما قابل مدیریت نیست.", show_alert=True)
+            await callback.answer("مدیرِ بازیکنِ این بازی اجازه ثبت اتفاقات مخفی را ندارد.", show_alert=True)
             return
         if game.auto_play:
             await callback.answer("ثبت دستی اتفاقات فقط برای بازی غیرخودکار فعال است.", show_alert=True)
@@ -1017,9 +1036,7 @@ async def game_event_add_text(message: Message, state: FSMContext) -> None:
         game = await session.get(Game, int(game_id)) if game_id else None
         actor = await UserRepository(session).get_by_telegram_id(message.from_user.id)
         group = await session.get(Group, game.group_id) if game else None
-        allowed = bool(game and actor and group and game.status == "running" and (
-            game.host_user_id == actor.id or await _is_group_admin(message.bot, group, actor.telegram_id)
-        ))
+        allowed = bool(game and actor and group and await _can_manage_game_events(session, message.bot, game, actor, group))
         if not allowed or game.auto_play:
             await state.clear()
             await message.answer("بازی فعال یا دسترسی لازم وجود ندارد.")
@@ -1147,6 +1164,9 @@ async def game_result_events(callback: CallbackQuery) -> None:
         game = await session.get(Game, game_id)
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        if game.status != "finished" or not await _is_game_participant(session, game.id, callback.from_user.id):
+            await callback.answer("اتفاقات مخفی فقط پس از پایان بازی و فقط برای بازیکنان همان بازی قابل مشاهده است.", show_alert=True)
             return
         group = await session.get(Group, game.group_id)
         if not group:
@@ -1310,9 +1330,13 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
                 .where(Game.status == "running", Game.group_id.in_(group_ids))
                 .order_by(desc(Game.id))
             )
-            games = list(result.all())
+            games = []
+            actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+            for candidate_game, scenario, candidate_group in result.all():
+                if actor and await _can_manage_game_events(session, callback.bot, candidate_game, actor, candidate_group):
+                    games.append((candidate_game, scenario, candidate_group))
             if not games:
-                await callback.answer("بازی فعالی که گرداننده آن شما باشید پیدا نشد.", show_alert=True)
+                await callback.answer("بازی فعالی که شما گرداننده آن باشید و همزمان بازیکن آن نباشید پیدا نشد.", show_alert=True)
                 return
             await callback.message.edit_text(
                 "🎯 <b>انتخاب بازی برای ثبت اتفاقات</b>\n\nابتدا بازی موردنظر را انتخاب کنید:",
