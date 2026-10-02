@@ -288,9 +288,9 @@ async def edit_rich_message(bot: Any, chat_id: int | str, message_id: int, html_
 def install_rich_message_transport() -> None:
     """Install one global, transparent Rich Message transport on aiogram Bot.
 
-    All normal text sends/edits in the bot pass through this layer. Menus,
-    profiles, admin panels, lobby/game messages, voting, challenges,
-    notifications, results and text commands therefore use the same transport.
+    Normal text messages remain on the stable aiogram transport by default. Structured
+    screens can opt into Rich explicitly through send_rich_message/edit_rich_message;
+    setting RICH_MESSAGES_AUTO=true restores transparent Rich conversion for all text.
     The original aiogram methods remain the authoritative fallback.
     """
     global _patch_installed
@@ -347,7 +347,7 @@ def install_rich_message_transport() -> None:
             payload = _edit_rich_payload(normalized)
             return await _try_rich("editMessageText", self.token, payload)
         except Exception:
-            return await original_edit_message_text(self, *original_args, **kwargs)
+            return await _safe_original_edit(self, *original_args, **kwargs)
 
     Bot.send_message = send_message
     Bot.edit_message_text = edit_message_text
