@@ -567,22 +567,31 @@ async def advance_vote1(session, game):
     next_index = int(state.get("index", 0)) + 1
     if next_index >= len(queue):
         candidates = []
+        defense_pool = []
         events = await session.execute(select(GameEvent).where(
             GameEvent.game_id == game.id,
             GameEvent.event_type == "vote1_target_finished",
         ).order_by(GameEvent.id.asc()))
         for event in events.scalars():
             data = _payload(event)
-            if int(data.get("round_no", -1)) == int(state["round_no"]) and data.get("qualified"):
-                uid = int(data["target_user_id"])
-                if uid not in candidates:
-                    candidates.append(uid)
+            if int(data.get("round_no", -1)) != int(state["round_no"]):
+                continue
+            uid = int(data["target_user_id"])
+            vote_count = int(data.get("vote_count") or 0)
+            if data.get("qualified") and uid not in candidates:
+                candidates.append(uid)
+            if vote_count >= 1 and uid not in defense_pool:
+                defense_pool.append(uid)
         state["phase"] = "vote1_complete"
         state["status"] = "finished"
         state["qualified_candidates"] = candidates
+        state["defense_pool_candidates"] = defense_pool
+        state["defense_candidates"] = []
         game.phase = "vote1_complete"
         await _event(session, game, "vote1_completed", {
-            "round_no": int(state["round_no"]), "qualified_candidates": candidates,
+            "round_no": int(state["round_no"]),
+            "qualified_candidates": candidates,
+            "defense_pool_candidates": defense_pool,
             "voter_base_count": int((state.get("rules") or {}).get("voter_base_count", 0)),
         })
         await session.commit()
@@ -601,9 +610,9 @@ async def toggle_vote2_candidate(session, game, user_id: int):
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") != "vote1_complete":
         raise ValueError("مرحله انتخاب دفاع فعال نیست.")
-    candidates = {int(x) for x in state.get("qualified_candidates", [])}
+    candidates = {int(x) for x in state.get("defense_pool_candidates", state.get("qualified_candidates", []))}
     if int(user_id) not in candidates:
-        raise ValueError("این بازیکن به حدنصاب دفاع نرسیده است.")
+        raise ValueError("این بازیکن حداقل یک رای نگرفته است.")
     selected = {int(x) for x in state.get("defense_candidates", [])}
     if int(user_id) in selected:
         selected.remove(int(user_id))
