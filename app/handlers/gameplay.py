@@ -1260,7 +1260,7 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 if not game or game.phase != "voting2":
                     return
                 state = await _latest_vote_state(session, game.id)
-                if not state or state.get("phase") != "vote2":
+                if not state or state.get("phase") != "vote2" or state.get("status") != "active":
                     return
                 started = datetime.fromisoformat(state["started_at"])
                 remaining = max(0.0, float(game.vote_seconds or 10) - (datetime.now(timezone.utc) - started).total_seconds())
@@ -1271,23 +1271,17 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 game = await _load(session, game_key)
                 if not game or game.phase != "voting2":
                     return
-                state_before = await _latest_vote_state(session, game.id)
-                if not state_before:
+                state = await _latest_vote_state(session, game.id)
+                if not state:
                     return
                 await finish_vote2(session, game)
-                await _finish_vote_message(bot, session, game, next_button=True, final=False)
-                if game.vote2_selection_mode == "auto":
-                    result = await advance_vote2(session, game)
-                    if result["finished"]:
-                        await _finish_vote_message(bot, session, game, next_button=True, final=True)
-                        return
-                    await _vote_target_message(bot, session, game, chat_id)
-                    continue
+                await _finish_vote_message(bot, session, game, next_button=False, final=True)
                 return
     except asyncio.CancelledError:
         return
     finally:
         _vote_tasks.pop(f"vote2:{game_key}", None)
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:next:"))
 async def vote2_next_handler(callback: CallbackQuery):
@@ -1298,17 +1292,16 @@ async def vote2_next_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not game or not actor or game.host_user_id != actor.id:
-            await callback.answer("فقط گرداننده می‌تواند رای بعدی را شروع کند.", show_alert=True)
+            await callback.answer("فقط گرداننده می‌تواند رای را تمام کند.", show_alert=True)
             return
         task = _vote_tasks.pop(f"vote2:{key}", None)
         if task:
             task.cancel()
         result = await advance_vote2(session, game)
+        await _finish_vote_message(callback.bot, session, game, next_button=False, final=True)
         if result["finished"]:
-            await callback.message.edit_reply_markup(reply_markup=vote2_result_keyboard(key))
-        else:
-            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-            _vote_tasks[f"vote2:{key}"] = asyncio.create_task(_vote2_timer(callback.bot, key, callback.message.chat.id))
+            await callback.answer("رای گیری دوم تمام شد.")
+            return
     await callback.answer()
 
 
