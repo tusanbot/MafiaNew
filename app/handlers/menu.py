@@ -2165,18 +2165,6 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
     await callback.answer()
     return
 
-    current = data.get("current_roles_text", "")
-    prompt = (
-        "🎭 نقش‌ها و سایدها را هر کدام در یک سطر وارد کنید.\n\n"
-        "فرمت:\nپدرخوانده مافیا\nکنستانتین شهروند\nدکتر شهروند\nنوستراداموس مستقل\n\n"
-        "کلمه آخر هر سطر ساید است و بقیه متن نام نقش.\n"
-        "نقش تکراری را در سطر جداگانه بنویسید.\n"
-        + ("\nترکیب فعلی:\n" + current if current else "")
-        + ("\n\nبرای بدون تغییر، - بفرستید." if data.get("edit_id") else "")
-    )
-    await callback.message.edit_text(prompt)
-    await callback.answer()
-
 @router.message(ScenarioAdminState.vote_threshold)
 async def scenario_form_vote_threshold(message: Message, state: FSMContext) -> None:
     if message.chat.type != "private":
@@ -2270,6 +2258,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
                 turn_seconds=int(data.get("turn_seconds", 120)),
                 challenge_seconds=int(data.get("challenge_seconds", 60)),
                 extra_challenge_seconds=int(data.get("extra_challenge_seconds", 60)),
+                vote_defense_threshold=int(data.get("vote_defense_threshold", 2)),
                 challenge_mode=data.get("challenge_mode", "limited"),
                 challenge_limit=1 if data.get("challenge_mode") == "limited" else None,
             )
@@ -2313,6 +2302,7 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
         current_extra_challenge_seconds=getattr(scenario, "extra_challenge_seconds", 60),
         current_roles_text=current_roles_text,
         challenge_mode=scenario.challenge_mode,
+        current_vote_defense_threshold=getattr(scenario, "vote_defense_threshold", 2),
     )
     await callback.message.edit_text(f"✏️ ویرایش «{scenario.name_fa}»\n\nنام جدید را ارسال کنید یا - برای بدون تغییر:")
     await callback.answer()
