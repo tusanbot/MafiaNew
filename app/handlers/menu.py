@@ -1489,6 +1489,14 @@ async def game_extra_handler(callback: CallbackQuery) -> None:
             await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
             return
         colors = ["پیش‌فرض", "سبز", "آبی", "بنفش", "قرمز", "طلایی"]
+        group_settings = await session.scalar(
+            select(GroupSettings).where(GroupSettings.group_id == group.id)
+        )
+        if group_settings is None:
+            group_settings = GroupSettings(group_id=group.id)
+            session.add(group_settings)
+            await session.flush()
+
         if action == "auto_play":
             game.auto_play = not game.auto_play
         elif action == "turn_color_enabled":
@@ -1497,13 +1505,15 @@ async def game_extra_handler(callback: CallbackQuery) -> None:
             game.turn_color = colors[(colors.index(game.turn_color) + 1) % len(colors)] if game.turn_color in colors else colors[0]
         elif action == "challenge_color":
             game.challenge_color = colors[(colors.index(game.challenge_color) + 1) % len(colors)] if game.challenge_color in colors else colors[0]
+        elif action == "custom_emoji":
+            group_settings.custom_emoji = not group_settings.custom_emoji
         else:
             await callback.answer("امکان اضافی نامعتبر است.", show_alert=True)
             return
         await session.commit()
         await callback.message.edit_text(
             "امکانات اضافی بازی",
-            reply_markup=game_extras_menu(group.id, game.auto_play, game.turn_color, game.challenge_color, game.turn_color_enabled),
+            reply_markup=game_extras_menu(group.id, game.auto_play, game.turn_color, game.challenge_color, game.turn_color_enabled, group_settings.custom_emoji),
         )
     await callback.answer("تنظیم ذخیره شد.")
 
