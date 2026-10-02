@@ -19,7 +19,6 @@ from app.services.gameplay import (
     start_round,
     start_voting,
     submit_night_action,
-    submit_vote,
     resolve_challenge,
     start_day_turns,
     start_new_day_round,
