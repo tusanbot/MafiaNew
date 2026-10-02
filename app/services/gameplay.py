@@ -432,13 +432,14 @@ async def _vote_records_for_phase(session, game, round_no: int, phase: str):
     return list(result.all())
 
 
-async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase: str):
+async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase: str, *, voter_id: int | None = None):
     if game.status != "running" or game.phase not in {"voting1", "voting2"}:
         raise ValueError("الان زمان رای گیری نیست.")
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") != phase or state.get("status") != "active":
         raise ValueError("این رای گیری فعال نیست.")
     round_no = int(state["round_no"])
+    voter_id = int(voter_id if voter_id is not None else voter.id)
     target_id = int(target_user_id)
     if phase == "vote1":
         current_target = int(state["target_user_id"])
@@ -453,8 +454,8 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
 
     rules = state.get("rules") or {}
     eligible_ids = {int(x) for x in rules.get("eligible_voter_ids", [])}
-    if voter.id not in eligible_ids:
-        if voter.id in {int(x) for x in rules.get("revoked_voter_ids", [])}:
+    if voter_id not in eligible_ids:
+        if voter_id in {int(x) for x in rules.get("revoked_voter_ids", [])}:
             raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
         raise ValueError("شما در این مرحله حق رای ندارید.")
 
@@ -463,13 +464,13 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
     if phase == "vote2":
         existing = await session.scalar(select(Vote).where(
             Vote.game_id == game.id,
-            Vote.voter_user_id == voter.id,
+            Vote.voter_user_id == voter_id,
             Vote.round_no == round_no,
             Vote.phase == phase,
         ))
     else:
         existing = await session.scalar(select(Vote).where(
-            Vote.game_id == game.id, Vote.voter_user_id == voter.id,
+            Vote.game_id == game.id, Vote.voter_user_id == voter_id,
             Vote.target_user_id == target_id,
             Vote.round_no == round_no, Vote.phase == phase,
         ))
@@ -478,7 +479,7 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
 
     now = datetime.now(timezone.utc)
     session.add(Vote(
-        game_id=game.id, voter_user_id=voter.id, target_user_id=target_id,
+        game_id=game.id, voter_user_id=voter_id, target_user_id=target_id,
         round_no=round_no, phase=phase, created_at=now,
     ))
     await session.flush()
