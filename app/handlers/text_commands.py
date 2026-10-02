@@ -259,9 +259,17 @@ async def _reply_target(message: Message, session, game):
 
 
 
-def _turn_duration_local(game, kind: str) -> int:\n    if kind == "challenge":\n        return int(getattr(game, "challenge_seconds", 60) or 60)\n    if kind == "extra":\n        return int(getattr(game, "extra_challenge_seconds", 60) or 60)\n    return int(getattr(game, "turn_seconds", 120) or 120)\n
+def _turn_duration_local(game, kind: str) -> int:
+    if kind == "challenge":
+        return int(getattr(game, "challenge_seconds", 60) or 60)
+    if kind == "extra":
+        return int(getattr(game, "extra_challenge_seconds", 60) or 60)
+    return int(getattr(game, "turn_seconds", 120) or 120)
 
-def _format_duration(seconds: int) -> str:\n    minutes, remainder = divmod(max(0, int(seconds)), 60)\n    return f"{minutes:02d}:{remainder:02d}"
+
+def _format_duration(seconds: int) -> str:
+    minutes, remainder = divmod(max(0, int(seconds)), 60)
+    return f"{minutes:02d}:{remainder:02d}"
 
 
 async def _refresh_roster(bot, session, game, chat_id: int | None = None):
