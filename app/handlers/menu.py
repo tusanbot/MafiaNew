@@ -1065,6 +1065,152 @@ async def player_replace_to(callback: CallbackQuery) -> None:
     await callback.answer("جایگزینی انجام شد.")
 
 
+@router.callback_query(lambda c: c.data.startswith("gameadmin:scenario:"))
+async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر سناریو فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
+        if not group:
+            return
+        scenarios = (await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().all()
+        from app.handlers.keyboards import scenario_select_keyboard
+        await callback.message.edit_text(
+            "🎭 سناریوی جدید را انتخاب کنید:",
+            reply_markup=scenario_select_keyboard(
+                group.id, scenarios,
+                back_callback=f"gameadmin:lobby:{game.game_key}",
+                callback_prefix="gameadmin:set_scenario",
+            ),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:set_scenario:"))
+async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست تغییر سناریو نامعتبر است.", show_alert=True)
+        return
+    key, scenario_raw = parts[2], parts[3]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر سناریو فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
+        scenario = await session.get(Scenario, int(scenario_raw))
+        if not group or not scenario or not scenario.enabled or scenario.key == "classic":
+            await callback.answer("سناریو قابل انتخاب نیست.", show_alert=True)
+            return
+        try:
+            await GameRepository.change_scenario_seats(session, game, scenario)
+        except ValueError as exc:
+            await callback.answer(str(exc), show_alert=True)
+            return
+        await callback.answer("سناریو تغییر کرد و صندلی‌ها تطبیق داده شدند.")
+        # Render the actual lobby in the same group-management message.
+        from app.services.game import render_lobby
+        from app.handlers.keyboards import lobby_keyboard_v2
+        text, full = await render_lobby(session, game)
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        await callback.message.edit_text(
+            text,
+            parse_mode="HTML",
+            reply_markup=lobby_keyboard_v2(
+                game.game_key, scenario, await GameRepository.players(session, game.id),
+                await GameRepository.reserves(session, game.id),
+                is_host=bool(host and host.id == callback.from_user.id),
+                can_deal=full, reserve_enabled=game.reserve_enabled,
+                training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
+            ),
+        )
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:host:"))
+async def gameadmin_host_select(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
+        if not group:
+            return
+        admins = await callback.bot.get_chat_administrators(group.telegram_id)
+        from app.handlers.keyboards import host_select_keyboard
+        await callback.message.edit_text(
+            "🎙 گرداننده جدید را انتخاب کنید:",
+            reply_markup=host_select_keyboard(
+                group.id, admins,
+                callback_prefix="gameadmin:set_host",
+                back_callback=f"gameadmin:lobby:{game.game_key}",
+            ),
+        )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:set_host:"))
+async def gameadmin_set_host(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست تغییر گرداننده نامعتبر است.", show_alert=True)
+        return
+    key, host_raw = parts[2], parts[3]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        if not game or game.status != "waiting":
+            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+            return
+        group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
+        if not group:
+            return
+        try:
+            member = await callback.bot.get_chat_member(group.telegram_id, int(host_raw))
+        except Exception:
+            await callback.answer("اطلاعات گرداننده از تلگرام دریافت نشد.", show_alert=True)
+            return
+        if member.status not in ("creator", "administrator"):
+            await callback.answer("گرداننده باید مدیر گروه باشد.", show_alert=True)
+            return
+        tg_user = member.user
+        host = await UserRepository(session).upsert_from_telegram(
+            tg_user.id, tg_user.username, tg_user.first_name or "", tg_user.last_name
+        )
+        game.host_user_id = host.id
+        await session.commit()
+        scenario = await session.get(Scenario, game.scenario_id)
+        from app.services.game import render_lobby
+        from app.handlers.keyboards import lobby_keyboard_v2
+        text, full = await render_lobby(session, game)
+        await callback.message.edit_text(
+            text, parse_mode="HTML",
+            reply_markup=lobby_keyboard_v2(
+                game.game_key, scenario, await GameRepository.players(session, game.id),
+                await GameRepository.reserves(session, game.id),
+                is_host=host.id == callback.from_user.id, can_deal=full,
+                reserve_enabled=game.reserve_enabled,
+                training_url=scenario.training_url if scenario else None,
+                telegram_training_url=scenario.telegram_training_url if scenario else None,
+            ),
+        )
+    await callback.answer("گرداننده تغییر کرد.")
+
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:cancel_confirm:"))
 async def cancel_game_confirm(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -1301,7 +1447,9 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             reply_markup=game_features_menu(
                 group.id, game.challenge_enabled, game.challenge_mode, game.next_host_enabled, game.next_player_enabled,
                 game.next_auto_enabled, game.auto_silence_warnings, game.auto_kick_warnings,
-                game.turn_seconds, game.challenge_seconds, game.extra_challenge_seconds
+                game.turn_seconds, game.challenge_seconds, game.extra_challenge_seconds,
+                back_callback=f"game:return_lobby:{game.game_key}" if game.status == "waiting" else f"gameadmin:active:{group.id}",
+                game_key=game.game_key,
             ),
         )
     await callback.answer("تنظیم ذخیره شد.")
@@ -1368,6 +1516,8 @@ async def game_set_time(callback: CallbackQuery) -> None:
                 game.next_player_enabled, game.next_auto_enabled, game.auto_silence_warnings,
                 game.auto_kick_warnings, game.turn_seconds, game.challenge_seconds,
                 game.extra_challenge_seconds,
+                back_callback=f"game:return_lobby:{game.game_key}" if game.status == "waiting" else f"gameadmin:active:{group.id}",
+                game_key=game.game_key,
             ),
         )
     await callback.answer("زمان ذخیره شد.")
@@ -1561,7 +1711,7 @@ async def _ensure_draft(session, group, telegram_user_id: int):
         return draft
 
     scenario = (await session.execute(
-        select(Scenario).where(Scenario.enabled.is_(True)).order_by(Scenario.id)
+        select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
     )).scalars().first()
     if not scenario:
         return None
@@ -1629,7 +1779,7 @@ async def new_game_scenario(callback: CallbackQuery) -> None:
         group = await _require_group_admin(callback, session, group_id)
         if not group:
             return
-        result = await session.execute(select(Scenario).where(Scenario.enabled.is_(True)).order_by(Scenario.id))
+        result = await session.execute(select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id))
         scenarios = result.scalars().all()
         await callback.message.edit_text("انتخاب سناریو", reply_markup=__import__("app.handlers.keyboards", fromlist=["scenario_select_keyboard"]).scenario_select_keyboard(group.id, scenarios))
     await callback.answer()
