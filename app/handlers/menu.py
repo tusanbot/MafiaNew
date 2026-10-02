@@ -611,16 +611,22 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
         await _remap_game_players_to_scenario(session, game, scenario, old_scenario.max_players if old_scenario else scenario.max_players)
         game.scenario_id = scenario.id
         await session.commit()
-        await callback.message.edit_text(
-            f"🎭 سناریو تغییر کرد: <b>{scenario.name_fa}</b>",
-            reply_markup=active_game_menu(
-                group.id,
-                back_callback=f"gameadmin:lobby:{game.game_key}",
-                game_key=game.game_key,
-                lobby_editable=True,
-            ),
-            parse_mode="HTML",
+        lobby_text, lobby_full = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, game)
+        lobby_markup = __import__("app.handlers.keyboards", fromlist=["lobby_keyboard_v2"]).lobby_keyboard_v2(
+            game.game_key, scenario, await GameRepository.players(session, game.id),
+            await GameRepository.reserves(session, game.id),
+            is_host=True, can_deal=lobby_full, reserve_enabled=game.reserve_enabled,
+            training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
         )
+        if callback.message.chat.id == group.telegram_id:
+            await callback.message.edit_text(lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
+        else:
+            await callback.bot.send_message(group.telegram_id, lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
+            await callback.message.edit_text(
+                f"🎭 سناریو تغییر کرد: <b>{scenario.name_fa}</b>",
+                reply_markup=active_game_menu(group.id, back_callback=f"gameadmin:lobby:{game.game_key}", game_key=game.game_key, lobby_editable=True),
+                parse_mode="HTML",
+            )
     await callback.answer("سناریو تغییر کرد.")
 
 
@@ -673,16 +679,23 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
         )
         game.host_user_id = host.id
         await session.commit()
-        await callback.message.edit_text(
-            f"🎙 گرداننده تغییر کرد: <b>{tg_mention(host.telegram_id, host.display_name or host.first_name)}</b>",
-            reply_markup=active_game_menu(
-                group.id,
-                back_callback=f"gameadmin:lobby:{game.game_key}",
-                game_key=game.game_key,
-                lobby_editable=True,
-            ),
-            parse_mode="HTML",
+        scenario = await session.get(Scenario, game.scenario_id)
+        lobby_text, lobby_full = await __import__("app.services.game", fromlist=["render_lobby"]).render_lobby(session, game)
+        lobby_markup = __import__("app.handlers.keyboards", fromlist=["lobby_keyboard_v2"]).lobby_keyboard_v2(
+            game.game_key, scenario, await GameRepository.players(session, game.id),
+            await GameRepository.reserves(session, game.id),
+            is_host=True, can_deal=lobby_full, reserve_enabled=game.reserve_enabled,
+            training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
         )
+        if callback.message.chat.id == group.telegram_id:
+            await callback.message.edit_text(lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
+        else:
+            await callback.bot.send_message(group.telegram_id, lobby_text, reply_markup=lobby_markup, parse_mode="HTML")
+            await callback.message.edit_text(
+                f"🎙 گرداننده تغییر کرد: <b>{tg_mention(host.telegram_id, host.display_name or host.first_name)}</b>",
+                reply_markup=active_game_menu(group.id, back_callback=f"gameadmin:lobby:{game.game_key}", game_key=game.game_key, lobby_editable=True),
+                parse_mode="HTML",
+            )
     await callback.answer("گرداننده تغییر کرد.")
 
 
