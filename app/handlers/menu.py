@@ -649,7 +649,7 @@ async def game_info(callback: CallbackQuery) -> None:
                     f"🕹️ مرحله: {game.phase}",
                     f"🎙️ گرداننده: {host.display_name if host else 'نامشخص'}",
                     "👥 بازیکنان:",
-                    *[f"  {line}" for line in player_lines.split("\\n")],
+                    *[f"  {line}" for line in player_lines.split("\n")],
                 ),
                 reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
             )
