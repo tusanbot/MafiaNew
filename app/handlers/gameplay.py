@@ -897,7 +897,7 @@ async def _start_vote1_after_delay(bot, game_key: str, chat_id: int, delay: int)
         game = await _load(session, game_key)
         if not game or game.status != "running":
             return
-        if game.phase != "day":
+        if game.phase not in {"day", "vote_setup"}:
             return
         await vote1_start(session, game)
         await _vote_target_message(bot, session, game, chat_id)
