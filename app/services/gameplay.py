@@ -381,6 +381,7 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
         raise ValueError("حق رای شما تا پایان این دور گرفته شده است.")
     existing = await session.scalar(select(Vote).where(
         Vote.game_id == game.id, Vote.voter_user_id == voter.id,
+        Vote.target_user_id == current_target,
         Vote.round_no == round_no, Vote.phase == phase,
     ))
     if existing:
