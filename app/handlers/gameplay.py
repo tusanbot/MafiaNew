@@ -709,11 +709,12 @@ async def day_night_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده می‌تواند فاز شب را شروع کند.", show_alert=True)
             return
         turn = await current_turn(session, game.id)
-        if not turn or turn.get("status") != "finished":
-            await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
-            return
-        if game.phase != "day":
-            await callback.answer("مرحله روز فعال نیست.", show_alert=True)
+        if game.phase == "day":
+            if not turn or turn.get("status") != "finished":
+                await callback.answer("ابتدا باید صحبت‌های دور تمام شود.", show_alert=True)
+                return
+        elif game.phase != "vote2_complete":
+            await callback.answer("شروع فاز شب در این مرحله امکان‌پذیر نیست.", show_alert=True)
             return
         game.phase = "night"
         await session.commit()
