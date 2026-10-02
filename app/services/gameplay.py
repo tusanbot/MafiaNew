@@ -578,6 +578,12 @@ async def finish_vote2(session, game):
     target_id = int(state["target_user_id"])
     records = await _vote_records_for_target(session, game, round_no, "vote2", target_id)
     state["status"] = "finished"
+    state_result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
+    ).order_by(GameEvent.id.desc()))
+    state_event = state_result.scalars().first()
+    if state_event:
+        state_event.payload = json.dumps(state, ensure_ascii=False)
     await _event(session, game, "vote2_target_finished", {
         "round_no": round_no, "target_user_id": target_id, "vote_count": len(records),
     })
