@@ -929,12 +929,14 @@ async def night_start_day_handler(callback: CallbackQuery):
             await send_game_result_notifications(callback.bot, session, game)
             if chat_id:
                 await callback.bot.send_message(chat_id, "🏁 بازی تمام شد.")
+            await delete_main_roster(callback.bot, session, game)
             await callback.message.edit_reply_markup(reply_markup=None)
             await callback.answer("بازی تمام شد.")
             return
         await start_new_day_round(session, game)
         if chat_id:
             await update_round_roster(callback.bot, session, game, chat_id)
+            await update_main_roster(callback.bot, session, game, chat_id)
             await callback.bot.send_message(chat_id, f"🌅 روز جدید شروع شد. دور {await current_round(session, game.id)}")
             await _send_turn_message(callback.bot, session, game, chat_id)
             await _schedule_auto_next(callback.bot, game.game_key, chat_id)
@@ -1359,12 +1361,11 @@ async def vote1_finish_handler(callback: CallbackQuery):
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
-        state = await _latest_vote_state(session, game.id)
-        candidates = [int(x) for x in state.get("qualified_candidates", [])] if state else []
-        players = [row for row in await alive_players(session, game.id) if row[1].id in candidates]
         await callback.message.edit_text(
-            "🗳 <b>تنظیمات رای گیری دوم</b>",
-            reply_markup=vote2_setup_keyboard(key, game.vote2_selection_mode),
+            "🗳 <b>رأی اول تمام شد</b>
+
+از گزینه‌های زیر مرحله بعد را انتخاب کنید.",
+            reply_markup=vote1_complete_keyboard(key),
             parse_mode="HTML",
         )
     await callback.answer()
@@ -1376,8 +1377,14 @@ async def vote2_select_handler(callback: CallbackQuery):
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
         selected = await toggle_vote2_candidate(session, game, uid)
-        players = [row for row in await alive_players(session, game.id) if row[1].id in {int(x) for x in (await _latest_vote_state(session, game.id)).get("qualified_candidates", [])}]
-        await callback.message.edit_reply_markup(reply_markup=defense_selection_keyboard(key, players, set(selected)))
+        state = await _latest_vote_state(session, game.id)
+        pool = {int(x) for x in (state or {}).get("defense_pool_candidates", (state or {}).get("qualified_candidates", []))}
+        players = [row for row in await alive_players(session, game.id) if row[1].id in pool]
+        records = await _vote_records_for_phase(session, game, int((state or {}).get("round_no", await current_round(session, game.id))), "vote1")
+        counts = {}
+        for vote, _user in records:
+            counts[int(vote.target_user_id)] = counts.get(int(vote.target_user_id), 0) + 1
+        await callback.message.edit_reply_markup(reply_markup=defense_selection_keyboard(key, players, set(selected), counts))
     await callback.answer()
 
 async def _send_defense_message(bot, session, game, chat_id: int, user_id: int):
@@ -1442,10 +1449,14 @@ async def vote2_choose_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده.", show_alert=True)
             return
         state = await _latest_vote_state(session, game.id)
-        qualified = {int(x) for x in (state or {}).get("qualified_candidates", [])}
-        players = [row for row in await alive_players(session, game.id) if row[1].id in qualified]
+        pool = {int(x) for x in (state or {}).get("defense_pool_candidates", (state or {}).get("qualified_candidates", []))}
+        players = [row for row in await alive_players(session, game.id) if row[1].id in pool]
         selected = {int(x) for x in (state or {}).get("defense_candidates", [])}
-        await callback.message.edit_text("بازیکنانی که برای دفاع انتخاب می‌شوند را مشخص کنید:", reply_markup=defense_selection_keyboard(key, players, selected))
+        records = await _vote_records_for_phase(session, game, int((state or {}).get("round_no", await current_round(session, game.id))), "vote1")
+        counts = {}
+        for vote, _user in records:
+            counts[int(vote.target_user_id)] = counts.get(int(vote.target_user_id), 0) + 1
+        await callback.message.edit_text("بازیکنان دارای حداقل یک رأی را برای دفاع انتخاب کنید:", reply_markup=defense_selection_keyboard(key, players, selected, counts))
     await callback.answer()
 
 
