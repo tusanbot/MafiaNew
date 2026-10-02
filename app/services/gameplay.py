@@ -415,6 +415,12 @@ async def finish_vote1_target(session, game):
     state["finished_at"] = datetime.now(timezone.utc).isoformat()
     state["vote_count"] = len(records)
     state["qualified_for_defense"] = qualified
+    state_result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "vote_state"
+    ).order_by(GameEvent.id.desc()))
+    state_event = state_result.scalars().first()
+    if state_event:
+        state_event.payload = json.dumps(state, ensure_ascii=False)
     await _event(session, game, "vote1_target_finished", {
         "round_no": round_no, "target_user_id": target_id,
         "vote_count": len(records), "threshold": threshold, "qualified": qualified,
@@ -430,7 +436,21 @@ async def finish_vote1_target(session, game):
 
 
 async def advance_vote1(session, game):
-    result = await finish_vote1_target(session, game)
+    state = await _latest_vote_state(session, game.id)
+    if not state or state.get("phase") != "vote1":
+        raise ValueError("رای اول فعال نیست.")
+    if state.get("status") == "active":
+        result = await finish_vote1_target(session, game)
+    else:
+        target_id = int(state["target_user_id"])
+        records = await _vote_records_for_target(session, game, int(state["round_no"]), "vote1", target_id)
+        result = {
+            "target_user_id": target_id,
+            "records": records,
+            "count": len(records),
+            "threshold": int((await _current_scenario(session, game)).vote_defense_threshold or 2),
+            "qualified": False,
+        }
     state = await _latest_vote_state(session, game.id)
     queue = list(state.get("queue", []))
     next_index = int(state.get("index", 0)) + 1
