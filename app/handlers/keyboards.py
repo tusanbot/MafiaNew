@@ -573,15 +573,32 @@ def vote1_complete_keyboard(game_key: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def defense_selection_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
+def defense_selection_keyboard(game_key: str, players, selected_ids: set[int] | None = None) -> InlineKeyboardMarkup:
+    selected_ids = selected_ids or set()
     builder = InlineKeyboardBuilder()
     for player, user, *_ in players:
         if player.alive:
             name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
-            builder.row(InlineKeyboardButton(text=f"دفاع: {name}", callback_data=f"vote2:select:{game_key}:{user.id}"))
+            mark = "✅" if user.id in selected_ids else "⬜"
+            builder.row(InlineKeyboardButton(text=f"{mark} {name}", callback_data=f"vote2:select:{game_key}:{user.id}"))
     builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:start:{game_key}"))
     return builder.as_markup()
 
+
+def vote_right_confirm_keyboard(game_key: str, user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="تأیید گرفتن حق رای", callback_data=f"votingset:confirm_revoke:{game_key}:{user_id}"),
+        InlineKeyboardButton(text="انصراف", callback_data=f"votingset:revoke:{game_key}"),
+    )
+    return builder.as_markup()
+
+
+def vote2_result_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="شروع فاز شب", callback_data=f"day:night:{game_key}"))
+    builder.row(InlineKeyboardButton(text="پایان بازی", callback_data=f"day:finish:{game_key}"))
+    return builder.as_markup()
 
 def vote2_target_keyboard(game_key: str, target_user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
