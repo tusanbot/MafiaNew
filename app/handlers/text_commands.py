@@ -419,6 +419,39 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
     await message.answer(f"{'🔒' if enabled else '🔓'} {message.text.strip()} {'فعال' if enabled else 'غیرفعال'} شد.")
 
 
+@router.message(_exact("بعدی"))
+async def text_vote_next(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"}:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        actor = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
+        if not game or not actor:
+            await message.answer("بازی یا کاربر پیدا نشد.")
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or actor.id != host.id:
+            await message.answer("فقط گرداننده می‌تواند بازیکن بعدی را شروع کند.")
+            return
+        from app.handlers.gameplay import _vote_target_message, _vote_tasks
+        from app.services.gameplay import advance_vote1, advance_vote2
+        try:
+            if game.phase == "voting1":
+                result = await advance_vote1(session, game)
+                if not result["finished"]:
+                    await _vote_target_message(message.bot, session, game, message.chat.id)
+                else:
+                    await message.answer("رای اول تمام شد؛ از گزینه اتمام رای گیری استفاده کنید.")
+            elif game.phase == "voting2":
+                result = await advance_vote2(session, game)
+                if not result["finished"]:
+                    await _vote_target_message(message.bot, session, game, message.chat.id)
+                else:
+                    await message.answer("رای دوم تمام شد.")
+            else:
+                return
+        except ValueError as exc:
+            await message.answer(str(exc))
 @router.message(_exact("نکست"))
 async def text_next(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
