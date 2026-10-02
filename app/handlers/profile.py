@@ -3,9 +3,11 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
+import os
+import aiohttp
 from sqlalchemy import func, select
 
-from app.db.models import Role, User, UserRoleStat
+from app.db.models import GroupSettings, Role, User, UserRoleStat
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu, profile_menu
 from app.services.profile import sync_telegram_user
@@ -92,18 +94,137 @@ async def ranking_command(message: Message) -> None:
     async with session_factory() as session:
         await _render_ranking(message, session, "all")
 
+async def _rich_ranking_html(rows, kind: str, custom_emoji: bool = False) -> str:
+    """Build a native Telegram Rich Message for the ranking screen.
+
+    Rich Messages are sent through Bot API 10.1+ and rendered as a real table,
+    not as a Unicode/monospace imitation. Custom Emoji is opt-in; the caller
+    falls back to the normal emoji when Telegram rejects the custom emoji.
+    """
+    title = {
+        "all": "رتبه‌بندی بازیکنان",
+        "mafia": "برترین‌های مافیا",
+        "citizen": "برترین‌های شهروند",
+    }.get(kind, "رتبه‌بندی")
+
+    trophy = (
+        '<tg-emoji emoji-id="5368324170671202286">🏆</tg-emoji>'
+        if custom_emoji else "🏆"
+    )
+
+    rows_html = []
+    medals = ("🥇", "🥈", "🥉")
+    for i, user in enumerate(rows, 1):
+        name = tg_name(user.display_name or user.first_name or "بازیکن")
+        name = (
+            name.replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace('"', "&quot;")
+        )
+        rank_icon = medals[i - 1] if i <= 3 else str(i)
+        rows_html.append(
+            f"<tr><td align=\"center\">{rank_icon}</td>"
+            f"<td>{name}</td>"
+            f"<td align=\"center\"><b>{int(user.score)}</b></td>"
+            f"<td align=\"center\">{int(user.games_played)}</td>"
+            f"<td align=\"center\">{int(user.games_won)}</td>"
+            f"<td align=\"center\">{(user.games_won / user.games_played * 100):.0f}%</td></tr>"
+        )
+
+    if not rows_html:
+        table = "<p>هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.</p>"
+    else:
+        table = (
+            '<table bordered striped compact>'
+            "<tr><th>#</th><th>بازیکن</th><th>امتیاز</th>"
+            "<th>بازی</th><th>برد</th><th>برد٪</th></tr>"
+            + "".join(rows_html)
+            + "</table>"
+        )
+
+    return (
+        f"<h2>{trophy} {title}</h2>"
+        "<p>🏅 رتبه‌بندی بر اساس امتیاز و عملکرد ثبت‌شده در بازی‌ها</p>"
+        f"{table}"
+        "<p>برای دیدن یک جدول دیگر، معیار موردنظر را انتخاب کن:</p>"
+        '<tg-button-row align="center">'
+        '<tg-button type="callback_data" style="primary" data="ranking:players">🏆 همه بازیکنان</tg-button>'
+        '<tg-button type="callback_data" style="primary" data="ranking:mafia">🔴 مافیا</tg-button>'
+        '<tg-button type="callback_data" style="success" data="ranking:citizen">🔵 شهروند</tg-button>'
+        "</tg-button-row>"
+    )
+
+
+async def _send_rich_ranking(target, rows, kind: str, *, edit: bool = False, custom_emoji: bool = False) -> bool:
+    """Send/edit a Rich Message using the Bot API directly.
+
+    aiogram 3.22 does not yet expose every Bot API 10.3 Rich Message field as
+    high-level types, so this small transport keeps the rest of the handlers
+    fully native to aiogram.
+    """
+    bot = target.bot if hasattr(target, "bot") else target
+    token = bot.token
+    method = "editMessageText" if edit else "sendRichMessage"
+    payload = {
+        "chat_id": int(target.chat.id),
+        "rich_message": {
+            "html": await _rich_ranking_html(rows, kind, custom_emoji=custom_emoji),
+            "is_rtl": True,
+        },
+    }
+    if edit:
+        payload["message_id"] = int(target.message_id)
+
+    url = f"https://api.telegram.org/bot{token}/{method}"
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with aiohttp.ClientSession(timeout=timeout) as http:
+        async with http.post(url, json=payload) as response:
+            data = await response.json(content_type=None)
+            if not response.ok or not data.get("ok"):
+                raise RuntimeError(data.get("description") or f"Telegram API {response.status}")
+            return True
+
+
 async def _render_ranking(target, session, kind: str):
     team = kind if kind in {"mafia", "citizen"} else None
     rows = await leaderboard(session, 10, team)
-    title = {"all": "🏆 رتبه‌بندی بازیکنان", "mafia": "🔴 برترین‌های مافیا", "citizen": "🔵 برترین‌های شهروند"}.get(kind, "🏆 رتبه‌بندی")
-    if not rows:
-        text = title + "\n\nهنوز بازی کاملی برای رتبه‌بندی ثبت نشده است."
-    else:
-        lines = [title, ""]
-        for i, user in enumerate(rows, 1):
-            lines.append(f"{i}. {tg_name(user.display_name or user.first_name or 'بازیکن')} — {user.score} امتیاز — {rank_for_score(user.score)}")
-        text = "\n".join(lines)
-    await target.answer(text, reply_markup=ranking_menu()) if isinstance(target, Message) else await target.message.edit_text(text, reply_markup=ranking_menu())
+
+    # Custom Emoji is intentionally opt-in. The Premium capability itself is
+    # detected by the API response: if Telegram rejects the custom emoji, we
+    # immediately resend/edit the same ranking with ordinary emoji.
+    custom_emoji_enabled = False
+    if isinstance(target, Message) and target.chat.type in {"group", "supergroup"}:
+        group_settings = await session.scalar(
+            select(GroupSettings).where(GroupSettings.group_id == target.chat.id)
+        )
+        custom_emoji_enabled = bool(group_settings and group_settings.custom_emoji)
+    elif hasattr(target, "message") and target.message and target.message.chat.type in {"group", "supergroup"}:
+        group_settings = await session.scalar(
+            select(GroupSettings).where(GroupSettings.group_id == target.message.chat.id)
+        )
+        custom_emoji_enabled = bool(group_settings and group_settings.custom_emoji)
+
+    try:
+        await _send_rich_ranking(
+            target,
+            rows,
+            kind,
+            edit=not isinstance(target, Message),
+            custom_emoji=custom_emoji_enabled,
+        )
+    except Exception as exc:
+        if custom_emoji_enabled:
+            await _send_rich_ranking(
+                target,
+                rows,
+                kind,
+                edit=not isinstance(target, Message),
+                custom_emoji=False,
+            )
+        else:
+            raise
+
 
 @router.callback_query(lambda c: c.data == "menu:ranking")
 async def ranking_menu_handler(callback: CallbackQuery) -> None:
