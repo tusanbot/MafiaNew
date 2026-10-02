@@ -588,6 +588,9 @@ async def advance_vote1(session, game):
         state["defense_pool_candidates"] = defense_pool
         state["defense_candidates"] = []
         game.phase = "vote1_complete"
+        # Persist the terminal vote-state itself so the next action can reliably
+        # enter Vote 2, Night, or Finish Game from the same result message.
+        await _event(session, game, "vote_state", state)
         await _event(session, game, "vote1_completed", {
             "round_no": int(state["round_no"]),
             "qualified_candidates": candidates,
