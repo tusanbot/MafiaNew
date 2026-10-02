@@ -2317,6 +2317,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
             scenario.challenge_mode = data.get("challenge_mode", "limited")
             scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
             scenario.vote_defense_threshold = int(data.get("vote_defense_threshold", 2))
+            scenario.voting_rules = json.dumps(data.get("voting_rules", {}), ensure_ascii=False)
             old = list((await session.execute(select(ScenarioRole).where(ScenarioRole.scenario_id == scenario.id))).scalars().all())
             for row in old:
                 await session.delete(row)
@@ -2332,6 +2333,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
                 challenge_seconds=int(data.get("challenge_seconds", 60)),
                 extra_challenge_seconds=int(data.get("extra_challenge_seconds", 60)),
                 vote_defense_threshold=int(data.get("vote_defense_threshold", 2)),
+                voting_rules=json.dumps(data.get("voting_rules", {}), ensure_ascii=False),
                 challenge_mode=data.get("challenge_mode", "limited"),
                 challenge_limit=1 if data.get("challenge_mode") == "limited" else None,
             )
@@ -2374,6 +2376,8 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
         current_challenge_seconds=getattr(scenario, "challenge_seconds", 60),
         current_extra_challenge_seconds=getattr(scenario, "extra_challenge_seconds", 60),
         current_roles_text=current_roles_text,
+        current_voting_rules=getattr(scenario, "voting_rules", "{}"),
+        current_vote_rule_input="50",
         challenge_mode=scenario.challenge_mode,
         current_vote_defense_threshold=getattr(scenario, "vote_defense_threshold", 2),
     )
