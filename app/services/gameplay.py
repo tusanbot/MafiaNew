@@ -505,6 +505,11 @@ async def start_vote2(session, game):
         "index": 0, "queue": candidates, "target_user_id": candidates[0],
         "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
     })
+    await _event(session, game, "turn_state", {
+        "round_no": round_no, "kind": "defense", "user_id": candidates[0],
+        "status": "active", "started_at": datetime.now(timezone.utc).isoformat(),
+        "defense_index": 0,
+    })
     await session.commit()
     return candidates[0]
 
