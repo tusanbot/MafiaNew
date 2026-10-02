@@ -617,6 +617,10 @@ async def night_callback(callback: CallbackQuery):
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         if action == "resolve":
+            actor = await session.scalar(select(User).where(User.telegram_id == callback.from_user.id))
+            if not actor or game.host_user_id != actor.id:
+                await callback.answer("فقط گرداننده می‌تواند اقدامات شب را بررسی و ارسال کند.", show_alert=True)
+                return
             ready = await night_ready(session, game)
             if ready:
                 await callback.answer("اقدامات شب کامل است؛ حالا «شروع روز» را بزنید.")
