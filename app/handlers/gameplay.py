@@ -261,16 +261,20 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 if result["kind"] == "finished_day":
                     if message_id:
-                        # Keep the finished turn as history; the voting prompt is separate.
                         try:
-                            await bot.send_message(
-                                chat_id,
-                                "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
-                                reply_markup=day_keyboard(
-                                    game.game_key,
-                                    await alive_players(session, game.id),
-                                ),
-                            )
+                            if game.auto_play:
+                                await start_voting(session, game)
+                                await bot.send_message(
+                                    chat_id,
+                                    "🗳 رأی‌گیری دور شروع شد.",
+                                    reply_markup=vote_keyboard(game.game_key, await alive_players(session, game.id)),
+                                )
+                            else:
+                                await bot.send_message(
+                                    chat_id,
+                                    "🗳 نوبت‌های این دور تمام شد.",
+                                    reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                                )
                         except Exception:
                             pass
                     return
@@ -857,14 +861,16 @@ async def vote_handler(callback: CallbackQuery):
             await update_round_roster(callback.bot, session, game, callback.message.chat.id)
             text += "\n\n🌙 شب بعد آغاز شد."
             await callback.message.edit_text(text)
+            group_settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+            await callback.bot.send_message(
+                callback.message.chat.id,
+                "🌙 فاز شب آغاز شد.",
+                reply_markup=continue_night_keyboard(
+                    game.game_key,
+                    group_settings.night_lock if group_settings else False,
+                    group_settings.chat_lock if group_settings else False,
+                ),
+            )
             if game.auto_play:
                 await _send_night_menus(callback.bot, session, game)
-            else:
-                host = await session.get(User, game.host_user_id) if game.host_user_id else None
-                if host:
-                    await callback.bot.send_message(
-                        callback.message.chat.id,
-                        "🌙 فاز شب آغاز شد. اقدامات شب در PV بازیکنان فعال است و گرداننده می‌تواند حل شب را اجرا کند.",
-                        reply_markup=continue_night_keyboard(game.game_key),
-                    )
         await callback.answer("رأی ثبت شد.")
