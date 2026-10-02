@@ -614,7 +614,7 @@ async def active_game_menu_handler(callback: CallbackQuery) -> None:
             await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
             return
         await callback.message.edit_text(
-            f"مدیریت بازی فعال\nگروه: {group.title}",
+            f"🎮 <b>بازی فعال</b>\n\n👥 گروه: <b>{group.title}</b>\n\nاز اینجا می‌تونی بازی رو مدیریت کنی 👇",
             reply_markup=active_game_menu(group.id),
         )
     await callback.answer()
@@ -641,12 +641,16 @@ async def game_info(callback: CallbackQuery) -> None:
                 f"{p.seat}. {u.display_name or u.first_name}" for p, u in players
             ) or "بدون بازیکن"
             await callback.message.edit_text(
-                f"اطلاعات بازی\n\n"
-                f"شناسه: {game.game_key}\n"
-                f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
-                f"وضعیت: {game.status}\nمرحله: {game.phase}\n"
-                f"گرداننده: {host.display_name if host else 'نامشخص'}\n\n"
-                f"بازیکنان:\n{player_lines}",
+                _ui_box(
+                    "🎮 اطلاعات بازی",
+                    f"🔑 شناسه: {game.game_key}",
+                    f"🎭 سناریو: {scenario.name_fa if scenario else 'نامشخص'}",
+                    f"📍 وضعیت: {game.status}",
+                    f"🕹️ مرحله: {game.phase}",
+                    f"🎙️ گرداننده: {host.display_name if host else 'نامشخص'}",
+                    "👥 بازیکنان:",
+                    *[f"  {line}" for line in player_lines.split("\\n")],
+                ),
                 reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
             )
     await callback.answer()
@@ -681,8 +685,10 @@ async def player_management(callback: CallbackQuery) -> None:
                 }.get(player.exit_type, "حذف‌شده")
                 lines.append(f"{player.seat}. {tg_name(_player_label(player, user, emojis))} — {status}")
         await callback.message.edit_text(
-            "مدیریت بازیکنان\n\n" + ("\n".join(lines) if lines else "بازیکنی در بازی نیست.") +
-            "\n\nعملیات موردنظر را انتخاب کنید.",
+            _ui_box(
+                "👥 مدیریت بازیکنان",
+                *(lines if lines else ["📭 بازیکنی در بازی نیست."]),
+            ) + "\\n\\n👇 عملیات موردنظرت رو انتخاب کن:",
             reply_markup=player_management_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
         )
     await callback.answer()
@@ -1169,12 +1175,14 @@ async def game_result_ranking(callback: CallbackQuery) -> None:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         rows = await leaderboard(session, 10)
-        lines = ["🏆 <b>رتبه‌بندی بازیکنان</b>", ""]
+        lines = ["╭────────────────────────────────────╮", "│ 🏆 <b>رتبه‌بندی بازیکنان</b>             │", "├────────────────────────────────────┤"]
         if not rows:
-            lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
+            lines.append("│ 📭 هنوز بازی کاملی برای رتبه‌بندی ثبت نشده. │")
         else:
             for i, user in enumerate(rows, 1):
-                lines.append(f"{i}. {tg_name(user.display_name or user.first_name or 'بازیکن')} — {user.score} امتیاز — {rank_for_score(user.score)}")
+                lines.append(f"│ {i:02d}. {tg_name(user.display_name or user.first_name or 'بازیکن')} — {user.score} ⭐ │")
+                lines.append(f"│     {rank_for_score(user.score)}                         │")
+        lines.append("╰────────────────────────────────────╯")
         await callback.message.edit_text("\n".join(lines), reply_markup=game_result_back_keyboard(game.id), parse_mode="HTML")
     await callback.answer()
 
@@ -1190,7 +1198,7 @@ async def game_result_stats(callback: CallbackQuery) -> None:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         await callback.message.edit_text(
-            "📊 <b>آمار بازی</b>",
+            _ui_box("📊 آمار بازی", "🎯 آمار جزئی بازی در حال تکمیل است.", "به‌زودی جزئیات رأی‌ها، چالش‌ها و عملکرد بازیکن‌ها هم اینجا نمایش داده می‌شود."),
             reply_markup=game_result_back_keyboard(game.id),
             parse_mode="HTML",
         )
@@ -1620,14 +1628,15 @@ async def ranking_list(callback: CallbackQuery) -> None:
             select(User).where(User.is_active.is_(True)).order_by(desc(order_column), desc(User.games_played)).limit(10)
         )
         users = result.scalars().all()
-        lines = [title, ""]
+        lines = ["╭────────────────────────────────────╮", f"│ 🏆 <b>{title}</b>                        │", "├────────────────────────────────────┤"]
         if not users:
-            lines.append("هنوز داده‌ای برای رتبه‌بندی ثبت نشده است.")
+            lines.append("│ 📭 هنوز داده‌ای برای رتبه‌بندی نداریم. │")
         else:
             for i, user in enumerate(users, 1):
                 score = getattr(user, "games_won" if kind == "players" else f"{kind}_wins")
-                lines.append(f"{i}. {user.display_name or user.first_name} — {score}")
-        await callback.message.edit_text("\n".join(lines), reply_markup=ranking_menu())
+                lines.append(f"│ {i:02d}. {user.display_name or user.first_name} — {score} 🏆 │")
+        lines.append("╰────────────────────────────────────╯")
+        await callback.message.edit_text("\n".join(lines), reply_markup=ranking_menu(), parse_mode="HTML")
     await callback.answer()
 
 
