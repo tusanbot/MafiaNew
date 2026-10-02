@@ -426,6 +426,8 @@ async def _public_status_roster(session, game, *, include_state: bool = False, f
             if player.exit_type == "death" and emoji_settings.get("death", True): marks.append("💀")
             elif player.exit_type == "kick" and emoji_settings.get("kick", True): marks.append("⛔")
             elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True): marks.append("🩸")
+            elif player.exit_type == "vote": marks.append("🗳")
+            elif player.exit_type == "faceoff": marks.append("🎭")
         if user.id in challenge_ids and emoji_settings.get("challenge", True): marks.append("🤏🏻")
         suffix = " — زنده" if include_state and player.alive else (" — حذف‌شده" if include_state else "")
         lines.append(f"\u200f{player.seat:02d}. {' '.join(marks)} {name}{suffix}".strip())
