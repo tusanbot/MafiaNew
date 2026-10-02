@@ -1179,16 +1179,19 @@ async def _finish_vote_message(bot, session, game, *, next_button: bool, final: 
             if user:
                 lines.append(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}: {counts.get(int(uid), 0)} رای")
         result = state.get("result") or {}
-        eliminated = result.get("eliminated_ids", [])
-        if eliminated:
-            names = []
-            for uid in eliminated:
-                user = await session.get(User, int(uid))
-                if user:
-                    names.append(tg_mention(user.telegram_id, user.display_name or user.first_name or "بازیکن"))
-            lines += ["", "خارج شده:", "، ".join(names)]
+        if state.get("status") == "active":
+            lines += ["", "⏱ زمان رای تمام شد.", "برای تعیین نتیجه، گرداننده «اتمام رای گیری» را بزند."]
         else:
-            lines += ["", "در این رای خروجی ثبت نشد."]
+            eliminated = result.get("eliminated_ids", [])
+            if eliminated:
+                names = []
+                for uid in eliminated:
+                    user = await session.get(User, int(uid))
+                    if user:
+                        names.append(tg_mention(user.telegram_id, user.display_name or user.first_name or "بازیکن"))
+                lines += ["", "خارج شده:", "، ".join(names)]
+            else:
+                lines += ["", "در این رای خروجی ثبت نشد."]
         try:
             await bot.edit_message_text("\n".join(lines), chat_id=int(state["chat_id"]), message_id=int(state["message_id"]), reply_markup=vote2_complete_keyboard(game.game_key), parse_mode="HTML")
         except Exception:
@@ -1533,9 +1536,12 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 state = await _latest_vote_state(session, game.id)
                 if not state:
                     return
-                await finish_vote2(session, game)
-                await update_main_roster(bot, session, game, chat_id)
-                await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                if game.voting_mode == "auto":
+                    await finish_vote2(session, game)
+                    await update_main_roster(bot, session, game, chat_id)
+                    await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                else:
+                    await _finish_vote_message(bot, session, game, next_button=False, final=True)
                 return
     except asyncio.CancelledError:
         return
