@@ -2,6 +2,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 from app.db.models import Game, GameEvent, GamePlayer, Role, User, Vote, Scenario, Achievement
 from app.core.game.engine import GameEngine, GameEnginePhase, GameState
 from app.services.roles import assign_roles
@@ -488,7 +489,11 @@ async def cast_vote_phase(session, game, voter: User, target_user_id: int, phase
         game_id=game.id, voter_user_id=voter_id, target_user_id=target_id,
         round_no=round_no, phase=phase, created_at=now,
     ))
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise ValueError("رای شما قبلاً ثبت شده است.")
     records = (
         await _vote_records_for_target(session, game, round_no, phase, target_id)
         if phase == "vote1"
