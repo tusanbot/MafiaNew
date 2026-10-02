@@ -168,7 +168,11 @@ async def text_leader_menu(message: Message, state: FSMContext) -> None:
         if not await _is_host(session, game, user) or game.phase != "setup":
             await message.answer("فقط گرداننده و فقط در مرحله آماده‌سازی می‌تواند سردست را انتخاب کند.")
             return
-    await message.answer("👑 انتخاب سردست\n\nروش انتخاب را مشخص کنید:", reply_markup=leader_choice_keyboard(game.game_key, []))
+        players = await GameRepository.players(session, game.id)
+    await message.answer(
+        "👑 انتخاب سردست\n\nروش انتخاب را مشخص کنید:",
+        reply_markup=leader_choice_keyboard(game.game_key, players),
+    )
 
 
 @router.message(_exact("تنظیمات بازی"))
