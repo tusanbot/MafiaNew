@@ -375,45 +375,110 @@ async def _group_chat_id(session, game):
     return group.telegram_id if group else None
 
 
-async def _public_status_roster(session, game) -> str:
+async def _public_status_roster(session, game, *, include_state: bool = False, full_header: bool = False) -> str:
     try:
         emoji_settings = json.loads(game.emoji_settings or "{}")
     except (TypeError, ValueError):
         emoji_settings = {}
     rows = await all_players(session, game.id)
     leader_id = None
-    leader_event = await session.scalar(
-        select(GameEvent).where(
-            GameEvent.game_id == game.id,
-            GameEvent.event_type == "leader_selected",
-        ).order_by(GameEvent.id.desc())
-    )
+    leader_event = await session.scalar(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "leader_selected"
+    ).order_by(GameEvent.id.desc()))
     if leader_event:
         try:
             leader_id = int(json.loads(leader_event.payload or "{}").get("leader_user_id"))
         except (TypeError, ValueError):
             leader_id = None
-    lines = ["\u200f👥 <b>لیست بازیکنان حاضر در بازی</b>", ""]
+    challenge_ids = set()
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "challenge_request"
+    ).order_by(GameEvent.id.desc()))
+    for event in result.scalars():
+        data = json.loads(event.payload or "{}")
+        if data.get("status") == "accepted" and data.get("requester_id") is not None:
+            challenge_ids.add(int(data["requester_id"]))
+    scenario = await session.get(Scenario, game.scenario_id)
+    host = await session.get(User, game.host_user_id) if game.host_user_id else None
+    created = getattr(game, "created_at", None)
+    if created and created.tzinfo:
+        created = created.astimezone()
+    date_text = created.strftime("%Y/%m/%d") if created else "—"
+    if full_header:
+        lines = ["\u200f༄", f"\u200f📓 <b>بازی شماره : {game.id}</b>", f"\u200f📆 تاریخ : {date_text}",
+                 f"\u200f🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}",
+                 f"\u200f👮‍♂ گرداننده : {tg_mention(host.telegram_id, host.display_name or host.first_name) if host else 'نامشخص'}",
+                 "", "◤◢◣◥◤◢◣◥◤◢◣◥", "👥 <b>لیست بازیکنان حاضر در بازی</b>"]
+    else:
+        lines = ["\u200f👥 <b>لیست بازیکنان</b>", ""]
     for player, user, _role in rows:
         if player.is_reserved:
             continue
         raw_name = user.display_name or user.first_name or user.username or "بازیکن"
         name = tg_mention(user.telegram_id, raw_name)
         marks = []
-        if user.id == leader_id:
-            marks.append("👑")
+        if user.id == leader_id: marks.append("👑")
         if player.alive:
             if player.silence_until_round is not None and emoji_settings.get("silence", True): marks.append("🔇")
             if player.extra_turn_round is not None and emoji_settings.get("extra_turn", True): marks.append("➕")
             if player.warning_count and emoji_settings.get("warning", True): marks.append(f"⚠️{player.warning_count}")
-            state = "زنده"
         else:
             if player.exit_type == "death" and emoji_settings.get("death", True): marks.append("💀")
             elif player.exit_type == "kick" and emoji_settings.get("kick", True): marks.append("⛔")
             elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True): marks.append("🩸")
-            state = "حذف‌شده"
-        lines.append(f"\u200f{player.seat:02d}. {' '.join(marks)} {name} — {state}".strip())
+        if user.id in challenge_ids and emoji_settings.get("challenge", True): marks.append("🤏🏻")
+        suffix = " — زنده" if include_state and player.alive else (" — حذف‌شده" if include_state else "")
+        lines.append(f"\u200f{player.seat:02d}. {' '.join(marks)} {name}{suffix}".strip())
+    if full_header: lines.append("◤◢◣◥◤◢◣◥◤◢◣◥")
     return "\n".join(lines)
+
+async def _main_roster_event(session, game):
+    result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id, GameEvent.event_type == "main_roster_message"
+    ).order_by(GameEvent.id.desc()))
+    return result.scalars().first()
+
+async def update_main_roster(bot, session, game, chat_id: int | None = None) -> None:
+    target_chat = chat_id or await _group_chat_id(session, game)
+    if not target_chat: return
+    event = await _main_roster_event(session, game)
+    data = json.loads(event.payload or "{}") if event else {}
+    message_id = data.get("message_id")
+    text = await _public_status_roster(session, game, include_state=True, full_header=True)
+    if message_id:
+        try:
+            await bot.edit_message_text(text, chat_id=int(target_chat), message_id=int(message_id), parse_mode="HTML")
+            return
+        except Exception:
+            pass
+    try:
+        msg = await bot.send_message(int(target_chat), text, parse_mode="HTML")
+    except Exception:
+        return
+    pinned = False
+    try:
+        await bot.pin_chat_message(int(target_chat), msg.message_id, disable_notification=True)
+        pinned = True
+    except Exception:
+        pass
+    payload = {"chat_id": int(target_chat), "message_id": int(msg.message_id), "pinned": pinned}
+    if event: event.payload = json.dumps(payload, ensure_ascii=False)
+    else: session.add(GameEvent(game_id=game.id, event_type="main_roster_message", payload=json.dumps(payload, ensure_ascii=False)))
+    await session.commit()
+
+async def delete_main_roster(bot, session, game) -> None:
+    event = await _main_roster_event(session, game)
+    if not event: return
+    data = json.loads(event.payload or "{}")
+    chat_id, message_id = data.get("chat_id"), data.get("message_id")
+    if chat_id and message_id:
+        try:
+            if data.get("pinned"): await bot.unpin_chat_message(int(chat_id), int(message_id))
+        except Exception: pass
+        try: await bot.delete_message(int(chat_id), int(message_id))
+        except Exception: pass
+    await session.delete(event)
+    await session.commit()
 
 async def update_round_roster(bot, session, game, chat_id: int | None = None) -> None:
     """Maintain one roster message per round; update it instead of sending new rosters."""
@@ -431,7 +496,7 @@ async def update_round_roster(bot, session, game, chat_id: int | None = None) ->
     target_chat = chat_id or data.get("chat_id") or await _group_chat_id(session, game)
     if not target_chat:
         return
-    roster_text = await _public_status_roster(session, game)
+    roster_text = await _public_status_roster(session, game, include_state=False, full_header=False)
     if event and data.get("message_id"):
         try:
             await bot.edit_message_text(roster_text, chat_id=int(target_chat), message_id=int(data["message_id"]), parse_mode="HTML")
