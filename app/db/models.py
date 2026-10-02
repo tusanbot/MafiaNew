@@ -82,6 +82,8 @@ class Scenario(Base):
     turn_seconds: Mapped[int] = mapped_column(Integer, default=120)
     challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
     vote_defense_threshold: Mapped[int] = mapped_column(Integer, default=2)
+    # JSON snapshot of scenario-specific voting rules. Legacy threshold remains as fallback.
+    voting_rules: Mapped[str] = mapped_column(Text, default="{}")
     extra_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
     training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     telegram_training_url: Mapped[str | None] = mapped_column(Text, nullable=True)
