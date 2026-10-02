@@ -877,7 +877,7 @@ async def _finish_vote_message(bot, session, game, *, next_button: bool, final: 
         return
     target = await session.get(User, int(state["target_user_id"]))
     records = await _vote_records_for_target(session, game, int(state["round_no"]), state["phase"], int(state["target_user_id"]))
-    lines = [f"پایان زمان رای به {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", f"تعداد رای {len(records)}", "", "کسایی که رای دادن"]]
+    lines = [f"پایان زمان رای به {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", f"تعداد رای {len(records)}", "", "کسایی که رای دادن"]
     if records:
         lines.extend(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}" for _, user in records)
     else:
