@@ -103,13 +103,13 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def active_game_entry_keyboard(game_key: str) -> InlineKeyboardMarkup:
+def active_game_entry_keyboard(group_id: int) -> InlineKeyboardMarkup:
     """Single-button entry point used on the pinned public roster."""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(
             text="🎮 مدیریت بازی",
-            callback_data=f"menu:active_game:{game_key}",
+            callback_data=f"groupmgmt:select:active:{group_id}",
         )
     )
     return builder.as_markup()
