@@ -318,7 +318,7 @@ async def achievements_callback(callback: CallbackQuery) -> None:
 async def profile_score(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user: return
     async with session_factory() as session:
-        user = await sync_telegram_user(session, callback.from_user)
+        user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
         await session.commit()
         await callback.message.edit_text(await _profile_text(session, user), reply_markup=profile_menu())
     await callback.answer()
@@ -327,7 +327,7 @@ async def profile_score(callback: CallbackQuery) -> None:
 async def profile_rank(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user: return
     async with session_factory() as session:
-        user = await sync_telegram_user(session, callback.from_user)
+        user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
         position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
         rank, next_score, remaining = rank_progress(user.score)
         text = "🏆 رتبه شما\n\n" + f"رتبه: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
