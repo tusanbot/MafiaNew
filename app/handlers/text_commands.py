@@ -1,6 +1,8 @@
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
+import re
+import unicodedata
 from sqlalchemy import select, func
 
 from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, User
@@ -19,9 +21,21 @@ from app.utils.text import tg_name
 router = Router(name="text_commands")
 
 
+_ZERO_WIDTH = re.compile(r"[\\u200b\\u200c\\u200d\\u200e\\u200f\\u202a-\\u202e\\ufeff]")
+
+def _normalize_command_text(value: str | None) -> str:
+    """Normalize Persian/Arabic text commands without changing their meaning."""
+    if not value:
+        return ""
+    value = unicodedata.normalize("NFKC", value)
+    value = _ZERO_WIDTH.sub("", value)
+    value = value.replace("ي", "ی").replace("ى", "ی").replace("ك", "ک")
+    return " ".join(value.strip().split())
+
 def _exact(*values: str):
-    """Exact text only. Never use startswith/contains for public commands."""
-    return F.text.in_(values)
+    """Exact command matching with harmless Telegram/Persian whitespace normalization."""
+    normalized = {_normalize_command_text(value) for value in values}
+    return lambda message: _normalize_command_text(message.text) in normalized
 
 
 async def _user(session, message: Message):
@@ -328,7 +342,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
             await message.answer(error)
             return
         target, target_user = result
-        command = message.text.strip()
+        command = _normalize_command_text(message.text)
         round_no = await current_round(session, game.id) if game.status == "running" else None
 
         if command == "تذکر":
@@ -424,11 +438,11 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
         if not settings:
             settings = GroupSettings(group_id=group.id)
             session.add(settings)
-        field = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}[message.text.strip()]
+        command = _normalize_command_text(message.text)\n        field = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}[command]
         setattr(settings, field, not bool(getattr(settings, field)))
         enabled = bool(getattr(settings, field))
         await session.commit()
-    await message.answer(f"{'🔒' if enabled else '🔓'} {message.text.strip()} {'فعال' if enabled else 'غیرفعال'} شد.")
+    await message.answer(f"{'🔒' if enabled else '🔓'} {command} {'فعال' if enabled else 'غیرفعال'} شد.")
 
 
 @router.message(_exact("بعدی"))
@@ -526,7 +540,9 @@ async def text_commands(message: Message, state: FSMContext) -> None:
     await message.answer(
         "📚 دستورات متنی\n\n"
         "پیوی: پروفایل، نقش من، رتبه\n"
-        "گروه: لابی، جایگزین، انتخاب سردست، تنظیمات بازی، شروع دور، لغو بازی\n\n"
+        "گروه: لابی، انتخاب سردست، تنظیمات بازی، شروع دور، لغو بازی\n"
+        "کنترل بازی: نکست، بعدی، قفل بازی، قفل شب، قفل نوبت\n"
+        "مدیریت بازیکن: تذکر، تذکر-، کیک بازیکن، سکوت بازیکن، ترن اضافه، تولد بازیکن، حذف بازیکن\n\n"
         "دستور فقط وقتی اجرا می‌شود که متن پیام دقیقاً برابر خود دستور باشد؛ "
         "مثلاً «جایگزین میخوایم» هیچ دستوری را اجرا نمی‌کند."
     )
