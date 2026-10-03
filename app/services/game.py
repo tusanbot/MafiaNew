@@ -120,7 +120,7 @@ async def create_game(
     extra_challenge_seconds: int | None = None,
 ):
     key = uuid4().hex[:12]
-    return await GameRepository.create(
+    game = await GameRepository.create(
         session,
         group,
         scenario,
@@ -135,6 +135,8 @@ async def create_game(
         challenge_seconds=challenge_seconds if challenge_seconds is not None else getattr(scenario, "challenge_seconds", 60),
         extra_challenge_seconds=extra_challenge_seconds if extra_challenge_seconds is not None else getattr(scenario, "extra_challenge_seconds", 60),
     )
+    await assign_game_number(session, game)
+    return game
 
 
 async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
