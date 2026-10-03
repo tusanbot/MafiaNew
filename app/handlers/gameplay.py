@@ -1224,7 +1224,7 @@ async def day_night_handler(callback: CallbackQuery):
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         chat_id = await _group_chat_id(session, game)
         if chat_id:
-            await _set_game_chat_lock(callback.bot, session, game, bool(settings and (settings.chat_lock or settings.night_lock)))
+            await _set_game_chat_lock(callback.bot, session, game, bool(settings and settings.night_lock))
             await callback.bot.send_message(
                 chat_id, "🌙 فاز شب آغاز شد.",
                 reply_markup=continue_night_keyboard(game.game_key, settings.night_lock if settings else False, settings.chat_lock if settings else False),
@@ -1253,7 +1253,7 @@ async def night_lock_handler(callback: CallbackQuery):
         setattr(settings, field, not bool(getattr(settings, field)))
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock))
-        await _set_game_chat_lock(callback.bot, session, game, bool(settings.chat_lock or settings.night_lock))
+        await _set_game_chat_lock(callback.bot, session, game, bool(settings.night_lock and game.phase == "night"))
         await callback.answer("تنظیم قفل ذخیره شد.")
 
 
@@ -1279,7 +1279,7 @@ async def night_start_day_handler(callback: CallbackQuery):
         await start_new_day_round(session, game)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         if chat_id:
-            await _set_game_chat_lock(callback.bot, session, game, bool(settings and settings.chat_lock))
+            await _set_game_chat_lock(callback.bot, session, game, False)
 
             await update_round_roster(callback.bot, session, game, chat_id)
             await update_main_roster(callback.bot, session, game, chat_id)
