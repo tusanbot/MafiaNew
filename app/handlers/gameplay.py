@@ -446,8 +446,16 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
                 chat_id=int(target_chat),
                 message_id=int(message_id),
                 parse_mode="HTML",
-                reply_markup=active_game_entry_keyboard(game.group_id),
             )
+            if not data.get("pinned"):
+                try:
+                    await bot.pin_chat_message(int(target_chat), int(message_id), disable_notification=True)
+                    data["pinned"] = True
+                    if event:
+                        event.payload = json.dumps(data, ensure_ascii=False)
+                        await session.commit()
+                except Exception:
+                    pass
             return
         except Exception:
             pass
