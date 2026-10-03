@@ -25,3 +25,6 @@ Rich Message transport is globally enabled with an automatic Bot API fallback.
 <!-- rich-transport-sync-2 -->
 
 <!-- rich-menu-navigation-sync -->
+
+
+<!-- sync marker: 2026-10-03 -->
