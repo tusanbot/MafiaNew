@@ -87,7 +87,6 @@ class GroupLockMiddleware(BaseMiddleware):
 
 
 router = Router(name="common")
-router.message.outer_middleware(GroupLockMiddleware())
 
 
 
