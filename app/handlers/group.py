@@ -172,6 +172,12 @@ async def _set_lock(message: Message, field: str, value: str) -> None:
             enabled = not bool(getattr(settings, field))
             setattr(settings, field, enabled)
             await session.commit()
+        if field == "night_lock":
+            try:
+                from app.handlers.gameplay import _set_game_chat_lock
+                await _set_game_chat_lock(message.bot, session, settings and await GameRepository.get_active(session, group.id), enabled)
+            except Exception:
+                pass
         await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
         return
 
@@ -188,6 +194,13 @@ async def _set_lock(message: Message, field: str, value: str) -> None:
             session.add(settings)
         setattr(settings, field, enabled)
         await session.commit()
+        active_game = await GameRepository.get_active(session, group.id)
+        if field == "night_lock" and active_game:
+            try:
+                from app.handlers.gameplay import _set_game_chat_lock
+                await _set_game_chat_lock(message.bot, session, active_game, bool(enabled and active_game.phase == "night"))
+            except Exception:
+                pass
     await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
 
 @router.message(Command("chatlock"))
