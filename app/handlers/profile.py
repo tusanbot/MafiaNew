@@ -302,16 +302,16 @@ async def achievements_command(message: Message) -> None:
             return
         await message.answer(await _achievements_text(session, user), reply_markup=profile_menu())
 
-@router.callback_query(lambda c: c.data == "profile:achievements")
+@router.callback_query(lambda c: c.data in {"profile:achievements", "menu:achievements"})
 async def achievements_callback(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     async with session_factory() as session:
         user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
         if not user:
-            await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=profile_menu())
+            await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=main_menu())
         else:
-            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=profile_menu())
+            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu() if callback.data == "menu:achievements" else profile_menu())
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:score")
