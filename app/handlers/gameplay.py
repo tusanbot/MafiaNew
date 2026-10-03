@@ -987,21 +987,21 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        try:
-            result = await request_challenge(
-                session, game, actor,
-                chat_id=callback.message.chat.id if callback.message else None,
-                message_id=None,
-            )
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
+        # Acknowledge immediately; DB/Telegram refresh must not block the callback.
+        await callback.answer("در حال ثبت درخواست چالش…")
         if not callback.message:
-            await callback.answer("پیام بازی پیدا نشد.", show_alert=True)
             return
-        # The request is committed in a single transaction; don't make the callback
-        # wait for a Telegram edit.
-        await callback.answer("درخواست چالش ثبت شد.")
+        lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            try:
+                result = await request_challenge(
+                    session, game, actor,
+                    chat_id=callback.message.chat.id if callback.message else None,
+                    message_id=None,
+                )
+            except ValueError as exc:
+                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                return
         asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
@@ -1016,12 +1016,14 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        try:
-            result = await choose_challenge(session, game, actor, int(event_id))
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        await callback.answer("چالش تأیید شد.")
+        await callback.answer("در حال تأیید چالش…")
+        lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            try:
+                result = await choose_challenge(session, game, actor, int(event_id))
+            except ValueError as exc:
+                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                return
         requester = await session.get(User, result["requester_id"])
         requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
         await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
@@ -1081,50 +1083,41 @@ async def challenge_place_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        try:
-            result = await select_challenge_placement(session, game, actor, int(event_id), placement)
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        task = _challenge_tasks.pop(int(event_id), None)
-        if task:
-            task.cancel()
-        turn_task = _turn_tasks.pop(game.game_key, None)
-        if turn_task:
-            turn_task.cancel()
-        await callback.answer("زمان چالش ثبت شد.")
+        await callback.answer("در حال ثبت جایگاه چالش…")
+        lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            try:
+                result = await select_challenge_placement(session, game, actor, int(event_id), placement)
+            except ValueError as exc:
+                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                return
+            task = _challenge_tasks.pop(int(event_id), None)
+            if task:
+                task.cancel()
+            turn_task = _turn_tasks.pop(game.game_key, None)
+            if turn_task:
+                turn_task.cancel()
+
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
-        await callback.message.edit_text(
-            f"🤏🏻 چالش به <b>{name}</b> داده شد.",
-            parse_mode="HTML",
-        )
-        if chat_id:
-            if result["placement"] == "before":
-                challenge_turn = await current_turn(session, game.id)
-                if challenge_turn:
-                    try:
-                        await callback.message.edit_text(
-                            f"🤏🏻 چالش به <b>{name}</b> داده شد.",
-                            parse_mode="HTML",
-                        )
-                    except Exception:
-                        pass
-                    challenge_msg = await _send_turn_message(
-                        callback.bot, session, game, chat_id, challenge_turn
-                    )
-                    if challenge_msg:
-                        await _schedule_turn_live(callback.bot, game.game_key)
-                        await _schedule_auto_next(callback.bot, game.game_key, chat_id, challenge_msg.message_id)
-            else:
-                try:
-                    await callback.message.edit_text(
-                        f"🤏🏻 چالش به <b>{name}</b> داده شد.",
-                        parse_mode="HTML",
-                    )
-                except Exception:
-                    pass
+        try:
+            await callback.message.edit_text(
+                f"🤏🏻 چالش به <b>{name}</b> داده شد.",
+                parse_mode="HTML",
+                reply_markup=None,
+            )
+        except Exception:
+            pass
+        if chat_id and result["placement"] == "before":
+            challenge_turn = await current_turn(session, game.id)
+            if challenge_turn:
+                challenge_msg = await _send_turn_message(
+                    callback.bot, session, game, chat_id, challenge_turn
+                )
+                if challenge_msg:
+                    await _schedule_turn_live(callback.bot, game.game_key)
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id, challenge_msg.message_id)
 
 
 async def _reschedule_auto_next(bot, game):
@@ -1166,10 +1159,21 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
 
+        await callback.answer("⏩ در حال رفتن به نوبت بعدی…")
         lock = _turn_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
-            # Acknowledge the callback before Telegram edits / turn-message work.
-            await callback.answer("⏩ در حال رفتن به نوبت بعدی…")
+            fresh_turn = await current_turn(session, game.id)
+            if not fresh_turn or fresh_turn.get("status") not in ("active", "paused"):
+                return
+            # The first click has already advanced the turn; a repeated Telegram
+            # callback must never advance the new turn as well.
+            if (
+                fresh_turn.get("kind") != turn.get("kind")
+                or int(fresh_turn.get("user_id", -1)) != int(turn.get("user_id", -1))
+                or fresh_turn.get("started_at") != turn.get("started_at")
+            ):
+                return
+            turn = fresh_turn
             try:
                 if turn.get("kind") == "defense":
                     await _finish_turn_message(callback.bot, session, game, turn)
