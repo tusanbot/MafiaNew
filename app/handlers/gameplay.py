@@ -2035,14 +2035,17 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 state = await _latest_vote_state(session, game.id)
                 if not state:
                     return
-                if game.voting_mode == "auto":
-                    await finish_vote2(session, game)
+                # Timeout always resolves the vote state. Actual player exit
+                # is gated inside resolve_vote2 by game.auto_play.
+                await finish_vote2(session, game)
+                if game.auto_play:
                     await update_main_roster(bot, session, game, chat_id)
-                    await _finish_vote_message(bot, session, game, next_button=False, final=True)
-                    await _send_vote_completion_control(bot, session, game, chat_id, round_no=int(state.get("round_no", await current_round(session, game.id))), phase="vote2")
-                else:
-                    await _finish_vote_message(bot, session, game, next_button=False, final=True)
-                    await _send_vote_completion_control(bot, session, game, chat_id, round_no=int(state.get("round_no", await current_round(session, game.id))), phase="vote2")
+                await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                await _send_vote_completion_control(
+                    bot, session, game, chat_id,
+                    round_no=int(state.get("round_no", await current_round(session, game.id))),
+                    phase="vote2",
+                )
                 return
     except asyncio.CancelledError:
         return
