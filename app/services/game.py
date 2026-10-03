@@ -2,10 +2,12 @@ from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
 from uuid import uuid4
+import json
 
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Scenario, User
+from app.db.models import Game, GameEvent, Scenario, User
 from app.repositories.games import GameRepository
 from app.utils.text import tg_name, tg_mention
 
@@ -31,6 +33,75 @@ def gregorian_to_jalali(year: int, month: int, day: int) -> tuple[int, int, int]
         jm = 7 + (days - 186) // 30
     jd = 1 + (days % 31 if days < 186 else (days - 186) % 30)
     return jy, jm, jd
+
+
+async def get_game_number(session: AsyncSession, game) -> int:
+    """Return the stable per-group display number, falling back to legacy Game.id."""
+    result = await session.execute(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "game_number_assigned")
+        .order_by(GameEvent.id.desc())
+    )
+    event = result.scalars().first()
+    if event:
+        try:
+            return max(1, int(json.loads(event.payload or "{}").get("number")))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+    return int(game.id)
+
+
+async def assign_game_number(session: AsyncSession, game) -> int:
+    """Assign the next reusable number for this group."""
+    games = (await session.execute(
+        select(Game).where(Game.group_id == game.group_id, Game.status != "cancelled")
+    )).scalars().all()
+    highest = 0
+    for item in games:
+        if int(item.id) == int(game.id):
+            continue
+        highest = max(highest, await get_game_number(session, item))
+    number = highest + 1
+    session.add(GameEvent(
+        game_id=game.id,
+        event_type="game_number_assigned",
+        payload=json.dumps({"number": number}, ensure_ascii=False),
+    ))
+    await session.commit()
+    return number
+
+
+async def set_game_number(session: AsyncSession, game, number: int) -> int:
+    number = int(number)
+    if number < 1:
+        raise ValueError("شماره بازی باید عددی مثبت باشد.")
+    games = (await session.execute(
+        select(Game).where(
+            Game.group_id == game.group_id,
+            Game.id != game.id,
+            Game.status != "cancelled",
+        )
+    )).scalars().all()
+    for item in games:
+        if await get_game_number(session, item) == number:
+            raise ValueError("این شماره برای یک بازی دیگر در این گروه استفاده شده است.")
+    session.add(GameEvent(
+        game_id=game.id,
+        event_type="game_number_assigned",
+        payload=json.dumps({"number": number}, ensure_ascii=False),
+    ))
+    await session.commit()
+    return number
+
+
+async def release_game_number(session: AsyncSession, game) -> None:
+    await session.execute(
+        delete(GameEvent).where(
+            GameEvent.game_id == game.id,
+            GameEvent.event_type == "game_number_assigned",
+        )
+    )
+    await session.commit()
 
 
 async def create_game(
@@ -77,7 +148,7 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
     jy, jm, jd = gregorian_to_jalali(now.year, now.month, now.day)
     lines = [
         "\u200f༄",
-        f"\u200f📓 بازی شماره : {game.id}",
+        f"\u200f📓 بازی شماره : {await get_game_number(session, game)}",
         "",
         f"\u200f⏱ زمان : {now:%H:%M}",
         f"\u200f📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}",
