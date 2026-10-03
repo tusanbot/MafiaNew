@@ -1104,6 +1104,7 @@ async def challenge_place_handler(callback: CallbackQuery):
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
         await callback.answer("در حال ثبت جایگاه چالش…")
+        previous_turn = await current_turn(session, game.id)
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
             try:
@@ -1111,6 +1112,8 @@ async def challenge_place_handler(callback: CallbackQuery):
             except ValueError as exc:
                 await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
                 return
+            await _finish_turn_message(callback.bot, session, game, previous_turn) if previous_turn else None
+            await _delete_turn_challenge_messages(callback.bot, session, game, previous_turn) if previous_turn else None
             task = _challenge_tasks.pop(int(event_id), None)
             if task:
                 task.cancel()
