@@ -975,7 +975,7 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
             )
         except Exception:
             pass
-        await callback.message.edit_text("بازی لغو شد و سوابق آن برای تاریخچه حفظ شد.", reply_markup=group_game_menu(group.id))
+        await callback.message.edit_text("بازی لغو شد و سوابق آن برای تاریخچه حفظ شد.", reply_markup=group_management_menu())
     await callback.answer("بازی لغو شد.")
 
 
