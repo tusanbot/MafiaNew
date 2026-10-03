@@ -1294,36 +1294,110 @@ async def resolve_challenge(session, game, challenge_event_id: int, accepted: bo
 
 
 async def send_game_result_notifications(bot, session, game) -> None:
-    event = await session.scalar(select(GameEvent).where(GameEvent.game_id == game.id, GameEvent.event_type == "stats_recorded").order_by(GameEvent.id.desc()))
+    event = await session.scalar(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "stats_recorded")
+        .order_by(GameEvent.id.desc())
+    )
     if not event:
         return
+
     data = _payload(event)
-    for uid_text, report in (data.get("reports") or {}).items():
+    reports = data.get("reports") or {}
+
+    # One compact table is shared by every recipient so the result screen has a
+    # consistent layout: place, player, role/team and final score.
+    ranked_rows = sorted(
+        reports.items(),
+        key=lambda item: (int(item[1].get("game_rank", 999999)), item[0]),
+    )
+    role_lines = [
+        "<pre>┌───┬──────────────────┬──────────────────┐",
+        "│ # │ بازیکن           │ نقش / تیم        │",
+        "├───┼──────────────────┼──────────────────┤",
+    ]
+    rank_lines = [
+        "<pre>┌───┬──────────────────┬───────┬────────────┐",
+        "│ # │ بازیکن           │ رتبه  │ امتیاز     │",
+        "├───┼──────────────────┼───────┼────────────┤",
+    ]
+    for index, (uid_text, report) in enumerate(ranked_rows, start=1):
+        player = await session.get(User, int(uid_text))
+        name = (player.display_name or player.first_name or "بازیکن") if player else "بازیکن"
+        # Keep Telegram's <pre> table readable on mobile by limiting the
+        # display name width rather than allowing a very long username to shift
+        # the entire table.
+        name = name.replace("\n", " ").replace("\r", " ")[:16]
+        role = str(report.get("role_name") or "نامشخص").replace("\n", " ")[:16]
+        team = str(report.get("team_name") or "").replace("\n", " ")[:12]
+        role_cell = f"{role} / {team}"[:16]
+        game_rank = int(report.get("game_rank", index))
+        score = int(report.get("score_after", 0))
+        role_lines.append(f"│ {index:1d} │ {name:<16} │ {role_cell:<16} │")
+        rank_lines.append(f"│ {index:1d} │ {name:<16} │ {game_rank:^5d} │ {score:^10d} │")
+    role_lines.append("└───┴──────────────────┴──────────────────┘</pre>")
+    rank_lines.append("└───┴──────────────────┴───────┴────────────┘</pre>")
+    role_table = "\n".join(role_lines)
+    rank_table = "\n".join(rank_lines)
+
+    for uid_text, report in reports.items():
         user = await session.get(User, int(uid_text))
         if not user:
             continue
         stats = report.get("stats") or {}
         lines = []
         if user.notify_game_result:
-            lines = ["📊 گزارش عملکرد بازی", "", "🏆 برد" if stats.get("won") else "نتیجه: این بازی را نبردید", f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}", f"⭐ امتیاز فعلی: {report.get('score_after', user.score)}", "", f"🎯 شات: {stats.get('kills', 0)}", f"🩺 نجات: {stats.get('saves', 0)}", f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}", f"🎯 رأی درست: {stats.get('correct_votes', 0)}", f"🤏🏻 چالش پذیرفته: {stats.get('accepted_challenges', 0)}", f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد", f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}", "", f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30", f"🏅 رتبه: {report.get('rank_after', '')}"]
+            lines = [
+                "📊 <b>نتیجه بازی</b>",
+                "",
+                "🏆 <b>برد</b>" if stats.get("won") else "📌 <b>نتیجه: این بازی را نبردید</b>",
+                "",
+                f"🎭 <b>نقش شما:</b> {report.get('role_name', 'نامشخص')}",
+                f"👥 <b>تیم:</b> {report.get('team_name', 'نامشخص')}",
+                f"🏅 <b>جایگاه در این بازی:</b> {report.get('game_rank', '-')}",
+                f"⭐ <b>امتیاز نهایی:</b> {report.get('score_after', user.score)}",
+                "",
+                "🎭 <b>نقش بازیکن‌ها</b>",
+                role_table,
+                "",
+                "🏆 <b>رتبه‌بندی بازی</b>",
+                rank_table,
+                "",
+                "📈 <b>عملکرد شما</b>",
+                f"💰 امتیاز این بازی: +{report.get('score_delta', 0)}",
+                f"🎯 شات: {stats.get('kills', 0)}",
+                f"🩺 نجات: {stats.get('saves', 0)}",
+                f"🔎 تحقیق موفق: {stats.get('investigation_hits', 0)}",
+                f"🎯 رأی درست: {stats.get('correct_votes', 0)}",
+                f"🤏🏻 چالش پذیرفته: {stats.get('accepted_challenges', 0)}",
+                f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد",
+                f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}",
+                f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30",
+                f"🏅 رتبه کلی: {report.get('rank_after', '')}",
+            ]
+
         if report.get("rank_after") != report.get("rank_before") and user.notify_rank_changes:
             if not lines:
-                lines = ["🏆 تغییر رتبه"]
+                lines = ["🏆 <b>تغییر رتبه</b>"]
             lines.append(f"🎉 ارتقای رتبه: {report.get('rank_before')} ← {report.get('rank_after')}")
+
         earned = report.get("achievements") or []
         if earned and user.notify_achievements:
             names = []
             for key in earned:
-                achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+                achievement = await session.scalar(
+                    select(Achievement).where(Achievement.key == key)
+                )
                 if achievement:
                     names.append(f"{achievement.icon} {achievement.name_fa} (+{achievement.points})")
             if names:
                 if not lines:
-                    lines = ["🏅 دستاوردهای جدید"]
-                lines.extend(["", "🏅 دستاوردهای جدید:", *names])
+                    lines = ["🏅 <b>دستاوردهای جدید</b>"]
+                lines.extend(["", "🏅 <b>دستاوردهای جدید:</b>", *names])
+
         if not lines:
             continue
         try:
-            await bot.send_message(user.telegram_id, "\n".join(lines))
+            await bot.send_message(user.telegram_id, "\n".join(lines), parse_mode="HTML")
         except Exception:
             pass
