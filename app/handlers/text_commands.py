@@ -8,6 +8,7 @@ from app.db.session import session_factory
 from app.handlers.keyboards import leader_choice_keyboard, leader_settings_keyboard, main_menu
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
+from app.repositories.groups import GroupRepository
 from app.services.game import render_lobby
 from app.services.gameplay import choose_leader, start_round, current_round, next_turn, alive_players
 from app.services.profile import sync_telegram_user
@@ -33,7 +34,13 @@ async def _user(session, message: Message):
 async def _active_game(session, message: Message):
     if message.chat.type not in {"group", "supergroup"}:
         return None
-    return await GameRepository.get_active(session, int(message.chat.id))
+    # Game.group_id references the internal groups.id, not Telegram chat_id.
+    # Resolve the registered group first; passing chat.id directly makes every
+    # text command behave as if there were no active game.
+    group = await GroupRepository.get_by_telegram_id(session, int(message.chat.id))
+    if not group:
+        return None
+    return await GameRepository.get_active(session, group.id)
 
 
 async def _is_host(session, game, user) -> bool:
