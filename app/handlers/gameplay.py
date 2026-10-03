@@ -1320,6 +1320,9 @@ async def night_start_day_handler(callback: CallbackQuery):
         try:
             # Night actions are host-controlled in manual games. Starting a new
             # day must never wait for role actions or call resolve_night().
+            # Move to day first so the round-boundary helper can reset state.
+            game.phase = "day"
+            await session.flush()
             new_round = await start_new_day_round(session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
