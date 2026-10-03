@@ -21,21 +21,30 @@ class UserRepository:
         last_name: str | None,
     ) -> User:
         user = await self.get_by_telegram_id(telegram_id)
-        display_name = " ".join(x for x in [first_name, last_name] if x)
+        telegram_name = " ".join(x for x in [first_name, last_name] if x)
         if user is None:
             user = User(
                 telegram_id=telegram_id,
                 username=username,
                 first_name=first_name,
                 last_name=last_name,
-                display_name=display_name,
+                display_name=telegram_name,
+                name_base=telegram_name,
             )
             self.session.add(user)
         else:
             user.username = username
             user.first_name = first_name
             user.last_name = last_name
-            user.display_name = display_name
+            if not getattr(user, "display_name_custom", False):
+                user.name_base = telegram_name
+                tag_emoji = None
+                if user.active_tag_key:
+                    from sqlalchemy import select
+                    from app.db.models import Achievement
+                    achievement = await self.session.scalar(select(Achievement).where(Achievement.key == user.active_tag_key))
+                    tag_emoji = achievement.tag_emoji if achievement else None
+                user.display_name = f"{tag_emoji} {telegram_name}".strip() if tag_emoji else telegram_name
             user.is_active = True
         await self.session.flush()
         return user
