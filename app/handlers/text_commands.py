@@ -336,6 +336,60 @@ async def _refresh_roster(bot, session, game, chat_id: int | None = None):
         pass
 
 
+@router.message(lambda m: bool(m.text) and _normalize_command_text(m.text).startswith("حذف تذکر"))
+async def text_remove_warning(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"}:
+        return
+    if not message.reply_to_message:
+        await message.answer("این دستور باید به پیام بازیکن ریپلای شود.")
+        return
+    command = _normalize_command_text(message.text)
+    parts = command.split()
+    if parts[0:2] != ["حذف", "تذکر"]:
+        return
+    if len(parts) == 1 or len(parts) == 2:
+        amount = 1
+    elif len(parts) == 3 and parts[2].isdigit():
+        amount = int(parts[2])
+        if amount <= 0:
+            await message.answer("تعداد تذکر باید بیشتر از صفر باشد.")
+            return
+    else:
+        await message.answer("فرمت درست: «حذف تذکر» یا «حذف تذکر 2»")
+        return
+
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        if not game or game.status not in {"waiting", "running"}:
+            await message.answer("بازی فعالی وجود ندارد.")
+            return
+        if not await _is_group_manager(message.bot, session, game, message):
+            await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند تذکر را حذف کند.")
+            return
+        result, error = await _reply_target(message, session, game)
+        if error:
+            await message.answer(error)
+            return
+        target, target_user = result
+        old_count = int(target.warning_count or 0)
+        removed = min(amount, old_count)
+        if removed <= 0:
+            await message.answer("این بازیکن تذکری ندارد.")
+            return
+        # Warning penalties are progressive up to 5; restore the exact score
+        # impact of the warnings that are removed, then lower the count.
+        score_restore = sum(min(old_count - i, 5) for i in range(removed))
+        target.warning_count = old_count - removed
+        target_user.score += score_restore
+        await session.flush()
+        await _refresh_roster(message.bot, session, game, message.chat.id)
+        await session.commit()
+        await message.answer(
+            f"➖ <b>{removed}</b> تذکر از {tg_name(target_user.display_name or target_user.first_name or 'بازیکن')} کم شد.\n"
+            f"⚠️ تذکر فعلی: <b>{target.warning_count}</b>",
+            parse_mode="HTML",
+        )
+
 @router.message(_exact("تذکر", "تذکر-", "کیک بازیکن", "سکوت بازیکن", "ترن اضافه", "تولد بازیکن", "حذف بازیکن"))
 async def text_reply_management(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
