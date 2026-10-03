@@ -361,6 +361,14 @@ def bot_settings_menu() -> InlineKeyboardMarkup:
     _back(builder)
     return builder.as_markup()
 
+def general_bot_settings_menu() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👤 پروفایل و نام نمایشی", callback_data="menu:profile"))
+    builder.row(InlineKeyboardButton(text="🏷️ تگ فعال", callback_data="profile:tags"))
+    builder.row(InlineKeyboardButton(text="🔔 تنظیمات اعلان‌ها", callback_data="botsettings:notifications"))
+    _back(builder, "menu:bot_settings")
+    return builder.as_markup()
+
 def notification_settings_menu(user) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     items = (
