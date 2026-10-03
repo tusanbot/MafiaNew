@@ -19,7 +19,7 @@ _BUTTON_EMOJI_RULES = (
 
 def _decorate_button_text(value: str) -> str:
     text = str(value or "")
-    if text[:2] and any(ord(ch) > 0x1F000 for ch in text[:3]):
+    if any(0x1F000 <= ord(ch) <= 0x1FAFF or 0x2300 <= ord(ch) <= 0x27BF for ch in text[:4]):
         return text
     for needle, emoji in _BUTTON_EMOJI_RULES:
         if needle in text:
