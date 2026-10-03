@@ -121,6 +121,7 @@ def active_game_menu(group_id: int, back_callback: str | None = None, game_key: 
     builder.row(InlineKeyboardButton(text="🛑 لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
     builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
     builder.row(InlineKeyboardButton(text="📜 اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
+    builder.row(InlineKeyboardButton(text="🔢 تعیین شماره بازی", callback_data=f"gameadmin:number:{group_id}"))
     builder.row(InlineKeyboardButton(text="👥 مدیریت بازیکنان", callback_data=f"gameadmin:players:{group_id}"))
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"gameadmin:features:{group_id}"))
     builder.row(InlineKeyboardButton(text="✨ امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
