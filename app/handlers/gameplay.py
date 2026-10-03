@@ -1280,7 +1280,9 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
                 started = datetime.fromisoformat(state["started_at"])
                 remaining = max(0.0, float(game.vote_seconds or 10) - (datetime.now(timezone.utc) - started).total_seconds())
             if remaining > 0:
-                await asyncio.sleep(min(remaining, 0.2))
+                # No live countdown is rendered for voting. Sleeping until the
+                # deadline avoids hammering PostgreSQL every 200ms.
+                await asyncio.sleep(remaining)
                 continue
             async with session_factory() as session:
                 game = await _load(session, game_key)
@@ -1591,7 +1593,8 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 started = datetime.fromisoformat(state["started_at"])
                 remaining = max(0.0, float(game.vote_seconds or 10) - (datetime.now(timezone.utc) - started).total_seconds())
             if remaining > 0:
-                await asyncio.sleep(min(remaining, 0.2))
+                # Vote 2 also has no per-second public countdown.
+                await asyncio.sleep(remaining)
                 continue
             async with session_factory() as session:
                 game = await _load(session, game_key)
