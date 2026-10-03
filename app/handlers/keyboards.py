@@ -350,14 +350,10 @@ def finish_game_confirm_keyboard(group_id: int, winner: str) -> InlineKeyboardMa
 def game_result_keyboard(group_id: int, game_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"gameresult:history:{game_id}"),
-        InlineKeyboardButton(text="آمار", callback_data=f"gameresult:stats:{game_id}"),
+        InlineKeyboardButton(text="🏁 نتیجه بازی", callback_data=f"gameresult:view:result:{game_id}"),
+        InlineKeyboardButton(text="🎭 نقش‌ها", callback_data=f"gameresult:view:roles:{game_id}"),
+        InlineKeyboardButton(text="🏆 رتبه‌بندی", callback_data=f"gameresult:view:ranking:{game_id}"),
     )
-    builder.row(
-        InlineKeyboardButton(text="رتبه‌بندی", callback_data=f"gameresult:ranking:{game_id}"),
-        InlineKeyboardButton(text="📜 اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"),
-    )
-    builder.row(InlineKeyboardButton(text="📝 ثبت بازی", callback_data=f"gameresult:register:{game_id}"))
     return builder.as_markup()
 
 def game_result_back_keyboard(game_id: int) -> InlineKeyboardMarkup:
