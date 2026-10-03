@@ -41,14 +41,14 @@ def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> N
 
 def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="مدیریت بازی فعال", callback_data="menu:active_game"))
-    builder.row(InlineKeyboardButton(text="مدیریت گروه", callback_data="menu:group_management"))
+    builder.row(InlineKeyboardButton(text="🎮 مدیریت بازی فعال", callback_data="menu:active_game"))
+    builder.row(InlineKeyboardButton(text="👥 مدیریت گروه", callback_data="menu:group_management"))
     if show_admin:
-        builder.row(InlineKeyboardButton(text="سناریوها", callback_data="menu:scenarios"))
-    builder.row(InlineKeyboardButton(text="تنظیمات ربات", callback_data="menu:bot_settings"))
+        builder.row(InlineKeyboardButton(text="🎭 سناریوها", callback_data="menu:scenarios"))
+    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات ربات", callback_data="menu:bot_settings"))
     builder.row(
-        InlineKeyboardButton(text="پروفایل", callback_data="menu:profile"),
-        InlineKeyboardButton(text="رتبه بندی", callback_data="menu:ranking"),
+        InlineKeyboardButton(text="👤 پروفایل", callback_data="menu:profile"),
+        InlineKeyboardButton(text="🏆 رتبه‌بندی", callback_data="menu:ranking"),
     )
     if show_admin:
         builder.row(InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin"))
@@ -105,13 +105,13 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
 
 def active_game_menu(group_id: int, back_callback: str | None = None, game_key: str | None = None, lobby_editable: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
-    builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
-    builder.row(InlineKeyboardButton(text="پایان بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
-    builder.row(InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
-    builder.row(InlineKeyboardButton(text="مدیریت بازیکنان", callback_data=f"gameadmin:players:{group_id}"))
-    builder.row(InlineKeyboardButton(text="تنظیمات بازی", callback_data=f"gameadmin:features:{group_id}"))
-    builder.row(InlineKeyboardButton(text="امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
+    builder.row(InlineKeyboardButton(text="ℹ️ اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🛑 لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
+    builder.row(InlineKeyboardButton(text="📜 اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
+    builder.row(InlineKeyboardButton(text="👥 مدیریت بازیکنان", callback_data=f"gameadmin:players:{group_id}"))
+    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"gameadmin:features:{group_id}"))
+    builder.row(InlineKeyboardButton(text="✨ امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
     if lobby_editable and game_key:
         builder.row(
             InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}"),
@@ -237,7 +237,7 @@ def game_features_menu(
         callback_data=f"gameadmin:time:{group_id}:extra_challenge",
     ))
     builder.row(InlineKeyboardButton(text="اتمام بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
-    builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="🛑 لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
     builder.row(InlineKeyboardButton(text="📜 ثبت اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
     builder.row(InlineKeyboardButton(text="مدیریت اموجی‌ها", callback_data=f"gameadmin:emoji:{group_id}"))
     if game_key:
@@ -343,7 +343,7 @@ def game_result_keyboard(group_id: int, game_id: int) -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="رتبه‌بندی", callback_data=f"gameresult:ranking:{game_id}"),
-        InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"),
+        InlineKeyboardButton(text="📜 اتفاقات بازی", callback_data=f"gameresult:events:{game_id}"),
     )
     builder.row(InlineKeyboardButton(text="📝 ثبت بازی", callback_data=f"gameresult:register:{game_id}"))
     return builder.as_markup()
@@ -684,7 +684,7 @@ def defense_selection_keyboard(game_key: str, players, selected_ids: set[int] | 
             mark = "✅" if user.id in selected_ids else "⬜"
             count = int(vote_counts.get(int(user.id), 0))
             builder.row(InlineKeyboardButton(text=f"{mark} {name} — {count} رای", callback_data=f"vote2:select:{game_key}:{user.id}"))
-    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🗳 شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
     return builder.as_markup()
 
 
@@ -700,7 +700,7 @@ def vote_right_confirm_keyboard(game_key: str, user_id: int) -> InlineKeyboardMa
 def vote2_result_keyboard(game_key: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="شروع فاز شب", callback_data=f"day:night:{game_key}"))
-    builder.row(InlineKeyboardButton(text="پایان بازی", callback_data=f"day:finish:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"day:finish:{game_key}"))
     return builder.as_markup()
 
 def vote2_setup_keyboard(game_key: str, selection_mode: str = "manual") -> InlineKeyboardMarkup:
@@ -710,10 +710,10 @@ def vote2_setup_keyboard(game_key: str, selection_mode: str = "manual") -> Inlin
         callback_data=f"vote2:mode:{game_key}",
     ))
     builder.row(InlineKeyboardButton(
-        text="انتخاب بازیکنان برای دفاع",
+        text="🛡️ انتخاب بازیکنان برای دفاع",
         callback_data=f"vote2:choose:{game_key}",
     ))
-    builder.row(InlineKeyboardButton(text="شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🗳 شروع رای ۲", callback_data=f"vote2:begin:{game_key}"))
     return builder.as_markup()
 
 
@@ -817,7 +817,7 @@ def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="انتخاب سناریو", callback_data=f"newgame:scenario:{group_id}"))
     builder.row(InlineKeyboardButton(text="انتخاب گرداننده", callback_data=f"newgame:host:{group_id}"))
-    builder.row(InlineKeyboardButton(text="تنظیمات بازی", callback_data=f"newgame:settings:{group_id}"))
+    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"newgame:settings:{group_id}"))
     builder.row(InlineKeyboardButton(text="امکانات اضافه", callback_data=f"newgame:extras:{group_id}"))
     builder.row(InlineKeyboardButton(text="ایجاد بازی", callback_data=f"newgame:create:{group_id}"))
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=f"groupstart:root:{group_id}"))
@@ -994,7 +994,7 @@ def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool 
     if is_host:
         builder.row(
             InlineKeyboardButton(text="مدیریت بازی", callback_data=f"gameadmin:lobby:{game_key}"),
-            InlineKeyboardButton(text="مدیریت گروه", callback_data=f"groupadmin:lobby:{game_key}"),
+            InlineKeyboardButton(text="👥 مدیریت گروه", callback_data=f"groupadmin:lobby:{game_key}"),
         )
     return builder.as_markup()
 
