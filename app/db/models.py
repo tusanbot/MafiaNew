@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.base import Base
 
@@ -164,6 +164,9 @@ class GamePlayer(Base):
 
 class GameEvent(Base):
     __tablename__ = "game_events"
+    __table_args__ = (
+        Index("ix_game_events_game_type_id", "game_id", "event_type", "id"),
+    )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
@@ -175,6 +178,8 @@ class Vote(Base):
     __tablename__ = "votes"
     __table_args__ = (
         UniqueConstraint("game_id", "voter_user_id", "target_user_id", "round_no", "phase", name="uq_vote_per_target"),
+        Index("ix_votes_game_round_phase_target", "game_id", "round_no", "phase", "target_user_id"),
+        Index("ix_votes_game_round_phase_voter", "game_id", "round_no", "phase", "voter_user_id"),
     )
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
