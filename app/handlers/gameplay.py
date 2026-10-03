@@ -657,6 +657,7 @@ async def _public_status_roster(session, game, *, include_state: bool = False, f
         lines = ["\u200f༄", f"\u200f📓 <b>بازی شماره : {game.id}</b>", f"\u200f📆 تاریخ : {date_text}",
                  f"\u200f🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}",
                  f"\u200f👮‍♂ گرداننده : {tg_mention(host.telegram_id, host.display_name or host.first_name) if host else 'نامشخص'}",
+                 f"\u200f🔄 دور فعلی : {await current_round(session, game.id)}",
                  "", "◤◢◣◥◤◢◣◥◤◢◣◥", "👥 <b>لیست بازیکنان حاضر در بازی</b>"]
     else:
         lines = ["\u200f👥 <b>لیست بازیکنان</b>", ""]
