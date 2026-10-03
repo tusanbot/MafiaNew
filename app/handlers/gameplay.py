@@ -628,15 +628,47 @@ async def start_match_handler(callback: CallbackQuery):
             "🎭 نقش‌ها پخش شد.\n\n👑 انتخاب سردست\n⚙️ تنظیمات بازی\n▶️ شروع دور",
             reply_markup=__import__("app.handlers.keyboards", fromlist=["leader_settings_keyboard"]).leader_settings_keyboard(game.game_key, game),
         )
+        # Private role messages must contain only the role payload itself;
+        # strip the decorative «༄» marker if an old role description contains it.
         for _, role, user in assignments:
             try:
+                description = (role.description or "توضیح این نقش در سناریو ثبت نشده است.").strip()
+                description = description.strip("༄").strip()
+                role_name = (role.name_fa or "بدون نقش").strip("༄").strip()
+                team_name = (role.team or "نامشخص").strip("༄").strip()
+                text = (
+                    f"<b>🎭 نقش شما</b>\n\n"
+                    f"نقش: {role_name}\n"
+                    f"ساید: {team_name}\n\n"
+                    f"توضیح نقش:\n{description}"
+                )
                 await callback.bot.send_message(
                     user.telegram_id,
-                    f"<b>نقش شما</b>\n\nنقش: {role.name_fa}\nتیم: {role.team}\n\n{role.description}",
+                    text,
                     parse_mode="HTML",
                 )
             except Exception:
                 pass
+
+        # The host also receives a private full role roster. This is never
+        # posted into the group chat.
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if host:
+            role_lines = ["🎭 <b>لیست نقش‌های بازی</b>", ""]
+            for seat, (_, role, user) in enumerate(assignments, 1):
+                role_lines.append(
+                    f"{seat}. {user.display_name or user.first_name or user.username or 'بازیکن'} — "
+                    f"<b>{role.name_fa}</b> ({role.team})"
+                )
+            try:
+                await callback.bot.send_message(
+                    host.telegram_id,
+                    "\n".join(role_lines),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+
         await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
 
 
