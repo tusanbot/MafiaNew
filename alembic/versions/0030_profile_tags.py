@@ -27,7 +27,13 @@ def upgrade():
     if "tag_emoji" not in achievement_columns:
         op.add_column("achievements", sa.Column("tag_emoji", sa.String(20), nullable=True))
 
-    op.execute(sa.text("UPDATE users SET name_base = COALESCE(NULLIF(name_base, ''), display_name) WHERE name_base IS NULL OR name_base = ''"))
+    bind.execute(
+        sa.text(
+            "UPDATE users "
+            "SET name_base = COALESCE(NULLIF(name_base, ''), display_name) "
+            "WHERE name_base IS NULL OR name_base = ''"
+        )
+    )
 
     tag_rows = [
         ("first_game", "تازه‌کار", "🎮"),
@@ -41,8 +47,12 @@ def upgrade():
         ("five_win_streak", "استرایکر", "⚡"),
     ]
     for key, name, emoji in tag_rows:
-        op.execute(
-            sa.text("UPDATE achievements SET tag_key=:key, tag_name=:name, tag_emoji=:emoji WHERE key=:key"),
+        bind.execute(
+            sa.text(
+                "UPDATE achievements "
+                "SET tag_key=:key, tag_name=:name, tag_emoji=:emoji "
+                "WHERE key=:key"
+            ),
             {"key": key, "name": name, "emoji": emoji},
         )
 
