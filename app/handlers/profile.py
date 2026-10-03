@@ -7,9 +7,9 @@ import os
 import aiohttp
 from sqlalchemy import func, select
 
-from app.db.models import Group, GroupSettings, Role, User, UserRoleStat
+from app.db.models import Achievement, Group, GroupSettings, Role, User, UserAchievement, UserRoleStat
 from app.db.session import session_factory
-from app.handlers.keyboards import main_menu, ranking_menu, profile_menu
+from app.handlers.keyboards import main_menu, ranking_menu, profile_menu, profile_tags_keyboard
 from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
@@ -337,38 +337,79 @@ async def profile_rank(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data == "profile:name")
 async def profile_name_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message:
+        return
     await state.set_state(ProfileEditState.name)
     await callback.message.edit_text("✏️ نام نمایشی جدید را ارسال کنید.\nبرای انصراف /cancel را بفرستید.")
     await callback.answer()
 
 @router.message(ProfileEditState.name)
 async def profile_name_save(message: Message, state: FSMContext) -> None:
-    if not message.from_user or message.chat.type != "private": return
+    if not message.from_user or message.chat.type != "private":
+        return
     value = (message.text or "").strip()
     if value == "/cancel":
-        await state.clear(); await message.answer("ویرایش لغو شد.", reply_markup=profile_menu()); return
+        await state.clear()
+        await message.answer("ویرایش نام لغو شد.", reply_markup=profile_menu())
+        return
     if not 2 <= len(value) <= 40:
-        await message.answer("نام باید بین ۲ تا ۴۰ کاراکتر باشد."); return
+        await message.answer("نام باید بین ۲ تا ۴۰ کاراکتر باشد.")
+        return
     async with session_factory() as session:
-        user = await sync_telegram_user(session, message.from_user); user.display_name = value; await session.commit()
-    await state.clear(); await message.answer("✅ نام نمایشی ذخیره شد.", reply_markup=profile_menu())
+        user = await sync_telegram_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name or "", message.from_user.last_name)
+        user.name_base = value
+        user.display_name_custom = True
+        tag = None
+        if user.active_tag_key:
+            tag = await session.scalar(select(Achievement).where(Achievement.key == user.active_tag_key))
+        user.display_name = f"{tag.tag_emoji} {value}".strip() if tag and tag.tag_emoji else value
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ نام نمایشی ذخیره شد.", reply_markup=profile_menu())
 
 @router.callback_query(lambda c: c.data == "profile:tags")
-async def profile_tags_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not callback.message or not callback.from_user: return
-    await state.set_state(ProfileEditState.tags)
-    await callback.message.edit_text("🏷 تگ‌های پروفایل\n\nتگ‌ها را با کاما جدا کنید؛ حداکثر ۵ تگ و هر تگ ۲۰ کاراکتر.\nبرای پاک کردن همه «-» را بفرستید.")
+async def profile_tags_start(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    async with session_factory() as session:
+        user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
+        tags = list((await session.execute(
+            select(Achievement).join(UserAchievement, UserAchievement.achievement_id == Achievement.id)
+            .where(UserAchievement.user_id == user.id, Achievement.tag_key.is_not(None))
+            .order_by(Achievement.id)
+        )).scalars().all())
+        await callback.message.edit_text(
+            "🏷️ تگ‌های قابل انتخاب\n\nهر تگ با باز کردن دستاورد مربوطه آزاد می‌شود. یکی را انتخاب کن تا ابتدای نامت نمایش داده شود.",
+            reply_markup=profile_tags_keyboard(tags, user.active_tag_key),
+        )
     await callback.answer()
 
-@router.message(ProfileEditState.tags)
-async def profile_tags_save(message: Message, state: FSMContext) -> None:
-    if not message.from_user or message.chat.type != "private": return
-    value = (message.text or "").strip()
-    if value == "/cancel":
-        await state.clear(); await message.answer("ویرایش لغو شد.", reply_markup=profile_menu()); return
-    tags = [] if value == "-" else [x.strip() for x in value.split(",") if x.strip()]
-    if len(tags) > 5 or any(len(x) > 20 for x in tags):
-        await message.answer("حداکثر ۵ تگ و طول هر تگ حداکثر ۲۰ کاراکتر است."); return
+@router.callback_query(lambda c: c.data and c.data.startswith("profile:tag:"))
+async def profile_tag_select(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    key = callback.data.split(":", 2)[2]
     async with session_factory() as session:
-        user = await sync_telegram_user(session, message.from_user); user.tags = ",".join(tags); await session.commit()
-    await state.clear(); await message.answer("✅ تگ‌ها ذخیره شدند.", reply_markup=profile_menu())
+        user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
+        if key == "clear":
+            user.active_tag_key = None
+            user.display_name = user.name_base or user.display_name
+            await session.commit()
+        else:
+            achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+            earned = await session.scalar(select(UserAchievement.id).where(UserAchievement.user_id == user.id, UserAchievement.achievement_id == achievement.id)) if achievement else None
+            if not achievement or not achievement.tag_key or not earned:
+                await callback.answer("این تگ هنوز برای شما آزاد نشده است.", show_alert=True)
+                return
+            user.active_tag_key = achievement.tag_key
+            base = user.name_base or user.display_name
+            user.display_name = f"{achievement.tag_emoji} {base}".strip() if achievement.tag_emoji else base
+            await session.commit()
+        tags = list((await session.execute(
+            select(Achievement).join(UserAchievement, UserAchievement.achievement_id == Achievement.id)
+            .where(UserAchievement.user_id == user.id, Achievement.tag_key.is_not(None))
+            .order_by(Achievement.id)
+        )).scalars().all())
+        await callback.message.edit_text("🏷️ تگ‌های قابل انتخاب", reply_markup=profile_tags_keyboard(tags, user.active_tag_key))
+    await callback.answer("تگ فعال به‌روزرسانی شد.")
+
