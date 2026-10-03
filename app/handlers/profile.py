@@ -46,7 +46,10 @@ async def _achievements_rich_html(session, user: User) -> str:
             progress = f"{current}/{target}" if target is not None else str(current)
             body.append(f"<tr><td>🔒 {achievement.name_fa}</td><td>{progress}</td></tr>")
     table = '<table bordered striped compact><tr><th>دستاورد</th><th>وضعیت</th></tr>' + ''.join(body) + '</table>' if body else '<p>هنوز دستاوردی ثبت نشده است.</p>'
-    return f"<h2>🏅 دستاوردها</h2><p>تعداد کسب‌شده: <b>{earned}</b></p>{table}<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>"
+    return (
+        f'<h2>🏅 دستاوردها</h2><p>تعداد کسب‌شده: <b>{earned}</b></p>{table}'
+        '<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>'
+    )
 
 class ProfileEditState(StatesGroup):
     name = State()
@@ -344,9 +347,18 @@ async def achievements_callback(callback: CallbackQuery) -> None:
             await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=main_menu())
         else:
             try:
-            await edit_rich_message(callback.bot, callback.message.chat.id, callback.message.message_id, await _achievements_rich_html(session, user))
-        except Exception:
-            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu() if callback.data == "menu:achievements" else profile_menu(), parse_mode="HTML")
+                await edit_rich_message(
+                    callback.bot,
+                    callback.message.chat.id,
+                    callback.message.message_id,
+                    await _achievements_rich_html(session, user),
+                )
+            except Exception:
+                await callback.message.edit_text(
+                    await _achievements_text(session, user),
+                    reply_markup=main_menu() if callback.data == "menu:achievements" else profile_menu(),
+                    parse_mode="HTML",
+                )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:score")
@@ -370,7 +382,18 @@ async def profile_rank(callback: CallbackQuery) -> None:
         rank, next_score, remaining = rank_progress(user.score)
         text = "🏆 رتبه شما\n\n" + f"رتبه: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
         text += f"تا رتبه بعد: {remaining} امتیاز" if next_score is not None else "بالاترین رتبه را دارید."
-        rich_html = f"<h2>🏆 رتبه شما</h2><table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr><tr><td>رتبه</td><td>{rank}</td></tr><tr><td>جایگاه</td><td>#{position}</td></tr><tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr></table><p>{('تا رتبه بعد: ' + str(remaining) + ' امتیاز') if next_score is not None else 'بالاترین رتبه را دارید.'}</p><tg-button-row align="center"><tg-button type="callback_data" data="profile:score">💰 امتیازات</tg-button><tg-button type="callback_data" style="primary" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>"
+        rich_html = (
+            f'<h2>🏆 رتبه شما</h2>'
+            f'<table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>'
+            f'<tr><td>رتبه</td><td>{rank}</td></tr>'
+            f'<tr><td>جایگاه</td><td>#{position}</td></tr>'
+            f'<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr></table>'
+            f'<p>{("تا رتبه بعد: " + str(remaining) + " امتیاز") if next_score is not None else "بالاترین رتبه را دارید."}</p>'
+            '<tg-button-row align="center">'
+            '<tg-button type="callback_data" data="profile:score">💰 امتیازات</tg-button>'
+            '<tg-button type="callback_data" style="primary" data="menu:root">🏠 منوی اصلی</tg-button>'
+            '</tg-button-row>'
+        )
         try:
             await edit_rich_message(callback.bot, callback.message.chat.id, callback.message.message_id, rich_html)
         except Exception:
