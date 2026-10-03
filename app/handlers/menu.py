@@ -1282,31 +1282,18 @@ async def _game_ranking_text(session, game) -> str:
 
 
 async def _game_result_rich_html(session, game, winner: str) -> str:
-    """One RTL Rich Message containing result, roles and group ranking panels."""
+    """Default result view; roles/ranking are opened from Rich Message buttons."""
     result_text = await _game_result_text(session, game, winner)
-    roles_text = await _game_roles_text(session, game)
-    ranking_text = await _game_ranking_text(session, game)
 
     def panel(value: str) -> str:
         return value.replace("\n", "<br/>")
 
-    # With is_rtl=True the DOM order is rendered right-to-left:
-    # result (right) | roles (center) | ranking (left).
     return (
-        '<h2>🏁 گزارش نهایی بازی</h2>'
-        '<p>سه بخش گزارش در یک پیام نگه داشته شده تا نتیجه و اطلاعات بازی از هم جدا نشوند.</p>'
-        '<table bordered striped compact>'
-        '<tr>'
-        '<th>🏆 رتبه‌بندی کلی گروه</th>'
-        '<th>🎭 بازیکنان و نقش‌ها</th>'
-        '<th>🏁 نتیجه بازی</th>'
-        '</tr>'
-        '<tr>'
-        f'<td>{panel(ranking_text)}</td>'
-        f'<td>{panel(roles_text)}</td>'
-        f'<td>{panel(result_text)}</td>'
-        '</tr>'
-        '</table>'
+        '<h2>🏁 نتیجه نهایی بازی</h2>'
+        f'<section><table bordered striped compact>'
+        '<tr><th>🏁 نتیجه بازی</th></tr>'
+        f'<tr><td>{panel(result_text)}</td></tr>'
+        '</table></section>'
         '<p><tg-button-row align="center">'
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
         f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
