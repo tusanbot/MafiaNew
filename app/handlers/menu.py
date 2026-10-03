@@ -51,6 +51,13 @@ from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
 
 router = Router(name="menu")
+STATUS_LABELS = {"draft": "پیش‌نویس", "waiting": "در انتظار شروع", "running": "در حال اجرا", "finished": "پایان‌یافته", "cancelled": "لغوشده"}
+PHASE_LABELS = {"lobby": "لابی", "setup": "آماده‌سازی", "day": "روز", "night": "شب", "vote_setup": "تنظیم رأی", "voting1": "رأی اول", "vote1_complete": "پایان رأی اول", "defense": "دفاع", "voting2": "رأی دوم", "vote2_complete": "پایان رأی دوم", "result": "نتیجه", "finished": "پایان‌یافته"}
+def _status_fa(value: str | None) -> str:
+    return STATUS_LABELS.get(str(value or ""), str(value or "نامشخص"))
+def _phase_fa(value: str | None) -> str:
+    return PHASE_LABELS.get(str(value or ""), str(value or "نامشخص"))
+
 
 class GameEventState(StatesGroup):
     description = State()
@@ -516,7 +523,7 @@ async def select_group(callback: CallbackQuery) -> None:
                 await callback.message.edit_text(
                     f"مدیریت بازی فعال\nگروه: {group.title or group.telegram_id}\n"
                     f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
-                    f"وضعیت: {game.status}\nمرحله: {game.phase}",
+                    f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}",
                     reply_markup=active_game_menu(
                         group.id,
                         f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
@@ -663,7 +670,7 @@ async def game_info(callback: CallbackQuery) -> None:
                 f"اطلاعات بازی\n\n"
                 f"شناسه: {game.game_key}\n"
                 f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
-                f"وضعیت: {game.status}\nمرحله: {game.phase}\n"
+                f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}\n"
                 f"گرداننده: {host.display_name if host else 'نامشخص'}\n\n"
                 f"بازیکنان:\n{player_lines}",
                 reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
