@@ -426,7 +426,7 @@ def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup
     for scenario in scenarios:
         state = "فعال" if scenario.enabled else "غیرفعال"
         builder.button(
-            text=f"{scenario.name_fa} — {state}",
+            text=f"🎭 {scenario.name_fa} — {state}",
             callback_data=f"scenario_admin:{action}:{scenario.id}",
         )
     if scenarios:
@@ -473,7 +473,7 @@ def lobby_keyboard(game_key: str, can_start: bool = False) -> InlineKeyboardMark
 def scenario_keyboard(scenarios=()) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
-        builder.button(text=scenario.name_fa, callback_data=f"scenario:{scenario.id}")
+        builder.button(text=f"🎭 {scenario.name_fa}", callback_data=f"scenario:{scenario.id}")
     if scenarios: builder.adjust(3)
     _back(builder)
     return builder.as_markup()
@@ -827,7 +827,7 @@ def new_game_menu(group_id: int) -> InlineKeyboardMarkup:
 def scenario_select_keyboard(group_id: int, scenarios, back_callback: str | None = None, callback_prefix: str = "newgame:setscenario") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
-        builder.button(text=scenario.name_fa, callback_data=f"{callback_prefix}:{group_id}:{scenario.id}")
+        builder.button(text=f"🎭 {scenario.name_fa}", callback_data=f"{callback_prefix}:{group_id}:{scenario.id}")
     if scenarios: builder.adjust(3)
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=back_callback or f"newgame:menu:{group_id}"))
     return builder.as_markup()
