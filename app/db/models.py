@@ -13,6 +13,9 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(255), default="")
     bio: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str] = mapped_column(Text, default="")
+    name_base: Mapped[str] = mapped_column(String(255), default="")
+    display_name_custom: Mapped[bool] = mapped_column(Boolean, default=False)
+    active_tag_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
     notify_game_result: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_achievements: Mapped[bool] = mapped_column(Boolean, default=True)
     notify_rank_changes: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -190,6 +193,9 @@ class Achievement(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     icon: Mapped[str] = mapped_column(String(20), default="🏅")
     points: Mapped[int] = mapped_column(Integer, default=0)
+    tag_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    tag_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    tag_emoji: Mapped[str | None] = mapped_column(String(20), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class UserAchievement(Base):
