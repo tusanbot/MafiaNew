@@ -1413,29 +1413,13 @@ async def game_feature_handler(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         if action == "events":
-            manageable = await _manageable_groups(session, callback.bot, callback.from_user.id)
-            group_ids = [g.id for g in manageable]
-            if not group_ids:
-                await callback.answer("گروه قابل مدیریت فعالی پیدا نشد.", show_alert=True)
-                return
-            result = await session.execute(
-                select(Game, Scenario, Group)
-                .join(Scenario, Scenario.id == Game.scenario_id)
-                .join(Group, Group.id == Game.group_id)
-                .where(Game.status == "running", Game.group_id.in_(group_ids))
-                .order_by(desc(Game.id))
-            )
-            games = []
             actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
-            for candidate_game, scenario, candidate_group in result.all():
-                if actor and await _can_manage_game_events(session, callback.bot, candidate_game, actor, candidate_group):
-                    games.append((candidate_game, scenario, candidate_group))
-            if not games:
-                await callback.answer("بازی فعالی که شما گرداننده آن باشید و همزمان بازیکن آن نباشید پیدا نشد.", show_alert=True)
+            if not actor or not await _can_manage_game_events(session, callback.bot, game, actor, group):
+                await callback.answer("فقط گرداننده یا مدیر مجاز بازی می‌تواند اتفاقات آن را مدیریت کند.", show_alert=True)
                 return
             await callback.message.edit_text(
-                "🎯 <b>انتخاب بازی برای ثبت اتفاقات</b>\n\nابتدا بازی موردنظر را انتخاب کنید:",
-                reply_markup=game_event_game_selector(games),
+                "📜 <b>اتفاقات بازی</b>\n\nاتفاقات ثبت‌شده برای همین بازی را مدیریت کنید.",
+                reply_markup=game_event_management_keyboard(game.id, game.group_id),
                 parse_mode="HTML",
             )
             await callback.answer()
