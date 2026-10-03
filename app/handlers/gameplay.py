@@ -1003,14 +1003,8 @@ async def night_start_day_handler(callback: CallbackQuery):
             await callback.answer(str(exc), show_alert=True)
             return
         chat_id = await _group_chat_id(session, game)
-        if result["winner"]:
-            await send_game_result_notifications(callback.bot, session, game)
-            if chat_id:
-                await callback.bot.send_message(chat_id, "🏁 بازی تمام شد.")
-            await delete_main_roster(callback.bot, session, game)
-            await callback.message.edit_reply_markup(reply_markup=None)
-            await callback.answer("بازی تمام شد.")
-            return
+        # Detecting a winning condition is informational only. The game
+        # remains active until the host explicitly chooses «پایان بازی».
         await start_new_day_round(session, game)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         if chat_id:
