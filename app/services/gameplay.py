@@ -990,7 +990,7 @@ async def _start_challenge_turn(session, game, requester_id: int, mode: str, sou
     return requester_id
 
 
-async def request_challenge(session, game, requester: User):
+async def request_challenge(session, game, requester: User, *, chat_id: int | None = None, message_id: int | None = None):
     if game.status != "running" or game.phase != "day":
         raise ValueError("در حال حاضر امکان درخواست چالش نیست.")
     turn = await current_turn(session, game.id)
@@ -1040,8 +1040,8 @@ async def request_challenge(session, game, requester: User):
         "requester_id": requester.id,
         "target_turn_user_id": int(turn["user_id"]),
         "status": "pending",
-        "message_id": None,
-        "chat_id": None,
+        "message_id": message_id,
+        "chat_id": chat_id,
     }, requester.id)
     await session.commit()
     return {"event_id": event.id, "turn_user_id": int(turn["user_id"]), "round_no": round_no}
