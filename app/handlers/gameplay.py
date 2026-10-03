@@ -1355,6 +1355,25 @@ async def night_start_day_handler(callback: CallbackQuery):
         await callback.message.edit_reply_markup(reply_markup=None)
         await callback.answer("روز جدید آماده شد.")
 
+@router.callback_query(lambda c: c.data and c.data.startswith("day:finish_back:"))
+async def day_finish_back_handler(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند این بخش را کنترل کند.", show_alert=True)
+            return
+        players = await alive_players(session, game.id)
+        await callback.message.edit_text(
+            "🗳 <b>پایان دور</b>\n\nرأی‌گیری یا ادامه فاز بعدی را از همین‌جا انتخاب کن.",
+            reply_markup=day_keyboard(game.game_key, players),
+            parse_mode="HTML",
+        )
+    await callback.answer("به پایان دور برگشتی.")
+
 @router.callback_query(lambda c: c.data and c.data.startswith("day:finish:"))
 async def day_finish_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
@@ -1376,7 +1395,11 @@ async def day_finish_handler(callback: CallbackQuery):
             if not turn or turn.get("status") != "finished":
                 await callback.answer("ابتدا رأی‌گیری یا نوبت‌های این دور را کامل کن.", show_alert=True)
                 return
-        await callback.message.edit_text("🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:", reply_markup=finish_game_keyboard(game.group_id), parse_mode="HTML")
+        await callback.message.edit_text(
+            "🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:",
+            reply_markup=finish_game_keyboard(game.group_id, f"day:finish_back:{game.game_key}"),
+            parse_mode="HTML",
+        )
         await callback.answer("نتیجه نهایی را انتخاب کنید.")
 
 
