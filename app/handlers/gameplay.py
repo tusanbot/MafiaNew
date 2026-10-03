@@ -697,12 +697,13 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
     text = await _public_status_roster(session, game, include_state=True, full_header=True)
     if message_id:
         try:
+            from app.handlers.keyboards import active_game_menu
             await bot.edit_message_text(
                 text,
                 chat_id=int(target_chat),
                 message_id=int(message_id),
                 parse_mode="HTML",
-                reply_markup=None,
+                reply_markup=active_game_menu(game.group_id, "menu:active_game", game.game_key, False),
             )
             if not data.get("pinned"):
                 try:
@@ -714,8 +715,17 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
                 except Exception:
                     pass
             return
-        except Exception:
-            pass
+        except Exception as exc:
+            # Do not create a second roster for parse/transient/edit errors.
+            # Recreate only when Telegram confirms that the stored message is
+            # no longer editable/available.
+            reason = str(exc).lower()
+            if not any(token in reason for token in (
+                "message to edit not found",
+                "message can't be edited",
+                "message identifier is not specified",
+            )):
+                return
     try:
         from app.handlers.keyboards import active_game_menu
         msg = await bot.send_message(
