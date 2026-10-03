@@ -1,4 +1,5 @@
 import json
+from html import escape
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
