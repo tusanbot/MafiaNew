@@ -50,7 +50,6 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="پروفایل", callback_data="menu:profile"),
         InlineKeyboardButton(text="رتبه بندی", callback_data="menu:ranking"),
     )
-    builder.row(InlineKeyboardButton(text="🏅 دستاوردها", callback_data="profile:achievements"))
     if show_admin:
         builder.row(InlineKeyboardButton(text="🛠 پنل مدیریت", callback_data="menu:admin"))
     _back(builder, "menu:root")
@@ -390,6 +389,19 @@ def profile_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="تگ‌ها", callback_data="profile:tags"),
     )
     builder.row(InlineKeyboardButton(text="🏅 دستاوردها", callback_data="profile:achievements"))
+    _back(builder)
+    return builder.as_markup()
+
+def profile_tags_keyboard(tags, active_key: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for achievement in tags:
+        mark = "✅" if achievement.tag_key == active_key else "🏷️"
+        label = f"{mark} {achievement.tag_emoji or '🏷️'} {achievement.tag_name or achievement.name_fa}"
+        builder.row(InlineKeyboardButton(text=label, callback_data=f"profile:tag:{achievement.tag_key}"))
+    if active_key:
+        builder.row(InlineKeyboardButton(text="🧹 حذف تگ فعال", callback_data="profile:tag:clear"))
+    if not tags:
+        builder.row(InlineKeyboardButton(text="🏅 مشاهده دستاوردها", callback_data="profile:achievements"))
     _back(builder)
     return builder.as_markup()
 
