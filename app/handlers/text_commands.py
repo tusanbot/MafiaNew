@@ -145,7 +145,20 @@ async def text_role(message: Message, state: FSMContext) -> None:
     await message.answer(f"🎭 نقش شما\n\nنقش: {role.name_fa}\nساید: {side}")
 
 
-@router.message(_exact("حاضری", "بازیکنان"))
+@router.message(_exact("حاضری"))
+async def text_readiness(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"}:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        if not game or game.status != "running" or game.phase != "setup":
+            await message.answer("الان زمان اعلام حاضری نیست.")
+            return
+        from app.handlers.gameplay import send_readiness_message
+        await send_readiness_message(message.bot, session, game, message.chat.id)
+
+
+@router.message(_exact("بازیکنان"))
 async def text_players(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
         return
