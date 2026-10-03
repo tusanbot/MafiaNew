@@ -558,7 +558,7 @@ def leader_players_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"leader:menu:{game_key}"))
     return builder.as_markup()
 
-def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_locked: bool = False) -> InlineKeyboardMarkup:
+def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_locked: bool = False, turn_locked: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
     builder.row(
@@ -571,6 +571,10 @@ def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_lock
             callback_data=f"night:lock:{game_key}:chat_lock",
         ),
     )
+    builder.row(InlineKeyboardButton(
+        text=f"قفل نوبت: {'فعال' if turn_locked else 'غیرفعال'}",
+        callback_data=f"night:lock:{game_key}:turn_lock",
+    ))
     builder.row(InlineKeyboardButton(text="شروع روز", callback_data=f"night:start_day:{game_key}"))
     return builder.as_markup()
 
