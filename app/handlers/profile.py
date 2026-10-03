@@ -40,12 +40,17 @@ async def _achievements_rich_html(session, user: User) -> str:
     earned = sum(1 for _, ok, _, _ in rows if ok)
     body = []
     for achievement, is_earned, current, target in rows:
+        description = (achievement.description or "برای این دستاورد هنوز توضیحی ثبت نشده است.").strip()
         if is_earned:
-            body.append(f"<tr><td>🏅 {achievement.name_fa}</td><td>✅ +{achievement.points}</td></tr>")
+            body.append(
+                f"<tr><td>🏅 {achievement.name_fa}</td><td>{description}</td><td>✅ +{achievement.points}</td></tr>"
+            )
         else:
             progress = f"{current}/{target}" if target is not None else str(current)
-            body.append(f"<tr><td>🔒 {achievement.name_fa}</td><td>{progress}</td></tr>")
-    table = '<table bordered striped compact><tr><th>دستاورد</th><th>وضعیت</th></tr>' + ''.join(body) + '</table>' if body else '<p>هنوز دستاوردی ثبت نشده است.</p>'
+            body.append(
+                f"<tr><td>🔒 {achievement.name_fa}</td><td>{description}</td><td>{progress}</td></tr>"
+            )
+    table = '<table bordered striped compact><tr><th>دستاورد</th><th>توضیح</th><th>وضعیت</th></tr>' + ''.join(body) + '</table>' if body else '<p>هنوز دستاوردی ثبت نشده است.</p>'
     return (
         f'<h2>🏅 دستاوردها</h2><p>تعداد کسب‌شده: <b>{earned}</b></p>{table}'
         '<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>'
