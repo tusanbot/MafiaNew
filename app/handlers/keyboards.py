@@ -327,7 +327,7 @@ def cancel_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def finish_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
+def finish_game_keyboard(group_id: int, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for key, label in (
         ("citizen", "برد شهروند"),
@@ -337,7 +337,7 @@ def finish_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
         ("draw", "مساوی"),
     ):
         builder.row(InlineKeyboardButton(text=label, callback_data=f"gameadmin:finish_result:{group_id}:{key}"))
-    _back(builder, f"gameadmin:features:{group_id}")
+    _back(builder, back_callback or f"gameadmin:features:{group_id}")
     return builder.as_markup()
 
 
