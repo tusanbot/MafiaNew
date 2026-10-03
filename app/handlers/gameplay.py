@@ -1634,7 +1634,7 @@ async def _finish_vote_message(bot, session, game, *, next_button: bool, final: 
     return message_id
 
 
-async def _send_vote_completion_control(bot, session, game, chat_id: int, *, round_no: int) -> int | None:
+async def _send_vote_completion_control(bot, session, game, chat_id: int, *, round_no: int, phase: str = "vote1") -> int | None:
     """Send exactly one control message below the frozen final voter message."""
     state = await _latest_vote_state(session, game.id)
     if not state:
@@ -1643,10 +1643,11 @@ async def _send_vote_completion_control(bot, session, game, chat_id: int, *, rou
     if existing:
         return int(existing)
     text = f"🗳 <b>رای گیری دور {int(round_no)} تموم شد</b>\n\nاز اینجا مرحله بعد رو انتخاب کن:"
+    markup = vote2_result_keyboard(game.game_key) if phase == "vote2" else vote1_complete_keyboard(game.game_key)
     msg = await bot.send_message(
         int(chat_id),
         text,
-        reply_markup=vote1_complete_keyboard(game.game_key),
+        reply_markup=markup,
         parse_mode="HTML",
     )
     state["control_message_id"] = int(msg.message_id)
@@ -2001,8 +2002,10 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                     await finish_vote2(session, game)
                     await update_main_roster(bot, session, game, chat_id)
                     await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                    await _send_vote_completion_control(bot, session, game, chat_id, round_no=int(state.get("round_no", await current_round(session, game.id))), phase="vote2")
                 else:
                     await _finish_vote_message(bot, session, game, next_button=False, final=True)
+                    await _send_vote_completion_control(bot, session, game, chat_id, round_no=int(state.get("round_no", await current_round(session, game.id))), phase="vote2")
                 return
     except asyncio.CancelledError:
         return
@@ -2028,6 +2031,11 @@ async def vote2_next_handler(callback: CallbackQuery):
         await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
         await _finish_vote_message(callback.bot, session, game, next_button=False, final=True)
         if result["finished"]:
+            await _send_vote_completion_control(
+                callback.bot, session, game, callback.message.chat.id,
+                round_no=int((await _latest_vote_state(session, game.id) or {}).get("round_no", await current_round(session, game.id))),
+                phase="vote2",
+            )
             await callback.answer("رای گیری دوم تمام شد.")
             return
     await callback.answer()
