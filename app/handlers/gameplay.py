@@ -1395,12 +1395,27 @@ async def vote1_next_handler(callback: CallbackQuery):
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
         task = _vote_tasks.pop(key, None)
-        if task: task.cancel()
+        if task:
+            task.cancel()
+        state = await _latest_vote_state(session, game.id)
+        if not state or state.get("phase") != "vote1":
+            await callback.answer("این رأی‌گیری دیگر فعال نیست.", show_alert=True)
+            return
+        # The timer already closes the current target. The manual "بعدی"
+        # button must advance that finished target and never try to vote it again.
+        if state.get("status") == "active":
+            await finish_vote1_target(session, game)
         result = await advance_vote1(session, game)
-        if not result["finished"]:
+        if result["finished"]:
+            await callback.message.edit_text(
+                "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
+                reply_markup=vote1_complete_keyboard(key),
+                parse_mode="HTML",
+            )
+        else:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
             _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
-    await callback.answer()
+    await callback.answer("بازیکن بعدی آماده شد." if not result["finished"] else "رأی اول تمام شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
 async def vote1_finish_handler(callback: CallbackQuery):
