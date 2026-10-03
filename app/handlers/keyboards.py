@@ -2,6 +2,38 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.utils.text import tg_plain_name
 
+_BUTTON_EMOJI_RULES = (
+    ("مدیریت بازی فعال", "🎮"), ("مدیریت گروه", "👥"), ("تنظیمات و قفل", "🔐"),
+    ("تنظیمات عمومی", "⚙️"), ("تنظیمات اعلان", "🔔"), ("تنظیمات ربات", "⚙️"),
+    ("پروفایل", "👤"), ("رتبه", "🏆"), ("امتیازات", "💰"), ("تغییر نام", "✏️"),
+    ("تگ", "🏷️"), ("دستاورد", "🏅"), ("پنل مدیریت", "🛠️"), ("اطلاعات بازی", "ℹ️"),
+    ("مدیریت بازیکنان", "👥"), ("تنظیمات بازی", "⚙️"), ("امکانات اضافی", "✨"),
+    ("تاریخچه", "📚"), ("لغو بازی", "❌"), ("اتمام بازی", "🏁"), ("اتفاقات بازی", "📜"),
+    ("ثبت اتفاق", "📝"), ("مدیریت اموجی", "🎨"), ("بازگشت", "↩️"), ("ادامه", "➡️"),
+    ("لغو", "❌"), ("پیوستن", "🎮"), ("ترک بازی", "🚪"), ("شروع بازی", "▶️"),
+    ("شروع دور", "▶️"), ("انتخاب سردست", "👑"), ("انتخاب دستی", "✋"),
+    ("انتخاب خودکار", "🎲"), ("رای", "🗳️"), ("چالش", "🤏🏻"), ("شب", "🌙"),
+    ("روز", "☀️"), ("بازیکن بعدی", "➡️"), ("برد", "🏆"), ("مساوی", "⚖️"),
+    ("تأیید", "✅"), ("حذف", "🗑️"), ("ایجاد", "➕"), ("ویرایش", "✏️"),
+)
+
+def _decorate_button_text(value: str) -> str:
+    text = str(value or "")
+    if text[:2] and any(ord(ch) > 0x1F000 for ch in text[:3]):
+        return text
+    for needle, emoji in _BUTTON_EMOJI_RULES:
+        if needle in text:
+            return f"{emoji} {text}"
+    return text
+
+_OriginalInlineKeyboardButton = InlineKeyboardButton
+def InlineKeyboardButton(*args, **kwargs):
+    if "text" in kwargs:
+        kwargs["text"] = _decorate_button_text(kwargs["text"])
+    elif args:
+        args = (_decorate_button_text(args[0]), *args[1:])
+    return _OriginalInlineKeyboardButton(*args, **kwargs)
+
 
 def _back(builder: InlineKeyboardBuilder, callback_data: str = "menu:root") -> None:
     builder.row(InlineKeyboardButton(text="بازگشت", callback_data=callback_data))
