@@ -433,6 +433,31 @@ async def round_settings_handler(callback: CallbackQuery) -> None:
         )
     await callback.answer()
 
+@router.callback_query(lambda c: c.data and c.data.startswith("round:toggle_next:"))
+async def round_toggle_next_handler(callback: CallbackQuery) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    key = callback.data.split(":", 2)[2]
+    async with session_factory() as session:
+        game = await _load_game(session, key)
+        host = await session.get(User, game.host_user_id) if game and game.host_user_id else None
+        if not game or game.status != "running" or game.phase != "setup":
+            await callback.answer("تنظیمات این مرحله دیگر قابل تغییر نیست.", show_alert=True)
+            return
+        if not host or host.telegram_id != callback.from_user.id:
+            await callback.answer("فقط گرداننده می‌تواند وضعیت نکست را تغییر دهد.", show_alert=True)
+            return
+        enabled = bool(game.next_host_enabled or game.next_player_enabled)
+        game.next_host_enabled = not enabled
+        game.next_player_enabled = not enabled
+        await session.commit()
+        await callback.message.edit_reply_markup(
+            reply_markup=__import__("app.handlers.keyboards", fromlist=["leader_settings_keyboard"]).leader_settings_keyboard(
+                game.game_key, game, True
+            )
+        )
+    await callback.answer("وضعیت نکست تغییر کرد.")
+
 @router.callback_query(lambda c: c.data and c.data.startswith("round:toggle_"))
 async def round_toggle_handler(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
