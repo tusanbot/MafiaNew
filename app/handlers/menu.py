@@ -31,6 +31,7 @@ from app.handlers.keyboards import (
     scenario_challenge_keyboard,
     scenario_delete_confirm_keyboard,
     notification_settings_menu,
+    general_bot_settings_menu,
     finish_game_confirm_keyboard,
     game_result_keyboard,
     game_result_back_keyboard,
@@ -1628,8 +1629,8 @@ async def bot_settings_placeholder(callback: CallbackQuery) -> None:
         return
     action = callback.data.split(":", 1)[1]
     if action == "general":
-        text = "⚙️ تنظیمات عمومی\n\nتنظیمات رفتاری و شخصی ربات؛ مانند نمایش پروفایل و گزارش عملکرد."
-        await callback.message.edit_text(text, reply_markup=bot_settings_menu())
+        text = "⚙️ تنظیمات عمومی\n\nتنظیمات شخصی و مسیرهای عمومی ربات از اینجا در دسترس است."
+        await callback.message.edit_text(text, reply_markup=general_bot_settings_menu())
     elif action == "notifications":
         async with session_factory() as session:
             user = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
