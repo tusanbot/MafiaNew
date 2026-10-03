@@ -1219,18 +1219,18 @@ async def _game_roles_text(session, game) -> str:
         GameEvent.event_type.in_(["game_finished", "stats_recorded"])
     ).order_by(GameEvent.id.desc()))
     winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
-    lines = ["🎭 <b>لیست بازیکنان و نقش‌ها</b>", ""]
-    for index, (player, user, role) in enumerate(rows, 1):
+    body = []
+    for player, user, role in rows:
         if player.is_reserved:
             continue
         name = tg_mention(user.telegram_id, user.display_name or user.first_name or user.username or "بازیکن")
         role_name = escape(role.name_fa if role else "بدون نقش")
-        team = role.team if role else None
+        team = {"mafia": "مافیا", "citizen": "شهروند", "independent": "مستقل"}.get(role.team if role else "", "نامشخص")
         badges = []
-        if ((winner == "mafia" and team == "mafia") or
-            (winner == "citizen" and team == "citizen") or
-            (winner == "independent" and team == "independent") or
-            (winner == "citizen_independent" and team in {"citizen", "independent"})):
+        if ((winner == "mafia" and role and role.team == "mafia") or
+            (winner == "citizen" and role and role.team == "citizen") or
+            (winner == "independent" and role and role.team == "independent") or
+            (winner == "citizen_independent" and role and role.team in {"citizen", "independent"})):
             badges.append("🏆")
         if not player.alive:
             badges.append("☠️")
@@ -1244,18 +1244,21 @@ async def _game_roles_text(session, game) -> str:
                 badges.append("🎭")
         if player.warning_count and emoji_settings.get("warning", True):
             badges.append(f"⚠️{player.warning_count}")
-        if player.alive and player.silence_until_round is not None and emoji_settings.get("silence", True):
-            badges.append("🔇")
-        if player.alive and player.extra_turn_round is not None and emoji_settings.get("extra_turn", True):
-            badges.append("➕")
         badge_text = " ".join(dict.fromkeys(badges))
-        lines.append(f"{index}. {name} — <b>{role_name}</b>{(' ' + badge_text) if badge_text else ''}")
-    return "\n".join(lines)
-
+        body.append(
+            f"<tr><td align=\"center\">{int(player.seat)}</td>"
+            f"<td>{name}</td><td><b>{role_name}</b></td>"
+            f"<td>{escape(team)}</td><td>{escape(badge_text or '—')}</td></tr>"
+        )
+    table = (
+        '<table bordered striped compact>'
+        '<tr><th>#</th><th>بازیکن</th><th>نقش</th><th>ساید</th><th>وضعیت</th></tr>'
+        + "".join(body) +
+        '</table>'
+    ) if body else '<p>بازیکنی برای نمایش وجود ندارد.</p>'
+    return "<h2>🎭 لیست بازیکنان و نقش‌ها</h2>" + table
 
 async def _game_ranking_text(session, game) -> str:
-    # Group ranking is based on players who have participated in games of this
-    # same Telegram group, not the global bot leaderboard.
     rows = list((await session.execute(
         select(User)
         .join(GamePlayer, GamePlayer.user_id == User.id)
@@ -1269,17 +1272,23 @@ async def _game_ranking_text(session, game) -> str:
         .order_by(User.score.desc(), User.games_won.desc(), User.games_played.desc())
         .limit(10)
     )).scalars().all())
-    lines = ["🏆 <b>رتبه‌بندی بازیکنان</b>", ""]
     if not rows:
-        lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
-    else:
-        for i, user in enumerate(rows, 1):
-            lines.append(
-                f"{i}. {escape(tg_name(user.display_name or user.first_name or 'بازیکن'))} — "
-                f"{user.score} امتیاز — {escape(rank_for_score(user.score))}"
-            )
-    return "\n".join(lines)
-
+        return "<h2>🏆 رتبه‌بندی بازیکنان</h2><p>هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.</p>"
+    body = []
+    for i, user in enumerate(rows, 1):
+        body.append(
+            f"<tr><td align=\"center\">{i}</td>"
+            f"<td>{tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}</td>"
+            f"<td align=\"center\">{int(user.score)}</td>"
+            f"<td>{escape(rank_for_score(user.score))}</td></tr>"
+        )
+    return (
+        "<h2>🏆 رتبه‌بندی بازیکنان</h2>"
+        '<table bordered striped compact>'
+        '<tr><th>جایگاه</th><th>بازیکن</th><th>امتیاز</th><th>رتبه</th></tr>'
+        + "".join(body) +
+        "</table>"
+    )
 
 async def _game_result_rich_html(session, game, winner: str) -> str:
     """Default result view; roles/ranking are opened from Rich Message buttons."""
