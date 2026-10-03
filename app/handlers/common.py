@@ -1,21 +1,94 @@
 from aiogram import Router
+from aiogram import BaseMiddleware
 from aiogram.filters import CommandStart, Command
 from aiogram.types import CallbackQuery, Message
+from typing import Any, Awaitable, Callable
 from sqlalchemy import select
 
 from app.db.session import session_factory
-from app.db.models import Group
+from app.db.models import Game, Group, GroupSettings, User
 from app.handlers.keyboards import (
     group_start_menu,
     main_menu,
     registration_keyboard,
 )
 from app.repositories.groups import GroupRepository
+from app.repositories.games import GameRepository
 from app.services.profile import sync_telegram_user
 from app.services.group_registration import check_group_registration, register_group
 from app.config import get_settings
 
+
+
+class GroupLockMiddleware(BaseMiddleware):
+    """Enforce chat/night/turn locks before any message handler runs."""
+
+    async def __call__(
+        self,
+        handler: Callable[[Message, dict[str, Any]], Awaitable[Any]],
+        event: Message,
+        data: dict[str, Any],
+    ) -> Any:
+        message = event
+        if message.chat.type not in ("group", "supergroup") or not message.from_user:
+            return await handler(event, data)
+
+        async with session_factory() as session:
+            group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+            if not group:
+                return await handler(event, data)
+
+            game = await GameRepository.get_active(session, group.id)
+            if not game or game.status != "running":
+                return await handler(event, data)
+
+            settings = await session.scalar(
+                select(GroupSettings).where(GroupSettings.group_id == group.id)
+            )
+            if not settings:
+                return await handler(event, data)
+
+            # Managers must retain control of the game even while the chat is
+            # locked; ordinary players are subject to the active lock.
+            user = await session.scalar(
+                select(User).where(User.telegram_id == message.from_user.id)
+            )
+            is_host = bool(user and game.host_user_id == user.id)
+            is_admin = False
+            try:
+                member = await message.bot.get_chat_member(
+                    message.chat.id, message.from_user.id
+                )
+                is_admin = member.status in ("creator", "administrator")
+            except Exception:
+                pass
+
+            locked = bool(settings.chat_lock)
+            if settings.night_lock and game.phase == "night":
+                locked = True
+
+            if settings.turn_lock and game.phase == "day":
+                from app.services.gameplay import current_turn
+                turn = await current_turn(session, game.id)
+                if turn and int(turn.get("user_id", -1)) != message.from_user.id:
+                    locked = True
+
+            if not locked or is_host or is_admin:
+                return await handler(event, data)
+
+        # The bot must have Telegram permission to delete messages in the group.
+        # Ignore deletion errors so a missing Telegram permission cannot crash
+        # the dispatcher or block unrelated handlers.
+        try:
+            await message.delete()
+        except Exception:
+            pass
+        return None
+
+
 router = Router(name="common")
+router.message.outer_middleware(GroupLockMiddleware())
+
 
 
 @router.message(CommandStart())
