@@ -13,7 +13,6 @@ from app.services.gameplay import (
     alive_players,
     all_players,
     current_round,
-    get_game_number,
     resolve_night,
     night_ready,
     start_match,
@@ -37,6 +36,7 @@ from app.services.gameplay import (
     next_turn,
     send_game_result_notifications,
 )
+from app.services.game import get_game_number
 from app.utils.text import tg_name, tg_mention
 
 from app.handlers.keyboards import (
