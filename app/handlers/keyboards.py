@@ -103,6 +103,18 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def active_game_entry_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    """Single-button entry point used on the pinned public roster."""
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="🎮 مدیریت بازی",
+            callback_data=f"menu:active_game:{game_key}",
+        )
+    )
+    return builder.as_markup()
+
+
 def active_game_menu(group_id: int, back_callback: str | None = None, game_key: str | None = None, lobby_editable: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="ℹ️ اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
@@ -662,7 +674,8 @@ def vote_rights_keyboard(game_key: str, players, revoked_ids: set[int] | None = 
 
 def vote1_target_keyboard(game_key: str, target_user_id: int, voter_count: int = 0) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text=f"🗳 رای میدم", callback_data=f"vote1:cast:{game_key}:{target_user_id}"))
+    builder.row(InlineKeyboardButton(text="🗳 رای میدم", callback_data=f"vote1:cast:{game_key}:{target_user_id}"))
+    builder.row(InlineKeyboardButton(text="⏩ نفر بعدی", callback_data=f"vote1:next:{game_key}"))
     return builder.as_markup()
 
 
