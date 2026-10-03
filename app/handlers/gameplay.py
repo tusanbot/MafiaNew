@@ -1359,7 +1359,7 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
                     if state_locked.get("status") == "active":
                         await finish_vote1_target(session, game)
                     is_last = int(state_locked.get("index", 0)) + 1 >= len(state_locked.get("queue", []))
-                    await _finish_vote_message(bot, session, game, next_button=False)
+                    await _finish_vote_message(bot, session, game, next_button=True)
                     result = await advance_vote1(session, game)
                 if result["finished"] or is_last:
                     if result.get("finished"):
