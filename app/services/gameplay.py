@@ -627,6 +627,16 @@ async def toggle_vote2_candidate(session, game, user_id: int):
     else:
         selected.add(int(user_id))
     state["defense_candidates"] = list(selected)
+    # Persist the updated selection in the canonical vote_state event as well.
+    # The selection event alone is not enough because start_vote2 reads
+    # defense_candidates from the latest vote_state payload.
+    state_result = await session.execute(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type == "vote_state",
+    ).order_by(GameEvent.id.desc()))
+    state_event = state_result.scalars().first()
+    if state_event:
+        state_event.payload = json.dumps(state, ensure_ascii=False)
     await _event(session, game, "vote2_candidate_selection", {
         "round_no": int(state["round_no"]), "user_id": int(user_id),
         "selected": int(user_id) in selected,
