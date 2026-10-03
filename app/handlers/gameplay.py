@@ -49,7 +49,7 @@ from app.handlers.keyboards import (
     voting_setup_keyboard, voting_delay_keyboard, voting_duration_keyboard, voting_mode_keyboard,
     vote_rights_keyboard, vote_right_confirm_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
     defense_selection_keyboard, vote2_target_keyboard, vote2_ballot_keyboard, vote2_private_voters_keyboard, vote2_private_targets_keyboard, vote2_complete_keyboard,
-    vote2_setup_keyboard, vote2_result_keyboard,
+    vote2_setup_keyboard, vote2_result_keyboard, readiness_keyboard,
 )
 
 router = Router(name="gameplay")
