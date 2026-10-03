@@ -426,8 +426,7 @@ async def activate_global_lock(bot, session, game) -> dict:
         raise ValueError("شناسه گروه پیدا نشد.")
 
     player_rows = await all_players(session, game.id)
-    player_ids = {user.telegram_id for _, user, _ in player_rows if not _.is_reserved} if player_rows else set()
-    # Keep the comprehension explicit because all_players returns (player, user, role).
+    # all_players returns (player, user, role); only main game players count.
     player_ids = {
         user.telegram_id
         for player, user, role in player_rows
