@@ -1719,7 +1719,7 @@ async def game_history_text(session, group) -> str:
         return f"تاریخچه بازی‌های «{group.title}»\n\nهنوز بازی‌ای ثبت نشده است."
     lines = [f"تاریخچه بازی‌های «{group.title}»", ""]
     for game, scenario in rows:
-        lines.append(f"#{game.id} — {scenario.name_fa} — {game.status} — {game.phase}")
+        lines.append(f"#{game.id} — {scenario.name_fa} — {_status_fa(game.status)} — {_phase_fa(game.phase)}")
     return "\n".join(lines)
 
 
