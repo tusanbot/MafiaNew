@@ -220,6 +220,29 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
             role_stat.investigations += investigations[user.id]; role_stat.investigation_hits += investigation_hits[user.id]
         earned = await update_user_progress(session, user)
         newly_earned[user.id] = {"achievements": earned, "score_delta": score_delta, "score_before": score_before, "score_after": user.score, "rank_before": rank_before, "rank_after": rank_for_score(user.score), "stats": {"kills": kills[user.id], "saves": saves[user.id], "investigations": investigations[user.id], "investigation_hits": investigation_hits[user.id], "correct_votes": correct_votes[user.id], "accepted_challenges": accepted_challenges[user.id], "faceoffs": faceoff_counts[user.id], "faceoff_wins": faceoff_wins[user.id], "survived": bool(player.alive), "performance": performance, "won": bool(winning)}}
+    # Build the in-game ranking after all players receive their final score.
+    # Ranking is based on the score earned after this game; ties share a place.
+    ordered = sorted(
+        newly_earned.items(),
+        key=lambda item: (-int(item[1].get("score_after", 0)), item[0]),
+    )
+    last_score = None
+    place = 0
+    for index, (uid, report) in enumerate(ordered, start=1):
+        score = int(report.get("score_after", 0))
+        if last_score != score:
+            place = index
+            last_score = score
+        player, user, role = by_user[uid]
+        report["game_rank"] = place
+        report["role_name"] = role.name_fa if role else "نامشخص"
+        report["team_name"] = {
+            "mafia": "مافیا",
+            "citizen": "شهروند",
+            "independent": "مستقل",
+        }.get(role.team if role else "", "نامشخص")
+        report["alive"] = bool(player.alive)
+
     return newly_earned
 
 async def leaderboard(session: AsyncSession, limit: int = 10, team: str | None = None):
