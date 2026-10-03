@@ -591,10 +591,25 @@ async def text_next(message: Message, state: FSMContext) -> None:
                 _delete_turn_challenge_messages,
                 _send_turn_message,
                 _schedule_auto_next,
+                _turn_transition_locks,
             )
-            await _finish_turn_message(message.bot, session, game, turn)
-            await _delete_turn_challenge_messages(message.bot, session, game, turn)
-            result = await next_turn(session, game)
+            lock = _turn_transition_locks.setdefault(game.game_key, __import__("asyncio").Lock())
+            async with lock:
+                fresh_turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+                if not fresh_turn or fresh_turn.get("status") not in ("active", "paused"):
+                    await message.answer("این نوبت قبلاً رد شده است.")
+                    return
+                if (
+                    fresh_turn.get("kind") != turn.get("kind")
+                    or int(fresh_turn.get("user_id", -1)) != int(turn.get("user_id", -1))
+                    or fresh_turn.get("started_at") != turn.get("started_at")
+                ):
+                    await message.answer("این نوبت قبلاً رد شده است.")
+                    return
+                turn = fresh_turn
+                await _finish_turn_message(message.bot, session, game, turn)
+                await _delete_turn_challenge_messages(message.bot, session, game, turn)
+                result = await next_turn(session, game)
         except ValueError as exc:
             await message.answer(str(exc))
             return
