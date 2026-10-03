@@ -684,8 +684,9 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         request_data["message_id"] = None
         event.payload = json.dumps(request_data, ensure_ascii=False)
         await session.commit()
-        await _refresh_turn_message(callback.bot, session, game, await current_turn(session, game.id))
+        # The request is committed; don't make the callback wait for a Telegram edit.
         await callback.answer("درخواست چالش ثبت شد.")
+        asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
 async def challenge_grant_handler(callback: CallbackQuery):
@@ -704,6 +705,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
+        await callback.answer("چالش تأیید شد.")
         requester = await session.get(User, result["requester_id"])
         requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
         await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
@@ -727,7 +729,6 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
                 parse_mode="HTML",
             )
-        await callback.answer("چالش به بازیکن انتخاب‌شده داده شد.")
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:select:"))
@@ -775,6 +776,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         turn_task = _turn_tasks.pop(game.game_key, None)
         if turn_task:
             turn_task.cancel()
+        await callback.answer("زمان چالش ثبت شد.")
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
@@ -807,7 +809,6 @@ async def challenge_place_handler(callback: CallbackQuery):
                     )
                 except Exception:
                     pass
-        await callback.answer("زمان چالش ثبت شد.")
 
 
 async def _reschedule_auto_next(bot, game):
@@ -1147,6 +1148,32 @@ async def _vote_target_message(bot, session, game, chat_id: int):
     return msg
 
 
+async def _refresh_vote_target_message_bg(bot, game_key: str):
+    """Refresh the public ballot in a separate DB session after callback ack."""
+    try:
+        async with session_factory() as session:
+            game = await _load(session, game_key)
+            if game:
+                await _refresh_vote_target_message(bot, session, game)
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
+async def _refresh_turn_message_bg(bot, game_key: str):
+    """Refresh the active turn message without holding up the callback."""
+    try:
+        async with session_factory() as session:
+            game = await _load(session, game_key)
+            if game:
+                await _refresh_turn_message(bot, session, game, await current_turn(session, game.id))
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
 async def _refresh_vote_target_message(bot, session, game):
     state = await _latest_vote_state(session, game.id)
     if not state or state.get("phase") not in {"vote1", "vote2"} or state.get("status") != "active":
@@ -1409,8 +1436,8 @@ async def vote1_cast_handler(callback: CallbackQuery):
         if not game or not actor: await callback.answer("بازی پیدا نشد.", show_alert=True); return
         try: await cast_vote_phase(session, game, actor, target_id, "vote1")
         except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
-        await _refresh_vote_target_message(callback.bot, session, game)
-    await callback.answer("رای ثبت شد.")
+        await callback.answer("رای ثبت شد.")
+        asyncio.create_task(_refresh_vote_target_message_bg(callback.bot, key))
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:next:"))
 async def vote1_next_handler(callback: CallbackQuery):
@@ -1733,15 +1760,15 @@ async def vote2_cast_handler(callback: CallbackQuery):
         try: await cast_vote_phase(session, game, actor, target_id, "vote2")
         except ValueError as exc: await callback.answer(str(exc), show_alert=True); return
         state = await _latest_vote_state(session, game.id)
+        await callback.answer("رای ثبت شد.")
         if (state.get("rules") or {}).get("visibility", "public") == "public":
-            await _refresh_vote_target_message(callback.bot, session, game)
+            asyncio.create_task(_refresh_vote_target_message_bg(callback.bot, key))
         else:
             try:
                 await callback.message.edit_text("✅ رای شما ثبت شد.")
             except Exception:
                 pass
-    await callback.answer("رای ثبت شد.")
-
+    
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:finish:"))
 async def vote2_finish_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
