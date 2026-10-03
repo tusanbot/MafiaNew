@@ -526,17 +526,22 @@ def day_keyboard(game_key: str, players=None) -> InlineKeyboardMarkup:
 
 
 def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False) -> InlineKeyboardMarkup:
-    """Setup menu: before leader selection only leader/settings are visible;
-    after selection the same menu exposes start-round."""
+    """Round setup menu: leader, challenge/next status, management and start."""
     builder = InlineKeyboardBuilder()
-    if not leader_selected:
-        builder.row(InlineKeyboardButton(text="👑 انتخاب سردست", callback_data=f"leader:menu:{game_key}"))
-        builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"round:settings:{game_key}"))
-        return builder.as_markup()
-
     builder.row(InlineKeyboardButton(text="👑 انتخاب سردست", callback_data=f"leader:menu:{game_key}"))
-    builder.row(InlineKeyboardButton(text="⚙️ تنظیمات بازی", callback_data=f"round:settings:{game_key}"))
-    builder.row(InlineKeyboardButton(text="▶️ شروع دور", callback_data=f"round:start:{game_key}"))
+    builder.row(
+        InlineKeyboardButton(
+            text=f"🤏🏻 چالش: {'فعال' if game.challenge_enabled else 'غیرفعال'}",
+            callback_data=f"round:toggle_challenge:{game_key}",
+        ),
+        InlineKeyboardButton(
+            text=f"⏩ نکست: {'فعال' if (game.next_host_enabled or game.next_player_enabled) else 'غیرفعال'}",
+            callback_data=f"round:toggle_next:{game_key}",
+        ),
+    )
+    builder.row(InlineKeyboardButton(text="🛠 مدیریت بازی", callback_data=f"gameadmin:lobby:{game_key}"))
+    if leader_selected:
+        builder.row(InlineKeyboardButton(text="▶️ شروع دور", callback_data=f"round:start:{game_key}"))
     return builder.as_markup()
 
 
