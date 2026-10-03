@@ -211,7 +211,7 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     msg = await bot.send_message(
         chat_id, text,
         reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                                       game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests),
+                                       game.turn_color, game.challenge_color, True, kind == "main" and not turn.get("challenge_consumed", False), requests),
         parse_mode="HTML",
     )
     await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
@@ -250,7 +250,7 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
     try:
         await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
                                     reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                                                                   game.turn_color, game.challenge_color, True, kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests),
+                                                                   game.turn_color, game.challenge_color, True, kind == "main" and not turn.get("challenge_consumed", False), requests),
                                     parse_mode="HTML")
     except Exception:
         pass
@@ -289,7 +289,7 @@ async def _turn_live_countdown(bot, game_key: str):
                         reply_markup=day_turn_keyboard(
                             game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
                             game.turn_color, game.challenge_color, True,
-                            kind not in {"extra", "challenge"} and not turn.get("challenge_consumed", False), requests
+                            kind == "main" and not turn.get("challenge_consumed", False), requests
                         ),
                         parse_mode="HTML",
                     )
@@ -1195,12 +1195,15 @@ async def next_turn_handler(callback: CallbackQuery):
                 return
             turn = fresh_turn
             try:
-                # Advance the authoritative state first; Telegram cleanup is
-                # deliberately performed after the transition so the button
-                # feels immediate and duplicate callbacks cannot race it.
+                # Finish the exact old message before creating the next turn.
+                # This prevents the old "next" button from surviving and, more
+                # importantly, prevents the old live-timer task from cancelling
+                # the timer belonging to the newly-created turn.
+                await _finish_turn_message(callback.bot, session, game, turn)
+                await _delete_turn_challenge_messages(callback.bot, session, game, turn)
+
                 if turn.get("kind") == "defense":
                     result = await advance_defense_turn(session, game)
-                    asyncio.create_task(_finish_turn_message(callback.bot, session, game, turn))
                     if result.get("finished"):
                         await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
                         _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
@@ -1213,8 +1216,6 @@ async def next_turn_handler(callback: CallbackQuery):
                     )
                 else:
                     result = await next_turn(session, game)
-                    asyncio.create_task(_finish_turn_message(callback.bot, session, game, turn))
-                    asyncio.create_task(_delete_turn_challenge_messages(callback.bot, session, game, turn))
             except ValueError as exc:
                 try:
                     await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
