@@ -669,22 +669,19 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
         try:
-            result = await request_challenge(session, game, actor)
+            result = await request_challenge(
+                session, game, actor,
+                chat_id=callback.message.chat.id if callback.message else None,
+                message_id=None,
+            )
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        turn_owner = await session.get(User, result["turn_user_id"])
-        if not turn_owner or not callback.message:
-            await callback.answer("صاحب نوبت یا پیام بازی پیدا نشد.", show_alert=True)
+        if not callback.message:
+            await callback.answer("پیام بازی پیدا نشد.", show_alert=True)
             return
-        event = await session.get(GameEvent, result["event_id"])
-        request_data = json.loads(event.payload or "{}")
-        request_data["requester_name"] = actor.display_name or actor.first_name
-        request_data["chat_id"] = callback.message.chat.id
-        request_data["message_id"] = None
-        event.payload = json.dumps(request_data, ensure_ascii=False)
-        await session.commit()
-        # The request is committed; don't make the callback wait for a Telegram edit.
+        # The request is committed in a single transaction; don't make the callback
+        # wait for a Telegram edit.
         await callback.answer("درخواست چالش ثبت شد.")
         asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
 
