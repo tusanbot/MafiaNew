@@ -752,39 +752,8 @@ async def delete_main_roster(bot, session, game) -> None:
     await session.commit()
 
 async def update_round_roster(bot, session, game, chat_id: int | None = None) -> None:
-    """Maintain one roster message per round; update it instead of sending new rosters."""
-    round_no = await current_round(session, game.id)
-    result = await session.execute(select(GameEvent).where(
-        GameEvent.game_id == game.id, GameEvent.event_type == "round_roster_message"
-    ).order_by(GameEvent.id.desc()))
-    event = None
-    for candidate in result.scalars():
-        data = json.loads(candidate.payload or "{}")
-        if int(data.get("round_no", -1)) == int(round_no):
-            event = candidate
-            break
-    data = json.loads(event.payload or "{}") if event else {}
-    target_chat = chat_id or data.get("chat_id") or await _group_chat_id(session, game)
-    if not target_chat:
-        return
-    roster_text = await _public_status_roster(session, game, include_state=False, full_header=False)
-    if event and data.get("message_id"):
-        try:
-            await bot.edit_message_text(roster_text, chat_id=int(target_chat), message_id=int(data["message_id"]), parse_mode="HTML")
-            return
-        except Exception:
-            pass
-    try:
-        msg = await bot.send_message(int(target_chat), roster_text, parse_mode="HTML")
-    except Exception:
-        return
-    payload = {"round_no": int(round_no), "chat_id": int(target_chat), "message_id": msg.message_id}
-    if event:
-        event.payload = json.dumps(payload, ensure_ascii=False)
-    else:
-        session.add(GameEvent(game_id=game.id, event_type="round_roster_message",
-                              payload=json.dumps(payload, ensure_ascii=False)))
-    await session.commit()
+    """Compatibility shim: the game has exactly one persistent public roster message."""
+    await update_main_roster(bot, session, game, chat_id)
 
 
 
@@ -1576,10 +1545,13 @@ async def _refresh_vote_target_message(bot, session, game):
 
 
 async def _finish_vote_message(bot, session, game, *, next_button: bool, final: bool = False):
+    """Freeze the current ballot message without reusing it for the next control state."""
     state = await _latest_vote_state(session, game.id)
     if not state or not state.get("message_id"):
-        return
+        return None
     phase = state.get("phase")
+    message_id = int(state["message_id"])
+
     if phase == "vote2":
         records = await _vote_records_for_phase(session, game, int(state["round_no"]), "vote2")
         counts = {int(uid): 0 for uid in state.get("queue", [])}
@@ -1605,28 +1577,71 @@ async def _finish_vote_message(bot, session, game, *, next_button: bool, final: 
             else:
                 lines += ["", "در این رای خروجی ثبت نشد."]
         try:
-            await bot.edit_message_text("\n".join(lines), chat_id=int(state["chat_id"]), message_id=int(state["message_id"]), reply_markup=vote2_complete_keyboard(game.game_key), parse_mode="HTML")
+            await bot.edit_message_text(
+                "\n".join(lines),
+                chat_id=int(state["chat_id"]),
+                message_id=message_id,
+                reply_markup=None if final else vote2_complete_keyboard(game.game_key),
+                parse_mode="HTML",
+            )
         except Exception:
             pass
-        return
+        state["final_message_id"] = message_id
+        return message_id
 
     target = await session.get(User, int(state["target_user_id"]))
-    records = await _vote_records_for_target(session, game, int(state["round_no"]), state["phase"], int(state["target_user_id"]))
-    lines = [f"پایان زمان رای به {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}", f"تعداد رای {len(records)}", "", "کسایی که رای دادن"]
+    records = await _vote_records_for_target(
+        session, game, int(state["round_no"]), state["phase"], int(state["target_user_id"])
+    )
+    lines = [
+        f"پایان زمان رای به {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}",
+        f"تعداد رای {len(records)}",
+        "",
+        "کسایی که رای دادن",
+    ]
     if records:
-        lines.extend(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}" for _, user in records)
+        lines.extend(
+            f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}"
+            for _, user in records
+        )
     else:
         lines.append("کسی رای نداده است")
-    if final:
-        markup = vote2_complete_keyboard(game.game_key)
-    elif next_button:
-        markup = vote1_complete_keyboard(game.game_key) if state.get("index", 0) + 1 >= len(state.get("queue", [])) else InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="بازیکن بعدی", callback_data=f"vote1:next:{game.game_key}")]])
-    else:
-        markup = None
+
     try:
-        await bot.edit_message_text("\n".join(lines), chat_id=int(state["chat_id"]), message_id=int(state["message_id"]), reply_markup=markup, parse_mode="HTML")
+        await bot.edit_message_text(
+            "\n".join(lines),
+            chat_id=int(state["chat_id"]),
+            message_id=message_id,
+            reply_markup=None,
+            parse_mode="HTML",
+        )
     except Exception:
         pass
+    state["final_message_id"] = message_id
+    return message_id
+
+
+async def _send_vote_completion_control(bot, session, game, chat_id: int, *, round_no: int) -> int | None:
+    """Send exactly one control message below the frozen final voter message."""
+    state = await _latest_vote_state(session, game.id)
+    if not state:
+        return None
+    existing = state.get("control_message_id")
+    if existing:
+        return int(existing)
+    text = f"🗳 <b>رای گیری دور {int(round_no)} تموم شد</b>\n\nاز اینجا مرحله بعد رو انتخاب کن:"
+    msg = await bot.send_message(
+        int(chat_id),
+        text,
+        reply_markup=vote1_complete_keyboard(game.game_key),
+        parse_mode="HTML",
+    )
+    state["control_message_id"] = int(msg.message_id)
+    state["final_message_id"] = int(state.get("final_message_id") or state.get("message_id") or 0)
+    await _event(session, game, "vote_state", state)
+    await session.commit()
+    return int(msg.message_id)
+
 
 async def _start_vote1_after_delay(bot, game_key: str, chat_id: int, delay: int):
     await asyncio.sleep(max(0, delay))
@@ -1672,17 +1687,10 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
                     result = await advance_vote1(session, game)
                 if result["finished"] or is_last:
                     if result.get("finished"):
-                        state_after = await _latest_vote_state(session, game.id)
-                        message_id = state_after.get("message_id") if state_after else None
-                        if message_id:
-                            try:
-                                await bot.edit_message_reply_markup(
-                                    chat_id=chat_id,
-                                    message_id=int(message_id),
-                                    reply_markup=vote1_complete_keyboard(game.game_key),
-                                )
-                            except Exception:
-                                pass
+                        await _send_vote_completion_control(
+                            bot, session, game, chat_id,
+                            round_no=int(state_locked.get("round_no", await current_round(session, game.id))),
+                        )
                     return
                 if game.voting_mode == "auto":
                     await _vote_target_message(bot, session, game, chat_id)
@@ -1805,7 +1813,10 @@ async def vote1_next_handler(callback: CallbackQuery):
             await _finish_vote_message(bot=callback.bot, session=session, game=game, next_button=False)
             result = await advance_vote1(session, game)
             if result["finished"]:
-                await callback.message.edit_reply_markup(reply_markup=vote1_complete_keyboard(key))
+                await _send_vote_completion_control(
+                    callback.bot, session, game, callback.message.chat.id,
+                    round_no=int(state.get("round_no", await current_round(session, game.id))),
+                )
             else:
                 await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
                 _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
@@ -1829,10 +1840,9 @@ async def vote1_finish_handler(callback: CallbackQuery):
             task.cancel()
         result = await advance_vote1(session, game)
         if result["finished"]:
-            await callback.message.edit_text(
-                "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
-                reply_markup=vote1_complete_keyboard(key),
-                parse_mode="HTML",
+            await _send_vote_completion_control(
+                callback.bot, session, game, callback.message.chat.id,
+                round_no=int((await _latest_vote_state(session, game.id) or {}).get("round_no", await current_round(session, game.id))),
             )
         else:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
