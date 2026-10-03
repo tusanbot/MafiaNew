@@ -426,14 +426,26 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
-        if not game:
-            await message.answer("بازی فعالی وجود ندارد.")
+        user = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
+        group = await GroupRepository.get_by_telegram_id(session, int(message.chat.id))
+        if not group:
+            await message.answer("این گروه هنوز در ربات ثبت نشده است.")
             return
-        if not await _is_group_manager(message.bot, session, game, message):
+        # Locks belong to GroupSettings, so they can be changed even when
+        # there is no active game. The caller must be a group admin, or the
+        # current game's host when a game exists.
+        is_manager = False
+        if game and user and game.host_user_id == user.id:
+            is_manager = True
+        if not is_manager:
+            try:
+                member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+                is_manager = member.status in {"creator", "administrator"}
+            except Exception:
+                is_manager = False
+        if not is_manager:
             await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند قفل‌ها را تغییر دهد.")
             return
-        user = await session.scalar(select(User).where(User.telegram_id == message.from_user.id))
-        group = await session.get(Group, game.group_id)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
         if not settings:
             settings = GroupSettings(group_id=group.id)
