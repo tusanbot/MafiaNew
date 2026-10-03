@@ -399,6 +399,114 @@ async def _group_chat_id(session, game):
 
 
 
+
+async def _readiness_event(session, game):
+    result = await session.execute(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "readiness")
+        .order_by(GameEvent.id.desc())
+    )
+    return result.scalars().first()
+
+
+async def _readiness_state(session, game) -> tuple[set[int], dict]:
+    event = await _readiness_event(session, game)
+    if not event:
+        return set(), {}
+    try:
+        data = json.loads(event.payload or "{}")
+    except (TypeError, ValueError):
+        return set(), {}
+    return {int(x) for x in data.get("ready_ids", [])}, data
+
+
+async def send_readiness_message(bot, session, game, chat_id: int | None = None):
+    chat_id = chat_id or await _group_chat_id(session, game)
+    if not chat_id:
+        return None
+    players = await GameRepository.players(session, game.id)
+    ready_ids, state = await _readiness_state(session, game)
+    lines = ["🟢 <b>حاضری بازیکنا</b>", "", "همه بازیکنای بازی رو تگ کردیم؛ هرکس آماده‌ست روی دکمه «آماده‌ام» بزنه.", ""]
+    for player, user in players:
+        mark = "✅" if user.id in ready_ids else "⬜"
+        lines.append(f"{mark} {player.seat:02d}. {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}")
+    ready_count = sum(1 for player, user in players if user.id in ready_ids)
+    lines += ["", f"📋 آمادگی: {ready_count}/{len(players)}"]
+    if players and ready_count == len(players):
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if host:
+            lines += ["", f"🎉 همه آماده‌ان! 👑 {tg_mention(host.telegram_id, host.display_name or host.first_name or 'گرداننده')} می‌تونی بازی رو شروع کنی."]
+    text = "\n".join(lines)
+    event = await _readiness_event(session, game)
+    message_id = state.get("message_id")
+    if event and message_id:
+        try:
+            await bot.edit_message_text(
+                text,
+                chat_id=int(chat_id),
+                message_id=int(message_id),
+                parse_mode="HTML",
+                reply_markup=None if players and ready_count == len(players) else readiness_keyboard(game.game_key),
+            )
+            return message_id
+        except Exception:
+            pass
+    msg = await bot.send_message(
+        int(chat_id),
+        text,
+        parse_mode="HTML",
+        reply_markup=None if players and ready_count == len(players) else readiness_keyboard(game.game_key),
+    )
+    payload = {"chat_id": int(chat_id), "message_id": int(msg.message_id), "ready_ids": sorted(ready_ids)}
+    if event:
+        event.payload = json.dumps(payload, ensure_ascii=False)
+    else:
+        session.add(GameEvent(game_id=game.id, event_type="readiness", payload=json.dumps(payload, ensure_ascii=False)))
+    await session.commit()
+    return msg.message_id
+
+
+@router.callback_query(lambda c: c.data and c.data.startswith("ready:toggle:"))
+async def readiness_callback(callback: CallbackQuery):
+    key = callback.data.split(":", 2)[2]
+    if not callback.from_user or not callback.message:
+        return
+    async with session_factory() as session:
+        game = await _load(session, key)
+        if not game or game.status != "running" or game.phase != "setup":
+            await callback.answer("حاضری فقط قبل از شروع دور قابل ثبت است.", show_alert=True)
+            return
+        user = await session.scalar(select(User).where(User.telegram_id == callback.from_user.id))
+        if not user:
+            await callback.answer("بازیکن پیدا نشد.", show_alert=True)
+            return
+        player = await session.scalar(select(GamePlayer).where(
+            GamePlayer.game_id == game.id,
+            GamePlayer.user_id == user.id,
+            GamePlayer.is_reserved.is_(False),
+        ))
+        if not player:
+            await callback.answer("فقط بازیکنان همین بازی می‌توانند اعلام آمادگی کنند.", show_alert=True)
+            return
+        ready_ids, state = await _readiness_state(session, game)
+        ready_ids.add(user.id)
+        event = await _readiness_event(session, game)
+        payload = {
+            "chat_id": int(callback.message.chat.id),
+            "message_id": int(state.get("message_id") or callback.message.message_id),
+            "ready_ids": sorted(ready_ids),
+        }
+        if event:
+            event.payload = json.dumps(payload, ensure_ascii=False)
+        else:
+            session.add(GameEvent(game_id=game.id, event_type="readiness", payload=json.dumps(payload, ensure_ascii=False)))
+        await session.commit()
+        await send_readiness_message(callback.bot, session, game, callback.message.chat.id)
+        players = await GameRepository.players(session, game.id)
+        all_ready = bool(players) and all(user.id in ready_ids for _, user in players)
+    await callback.answer("✅ آماده شدی." if not all_ready else "🎉 همه بازیکنا آماده‌ان.")
+
+
 async def _latest_global_lock_event(session, game):
     result = await session.execute(
         select(GameEvent)
