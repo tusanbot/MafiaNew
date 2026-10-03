@@ -1045,7 +1045,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 return
         requester = await session.get(User, result["requester_id"])
         requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
-        await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
+        asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
         turn = await current_turn(session, game.id)
         turn_event, turn_data = await _turn_message(session, game, turn)
         if turn_event and turn_data:
