@@ -1312,7 +1312,9 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
     except asyncio.CancelledError:
         return
     finally:
-        _vote_tasks.pop(game_key, None)
+        current_task = _vote_tasks.get(game_key)
+        if current_task is asyncio.current_task():
+            _vote_tasks.pop(game_key, None)
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:vote:"))
 async def day_vote_handler(callback: CallbackQuery):
