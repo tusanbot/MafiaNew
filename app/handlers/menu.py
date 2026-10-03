@@ -42,7 +42,7 @@ from app.handlers.keyboards import (
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
-from app.services.game import create_game
+from app.services.game import create_game, get_game_number, set_game_number, release_game_number
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round, _event
 from app.services.stats import leaderboard, rank_for_score
@@ -62,6 +62,7 @@ def _phase_fa(value: str | None) -> str:
 
 class GameEventState(StatesGroup):
     description = State()
+    game_number = State()
 
 
 class ScenarioAdminState(StatesGroup):
@@ -225,7 +226,7 @@ async def _game_result_text(session, game, winner: str) -> str:
     }
     lines = [
         "༄",
-        f"📓 <b>بازی شماره : {game.id}</b>",
+        f"📓 <b>بازی شماره : {await get_game_number(session, game)}</b>",
         f"⏱️ زمان : {when:%H:%M}",
         f"📆 تاریخ : {_jalali_date(when)}",
         f"🗓 سناریو : {escape(scenario.name_fa if scenario else 'نامشخص')}",
@@ -978,6 +979,7 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
             from app.handlers.gameplay import delete_main_roster, release_global_lock
             await release_global_lock(callback.bot, session, game)
             await delete_main_roster(callback.bot, session, game)
+            await release_game_number(session, game)
             await callback.bot.send_message(
                 group.telegram_id,
                 "❌ بازی توسط گرداننده لغو شد."
@@ -1065,6 +1067,69 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
     await callback.answer("نتیجه بازی ثبت شد.")
 
 
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:number:"))
+async def gameadmin_number(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        current = await get_game_number(session, game)
+    await state.set_state(GameEventState.game_number)
+    await state.update_data(game_id=game.id)
+    await callback.message.answer(
+        f"🔢 شماره فعلی بازی: <b>{current}</b>\n\nشماره جدید را به‌صورت عدد صحیح ارسال کنید:",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(GameEventState.game_number)
+async def gameadmin_number_text(message: Message, state: FSMContext) -> None:
+    if not message.from_user or not message.text:
+        return
+    raw = message.text.strip()
+    try:
+        number = int(raw)
+    except ValueError:
+        await message.answer("شماره بازی باید یک عدد صحیح مثبت باشد.")
+        return
+    if number < 1:
+        await message.answer("شماره بازی باید بزرگ‌تر از صفر باشد.")
+        return
+    data = await state.get_data()
+    game_id = data.get("game_id")
+    async with session_factory() as session:
+        game = await session.get(Game, int(game_id)) if game_id else None
+        actor = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+        group = await session.get(Group, game.group_id) if game else None
+        allowed = bool(game and actor and group and await _can_manage_game_events(session, message.bot, game, actor, group))
+        if not allowed or game.status not in {"waiting", "running"}:
+            await state.clear()
+            await message.answer("بازی فعال یا دسترسی لازم وجود ندارد.")
+            return
+        try:
+            await set_game_number(session, game, number)
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+    await state.clear()
+    await message.answer(f"✅ شماره بازی به <b>{number}</b> تغییر کرد.", parse_mode="HTML")
+    # Refresh the canonical public roster so the new number is visible immediately.
+    try:
+        from app.handlers.gameplay import update_main_roster
+        async with session_factory() as session:
+            game = await session.get(Game, int(game_id))
+            if game:
+                await update_main_roster(message.bot, session, game)
+    except Exception:
+        pass
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:event_game:"))
