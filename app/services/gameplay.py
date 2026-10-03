@@ -1312,14 +1312,12 @@ async def send_game_result_notifications(bot, session, game) -> None:
         key=lambda item: (int(item[1].get("game_rank", 999999)), item[0]),
     )
     role_lines = [
-        "<pre>┌───┬──────────────────┬──────────────────┐",
-        "│ # │ بازیکن           │ نقش / تیم        │",
-        "├───┼──────────────────┼──────────────────┤",
+        "<table bordered striped compact><caption>🎭 نقش بازیکن‌ها</caption>",
+        "<tr><th>#</th><th>بازیکن</th><th>نقش / تیم</th></tr>",
     ]
     rank_lines = [
-        "<pre>┌───┬──────────────────┬───────┬────────────┐",
-        "│ # │ بازیکن           │ رتبه  │ امتیاز     │",
-        "├───┼──────────────────┼───────┼────────────┤",
+        "<table bordered striped compact><caption>🏆 رتبه‌بندی بازی</caption>",
+        "<tr><th>جایگاه</th><th>بازیکن</th><th>رتبه</th><th>امتیاز</th></tr>",
     ]
     for index, (uid_text, report) in enumerate(ranked_rows, start=1):
         player = await session.get(User, int(uid_text))
@@ -1333,10 +1331,16 @@ async def send_game_result_notifications(bot, session, game) -> None:
         role_cell = f"{role} / {team}"[:16]
         game_rank = int(report.get("game_rank", index))
         score = int(report.get("score_after", 0))
-        role_lines.append(f"│ {index:1d} │ {name:<16} │ {role_cell:<16} │")
-        rank_lines.append(f"│ {index:1d} │ {name:<16} │ {game_rank:^5d} │ {score:^10d} │")
-    role_lines.append("└───┴──────────────────┴──────────────────┘</pre>")
-    rank_lines.append("└───┴──────────────────┴───────┴────────────┘</pre>")
+        role_lines.append(
+            f"<tr><td align=\"center\">{index}</td><td>{escape(name)}</td>"
+            f"<td>{escape(role_cell)}</td></tr>"
+        )
+        rank_lines.append(
+            f"<tr><td align=\"center\">{index}</td><td>{escape(name)}</td>"
+            f"<td align=\"center\">{game_rank}</td><td align=\"center\">{score}</td></tr>"
+        )
+    role_lines.append("</table>")
+    rank_lines.append("</table>")
     role_table = "\n".join(role_lines)
     rank_table = "\n".join(rank_lines)
 
