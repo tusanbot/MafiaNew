@@ -671,7 +671,7 @@ async def game_info(callback: CallbackQuery) -> None:
                 f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}\n"
                 f"گرداننده: {host.display_name if host else 'نامشخص'}\n\n"
                 f"بازیکنان:\n{player_lines}",
-                reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
+                reply_markup=active_game_menu(group.id, "menu:active_game", game.game_key, game.status == "waiting"),
             )
     await callback.answer()
 
