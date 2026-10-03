@@ -607,9 +607,11 @@ async def text_next(message: Message, state: FSMContext) -> None:
                     await message.answer("این نوبت قبلاً رد شده است.")
                     return
                 turn = fresh_turn
-                await _finish_turn_message(message.bot, session, game, turn)
-                await _delete_turn_challenge_messages(message.bot, session, game, turn)
                 result = await next_turn(session, game)
+                # State transition is authoritative; message cleanup is best-effort
+                # and must not delay the next turn.
+                __import__("asyncio").create_task(_finish_turn_message(message.bot, session, game, turn))
+                __import__("asyncio").create_task(_delete_turn_challenge_messages(message.bot, session, game, turn))
         except ValueError as exc:
             await message.answer(str(exc))
             return
