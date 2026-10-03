@@ -386,7 +386,7 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
             rows = (await session.execute(select(Game, Scenario).join(Scenario, Scenario.id == Game.scenario_id).order_by(desc(Game.id)).limit(15))).all()
             lines = ["🎮 بازی‌های اخیر", ""]
             for game, scenario in rows:
-                lines.append(f"#{game.id} — {scenario.name_fa} — {game.status} / {game.phase}")
+                lines.append(f"#{game.id} — {scenario.name_fa} — {_status_fa(game.status)} / {_phase_fa(game.phase)}")
             await callback.message.edit_text("\n".join(lines) if rows else "بازی‌ای ثبت نشده است.", reply_markup=admin_panel_menu())
         elif action == "settings":
             settings = get_settings()
@@ -561,7 +561,7 @@ async def active_game(callback: CallbackQuery) -> None:
             await callback.message.edit_text(
                 f"گروه: {group.title}\n\nبازی فعال\n"
                 f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
-                f"وضعیت: {game.status}\nمرحله: {game.phase}",
+                f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}",
                 reply_markup=active_game_menu(group.id, "menu:active_game", game.game_key, game.status == "waiting"),
             )
     await callback.answer()
@@ -591,7 +591,7 @@ async def game_history(callback: CallbackQuery) -> None:
             lines = [f"تاریخچه بازی‌های «{group.title}»", ""]
             for game, scenario in rows:
                 lines.append(
-                    f"#{game.id} — {scenario.name_fa} — {game.status} — {game.phase}"
+                    f"#{game.id} — {scenario.name_fa} — {_status_fa(game.status)} — {_phase_fa(game.phase)}"
                 )
             text = "\n".join(lines)
         await callback.message.edit_text(text, reply_markup=group_game_menu(group.id))
