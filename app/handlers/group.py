@@ -139,20 +139,42 @@ async def game_locks_handler(message: Message) -> None:
             session.add(settings)
             await session.commit()
         await message.answer(
-            "تنظیمات قفل بازی:\n"
-            f"قفل چت: {'فعال' if settings.chat_lock else 'غیرفعال'}\n"
-            f"قفل شب: {'فعال' if settings.night_lock else 'غیرفعال'}\n"
-            f"قفل نوبت: {'فعال' if settings.turn_lock else 'غیرفعال'}\n\n"
-            "برای تغییر: /chatlock on|off ، /nightlock on|off ، /turnlock on|off"
+            "🔐 وضعیت قفل‌ها\n\n"
+            f"🌙 قفل شب: {'🟢 فعال' if settings.night_lock else '⚪ غیرفعال'}\n"
+            f"🎮 قفل بازی: {'🟢 فعال' if settings.chat_lock else '⚪ غیرفعال'}\n"
+            f"🗣 قفل نوبت: {'🟢 فعال' if settings.turn_lock else '⚪ غیرفعال'}\n\n"
+            "قفل شب = بستن کامل تایپ اعضا در شب\n"
+            "قفل بازی = فقط بازیکنان بازی اجازه ارسال پیام دارند\n"
+            "قفل نوبت = فقط صاحب نوبت فعال اجازه ارسال پیام دارد"
         )
 
 async def _set_lock(message: Message, field: str, value: str) -> None:
     if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
         return
-    enabled = value.lower() in ("on", "1", "true", "فعال")
-    if value.lower() not in ("on", "off", "1", "0", "true", "false", "فعال", "غیرفعال"):
-        await message.answer("مقدار باید on یا off باشد.")
+    normalized = (value or "").strip().lower()
+    if normalized:
+        enabled = normalized in ("on", "1", "true", "فعال")
+        if normalized not in ("on", "off", "1", "0", "true", "false", "فعال", "غیرفعال"):
+            await message.answer("مقدار باید on یا off باشد.")
+            return
+    else:
+        async with session_factory() as session:
+            group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+            if not group:
+                await message.answer("گروه ثبت نشده است.")
+                return
+            settings = (await session.execute(
+                select(GroupSettings).where(GroupSettings.group_id == group.id)
+            )).scalar_one_or_none()
+            if not settings:
+                settings = GroupSettings(group_id=group.id)
+                session.add(settings)
+            enabled = not bool(getattr(settings, field))
+            setattr(settings, field, enabled)
+            await session.commit()
+        await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
         return
+
     async with session_factory() as session:
         group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
         if not group:
@@ -166,7 +188,7 @@ async def _set_lock(message: Message, field: str, value: str) -> None:
             session.add(settings)
         setattr(settings, field, enabled)
         await session.commit()
-    await message.answer(f"تنظیم {'فعال' if enabled else 'غیرفعال'} شد.")
+    await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
 
 @router.message(Command("chatlock"))
 async def chat_lock_handler(message: Message, command: CommandObject) -> None:
@@ -180,6 +202,10 @@ async def night_lock_handler(message: Message, command: CommandObject) -> None:
 async def turn_lock_handler(message: Message, command: CommandObject) -> None:
     await _set_lock(message, "turn_lock", command.args or "")
 
+@router.message(lambda m: bool(m.text) and m.text.strip() in {"قفل بازی", "قفل شب", "قفل نوبت"})
+async def persian_lock_handler(message: Message) -> None:
+    mapping = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}
+    await _set_lock(message, mapping[message.text.strip()], "")
 
 @router.message(Command("challenge"))
 @router.message(lambda m: bool(m.text) and m.text.strip() in {"چالش", "درخواست چالش"})
