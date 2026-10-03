@@ -57,9 +57,8 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def group_management_menu(back_callback: str = "menu:group_management") -> InlineKeyboardMarkup:
+def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="مدیریت بازی", callback_data="groupmgmt:games"))
     builder.row(InlineKeyboardButton(text="تنظیمات و قفل‌های گروه", callback_data="groupmgmt:locks"))
     _back(builder, back_callback)
     return builder.as_markup()
@@ -76,9 +75,8 @@ def group_list_keyboard(groups, purpose: str = "games") -> InlineKeyboardMarkup:
 
 def group_game_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="مدیریت بازی فعال", callback_data=f"groupgame:active:{group_id}"))
-    builder.row(InlineKeyboardButton(text="تاریخچه بازی ها", callback_data=f"groupgame:history:{group_id}"))
-    _back(builder, "groupmgmt:games")
+    builder.row(InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"groupgame:history:{group_id}"))
+    _back(builder, "menu:group_management")
     return builder.as_markup()
 
 
@@ -109,6 +107,9 @@ def group_lock_keyboard(group_id: int, settings) -> InlineKeyboardMarkup:
 def active_game_menu(group_id: int, back_callback: str | None = None, game_key: str | None = None, lobby_editable: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
+    builder.row(InlineKeyboardButton(text="لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
+    builder.row(InlineKeyboardButton(text="پایان بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
+    builder.row(InlineKeyboardButton(text="اتفاقات بازی", callback_data=f"gameadmin:feature:{group_id}:events"))
     builder.row(InlineKeyboardButton(text="مدیریت بازیکنان", callback_data=f"gameadmin:players:{group_id}"))
     builder.row(InlineKeyboardButton(text="تنظیمات بازی", callback_data=f"gameadmin:features:{group_id}"))
     builder.row(InlineKeyboardButton(text="امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
@@ -117,7 +118,7 @@ def active_game_menu(group_id: int, back_callback: str | None = None, game_key: 
             InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}"),
             InlineKeyboardButton(text="🎙 تغییر گرداننده", callback_data=f"gameadmin:host:{game_key}"),
         )
-    _back(builder, back_callback or f"groupmgmt:select:games:{group_id}")
+    _back(builder, back_callback or "menu:active_game")
     return builder.as_markup()
 
 
