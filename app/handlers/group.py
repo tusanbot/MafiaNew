@@ -21,7 +21,8 @@ async def is_group_admin(message: Message) -> bool:
     return member.status in ("creator", "administrator")
 
 
-@router.message(lambda m: bool(m.text) and m.text.strip() in {"/newgame", "بازی جدید"})
+@router.message(Command("newgame"))
+@router.message(lambda m: bool(m.text) and m.text.strip() == "بازی جدید")
 async def new_game_handler(message: Message) -> None:
     if message.chat.type not in ("group", "supergroup"):
         await message.answer("این دستور فقط داخل گروه قابل استفاده است.")
