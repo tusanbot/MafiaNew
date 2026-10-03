@@ -1045,7 +1045,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
                 return
         requester = await session.get(User, result["requester_id"])
         requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
-        asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
+        asyncio.create_task(_update_main_roster_bg(callback.bot, key))
         turn = await current_turn(session, game.id)
         turn_event, turn_data = await _turn_message(session, game, turn)
         if turn_event and turn_data:
@@ -1504,6 +1504,19 @@ async def _refresh_vote_target_message_bg(bot, game_key: str):
             game = await _load(session, game_key)
             if game:
                 await _refresh_vote_target_message(bot, session, game)
+    except asyncio.CancelledError:
+        return
+    except Exception:
+        return
+
+
+async def _update_main_roster_bg(bot, game_key: str):
+    """Refresh the canonical public roster without blocking the callback."""
+    try:
+        async with session_factory() as session:
+            game = await _load(session, game_key)
+            if game:
+                await update_main_roster(bot, session, game)
     except asyncio.CancelledError:
         return
     except Exception:
