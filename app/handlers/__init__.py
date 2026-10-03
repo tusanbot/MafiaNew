@@ -1,5 +1,5 @@
 from aiogram import Dispatcher
-from app.handlers.common import router as common_router
+from app.handlers.common import router as common_router, GroupLockMiddleware
 from app.handlers.profile import router as profile_router
 from app.handlers.menu import router as menu_router
 from app.handlers.group import router as group_router
@@ -8,6 +8,7 @@ from app.handlers.gameplay import router as gameplay_router
 from app.handlers.text_commands import router as text_commands_router
 
 def register_handlers(dispatcher: Dispatcher) -> None:
+    dispatcher.message.outer_middleware(GroupLockMiddleware())
     dispatcher.include_router(common_router)
     # Exact-match text commands are placed before broad group guards, while
     # their own handlers are restricted by chat/state and never use partial text.
