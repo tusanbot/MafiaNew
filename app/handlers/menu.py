@@ -524,10 +524,7 @@ async def select_group(callback: CallbackQuery) -> None:
                     f"مدیریت بازی فعال\nگروه: {group.title or group.telegram_id}\n"
                     f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
                     f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}",
-                    reply_markup=active_game_menu(
-                        group.id,
-                        f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}",
-                    ),
+                    reply_markup=active_game_menu(group.id, "menu:active_game", game.game_key, game.status == "waiting"),
                 )
         else:
             await callback.message.edit_text(
@@ -564,7 +561,7 @@ async def active_game(callback: CallbackQuery) -> None:
                 f"گروه: {group.title}\n\nبازی فعال\n"
                 f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
                 f"وضعیت: {game.status}\nمرحله: {game.phase}",
-                reply_markup=active_game_menu(group.id, f"gameadmin:lobby:{game.game_key}" if callback.message.chat.type in ("group", "supergroup") else f"gameadmin:active:{group.id}"),
+                reply_markup=active_game_menu(group.id, "menu:active_game", game.game_key, game.status == "waiting"),
             )
     await callback.answer()
 
@@ -641,7 +638,7 @@ async def active_game_menu_handler(callback: CallbackQuery) -> None:
             return
         await callback.message.edit_text(
             f"مدیریت بازی فعال\nگروه: {group.title}",
-            reply_markup=active_game_menu(group.id),
+            reply_markup=active_game_menu(group.id, "menu:active_game"),
         )
     await callback.answer()
 
