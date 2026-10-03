@@ -1704,7 +1704,11 @@ async def _start_vote1_after_delay(bot, game_key: str, chat_id: int, delay: int)
             return
         await vote1_start(session, game)
         await _vote_target_message(bot, session, game, chat_id)
-        _vote_tasks[game_key] = asyncio.create_task(_vote1_timer(bot, game_key, chat_id))
+        # Manual voting has no timer, including when a pre-vote delay was used.
+        if game.voting_mode == "auto":
+            _vote_tasks[game_key] = asyncio.create_task(
+                _vote1_timer(bot, game_key, chat_id)
+            )
 
 async def _vote1_timer(bot, game_key: str, chat_id: int):
     # Manual voting is fully host-driven; it must never sleep or transition.
