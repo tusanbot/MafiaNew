@@ -188,36 +188,3 @@ async def challenge_command(message: Message) -> None:
             )
         else:
             await message.answer("درخواست چالش ثبت شد.")
-
-@router.message()
-async def game_chat_lock_guard(message: Message) -> None:
-    if message.chat.type not in ("group", "supergroup") or not message.from_user:
-        return
-    if message.text and message.text.startswith("/"):
-        return
-    async with session_factory() as session:
-        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
-        if not group:
-            return
-        game = await GameRepository.get_active(session, group.id)
-        if not game or game.status != "running":
-            return
-        settings = (await session.execute(
-            select(GroupSettings).where(GroupSettings.group_id == group.id)
-        )).scalar_one_or_none()
-        if not settings:
-            return
-        turn = None
-        if settings.turn_lock and game.phase == "day":
-            from app.services.gameplay import current_turn
-            turn = await current_turn(session, game.id)
-        locked = settings.chat_lock or (settings.night_lock and game.phase == "night") or (settings.turn_lock and game.phase == "day" and turn and int(turn.get("user_id", -1)) != message.from_user.id)
-        if not locked:
-            return
-        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
-        if member.status in ("creator", "administrator"):
-            return
-        try:
-            await message.delete()
-        except Exception:
-            pass
