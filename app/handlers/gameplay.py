@@ -467,6 +467,7 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
                 chat_id=int(target_chat),
                 message_id=int(message_id),
                 parse_mode="HTML",
+                reply_markup=None,
             )
             if not data.get("pinned"):
                 try:
