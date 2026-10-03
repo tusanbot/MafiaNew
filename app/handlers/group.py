@@ -1,6 +1,6 @@
 from aiogram import Router
 from aiogram.filters import Command, CommandObject
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
 from sqlalchemy import select
 
 from app.db.session import session_factory
@@ -207,6 +207,64 @@ async def persian_lock_handler(message: Message) -> None:
     mapping = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}
     await _set_lock(message, mapping[message.text.strip()], "")
 
+@router.message(lambda m: bool(m.text) and m.text.strip() == "قفل کل")
+async def global_lock_command(message: Message) -> None:
+    if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
+        return
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game or game.status != "running":
+            await message.answer("🔐 قفل کل فقط هنگام اجرای بازی قابل فعال‌سازی است.")
+            return
+        await message.answer(
+            "⚠️ <b>تأیید قفل کل</b>\n\n"
+            "با فعال‌سازی این قفل، مدیرانی که عضو همین بازی هستند و گرداننده نیستند، "
+            "موقتاً از مدیریت گروه عزل می‌شوند.\n\n"
+            "🔄 با پایان یا لغو بازی، مدیریت آن‌ها برمی‌گردد.\n"
+            "👑 گرداننده تحت تأثیر این قفل نیست.\n\n"
+            "آیا مطمئنی؟",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[
+                InlineKeyboardButton(text="🔒 بله، فعالش کن", callback_data=f"globallock:confirm:{game.game_key}"),
+                InlineKeyboardButton(text="❌ انصراف", callback_data=f"globallock:cancel:{game.game_key}"),
+            ]]),
+            parse_mode="HTML",
+        )
+
+@router.callback_query(lambda c: c.data and c.data.startswith("globallock:"))
+async def global_lock_callback(callback) -> None:
+    if not callback.from_user or not callback.message:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        return
+    action, key = parts[1], parts[2]
+    async with session_factory() as session:
+        game = await GameRepository.get_by_key(session, key)
+        actor = await session.scalar(select(User).where(User.telegram_id == callback.from_user.id)) if game else None
+        if not game or not actor or game.host_user_id != actor.id:
+            await callback.answer("فقط گرداننده می‌تواند قفل کل را تأیید کند.", show_alert=True)
+            return
+        if action == "cancel":
+            await callback.message.edit_text("❌ قفل کل لغو شد.")
+            await callback.answer()
+            return
+        try:
+            from app.handlers.gameplay import activate_global_lock
+            result = await activate_global_lock(callback.bot, session, game)
+        except Exception as exc:
+            await callback.answer(f"فعال‌سازی قفل کل انجام نشد: {exc}", show_alert=True)
+            return
+        demoted = len(result.get("demoted", []))
+        failed = len(result.get("failed", []))
+        text = (
+            "🔒 <b>قفل کل فعال شد</b>\n\n"
+            f"👥 مدیران عزل‌شده: {demoted}\n"
+            f"⚠️ قابل عزل نبودند: {failed}\n\n"
+            "با پایان یا لغو بازی، دسترسی مدیران برمی‌گردد."
+        )
+        await callback.message.edit_text(text, parse_mode="HTML")
+        await callback.answer("قفل کل فعال شد.")
 @router.message(Command("challenge"))
 @router.message(lambda m: bool(m.text) and m.text.strip() in {"چالش", "درخواست چالش"})
 async def challenge_command(message: Message) -> None:
