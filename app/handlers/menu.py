@@ -1038,7 +1038,8 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         try:
             await finalize_game(session, game, winner)
             await session.commit()
-            from app.handlers.gameplay import delete_main_roster
+            from app.handlers.gameplay import delete_main_roster, release_global_lock
+            await release_global_lock(callback.bot, session, game)
             await delete_main_roster(callback.bot, session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
