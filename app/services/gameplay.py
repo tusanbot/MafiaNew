@@ -1038,6 +1038,7 @@ async def request_challenge(session, game, requester: User, *, chat_id: int | No
     event = await _event(session, game, "challenge_request", {
         "round_no": round_no,
         "requester_id": requester.id,
+        "requester_name": requester.display_name or requester.first_name or requester.username or "بازیکن",
         "target_turn_user_id": int(turn["user_id"]),
         "status": "pending",
         "message_id": message_id,
