@@ -17,8 +17,30 @@ router = Router(name="group")
 async def is_group_admin(message: Message) -> bool:
     if not message.from_user:
         return False
-    member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
-    return member.status in ("creator", "administrator")
+    try:
+        member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+        return member.status in ("creator", "administrator")
+    except Exception:
+        return False
+
+
+async def is_group_manager(message: Message) -> bool:
+    """Allow Telegram admins and the current game's host to manage game locks."""
+    if await is_group_admin(message):
+        return True
+    if not message.from_user or message.chat.type not in ("group", "supergroup"):
+        return False
+    async with session_factory() as session:
+        group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
+        if not group:
+            return False
+        game = await GameRepository.get_active(session, group.id)
+        if not game or not game.host_user_id:
+            return False
+        user = await session.scalar(
+            select(User).where(User.telegram_id == message.from_user.id)
+        )
+        return bool(user and user.id == game.host_user_id)
 
 
 @router.message(Command("newgame"))
@@ -102,7 +124,7 @@ async def mafia_menu_handler(message: Message) -> None:
 
 @router.message(Command("gamelocks"))
 async def game_locks_handler(message: Message) -> None:
-    if message.chat.type not in ("group", "supergroup") or not await is_group_admin(message):
+    if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
         return
     async with session_factory() as session:
         group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
@@ -125,7 +147,7 @@ async def game_locks_handler(message: Message) -> None:
         )
 
 async def _set_lock(message: Message, field: str, value: str) -> None:
-    if message.chat.type not in ("group", "supergroup") or not await is_group_admin(message):
+    if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
         return
     enabled = value.lower() in ("on", "1", "true", "فعال")
     if value.lower() not in ("on", "off", "1", "0", "true", "false", "فعال", "غیرفعال"):
@@ -160,6 +182,7 @@ async def turn_lock_handler(message: Message, command: CommandObject) -> None:
 
 
 @router.message(Command("challenge"))
+@router.message(lambda m: bool(m.text) and m.text.strip() in {"چالش", "درخواست چالش"})
 async def challenge_command(message: Message) -> None:
     if message.chat.type not in ("group", "supergroup") or not message.from_user:
         return
