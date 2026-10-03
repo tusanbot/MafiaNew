@@ -46,7 +46,7 @@ from app.services.game import create_game
 from app.services.profile import sync_telegram_user
 from app.services.gameplay import current_round, _event
 from app.services.stats import leaderboard, rank_for_score
-from app.services.rich_message import edit_rich_message
+from app.services.rich_message import edit_rich_message, send_rich_message
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
 from uuid import uuid4
@@ -241,12 +241,6 @@ async def _game_result_text(session, game, winner: str) -> str:
         name = tg_mention(user.telegram_id, user.display_name or user.first_name or user.username or "بازیکن")
         badges = []
         team = role.team if role else None
-        if team == "mafia":
-            badges.append("🩸")
-        elif team == "citizen":
-            pass
-        elif team == "independent":
-            pass
         if ((winner == "mafia" and team == "mafia") or
             (winner == "citizen" and team == "citizen") or
             (winner == "independent" and team == "independent") or
@@ -1047,27 +1041,27 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
             return
         # The game belongs to the selected group, not to the private
         # management chat where the host pressed the button.
-        result_html = (
+        group_chat_id = int(group.telegram_id)
+        result_html = await _game_result_rich_html(session, game, winner)
+        fallback_html = (
             "🏁 <b>نتیجه نهایی بازی</b>\n"
-            "گزارش کامل بازی و وضعیت بازیکنان:\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             + (await _game_result_text(session, game, winner))
         )
-        group_chat_id = int(group.telegram_id)
         try:
-            await callback.bot.send_message(
-                group_chat_id,
-                result_html,
-                reply_markup=game_result_keyboard(group.id, game.id),
-                parse_mode="HTML",
-            )
-            await callback.message.edit_text(
-                "✅ نتیجه بازی ثبت شد و گزارش نهایی در گروه ارسال شد."
-            )
+            try:
+                await send_rich_message(callback.bot, group_chat_id, result_html, is_rtl=True)
+            except Exception:
+                # Rich Message failure must never block the game result.
+                await callback.bot.send_message(
+                    group_chat_id,
+                    fallback_html,
+                    parse_mode="HTML",
+                    reply_markup=game_result_keyboard(group.id, game.id),
+                )
+            await callback.message.edit_text("✅ نتیجه بازی ثبت شد و گزارش نهایی در گروه ارسال شد.")
         except Exception:
-            await callback.message.edit_text(
-                "⚠️ نتیجه بازی ثبت شد، اما ارسال گزارش نهایی به گروه ناموفق بود."
-            )
+            await callback.message.edit_text("⚠️ نتیجه بازی ثبت شد، اما ارسال گزارش نهایی به گروه ناموفق بود.")
     await callback.answer("نتیجه بازی ثبت شد.")
 
 
@@ -1151,14 +1145,46 @@ async def _game_roles_text(session, game) -> str:
         .where(GamePlayer.game_id == game.id)
         .order_by(GamePlayer.seat)
     )).all())
-    lines = ["🎭 <b>نقش‌های بازی</b>", ""]
+    try:
+        emoji_settings = json.loads(game.emoji_settings or "{}")
+    except (TypeError, ValueError):
+        emoji_settings = {}
+    winner_event = await session.scalar(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type.in_(["game_finished", "stats_recorded"])
+    ).order_by(GameEvent.id.desc()))
+    winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
+    lines = ["🎭 <b>لیست بازیکنان و نقش‌ها</b>", ""]
     for index, (player, user, role) in enumerate(rows, 1):
         if player.is_reserved:
             continue
-        name = escape(user.display_name or user.first_name or user.username or "بازیکن")
+        name = tg_mention(user.telegram_id, user.display_name or user.first_name or user.username or "بازیکن")
         role_name = escape(role.name_fa if role else "بدون نقش")
-        team = escape(role.team if role else "نامشخص")
-        lines.append(f"{index}. {name} — <b>{role_name}</b> ({team})")
+        team = role.team if role else None
+        badges = []
+        if ((winner == "mafia" and team == "mafia") or
+            (winner == "citizen" and team == "citizen") or
+            (winner == "independent" and team == "independent") or
+            (winner == "citizen_independent" and team in {"citizen", "independent"})):
+            badges.append("🏆")
+        if not player.alive:
+            badges.append("☠️")
+            if player.exit_type == "kick" and emoji_settings.get("kick", True):
+                badges.append("⛔")
+            elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True):
+                badges.append("🔪")
+            elif player.exit_type == "vote":
+                badges.append("🗳")
+            elif player.exit_type == "faceoff":
+                badges.append("🎭")
+        if player.warning_count and emoji_settings.get("warning", True):
+            badges.append(f"⚠️{player.warning_count}")
+        if player.alive and player.silence_until_round is not None and emoji_settings.get("silence", True):
+            badges.append("🔇")
+        if player.alive and player.extra_turn_round is not None and emoji_settings.get("extra_turn", True):
+            badges.append("➕")
+        badge_text = " ".join(dict.fromkeys(badges))
+        lines.append(f"{index}. {name} — <b>{role_name}</b>{(' ' + badge_text) if badge_text else ''}")
     return "\n".join(lines)
 
 
@@ -1174,6 +1200,40 @@ async def _game_ranking_text(session) -> str:
                 f"{user.score} امتیاز — {escape(rank_for_score(user.score))}"
             )
     return "\n".join(lines)
+
+
+async def _game_result_rich_html(session, game, winner: str) -> str:
+    """One RTL Rich Message containing result, roles and group ranking panels."""
+    result_text = await _game_result_text(session, game, winner)
+    roles_text = await _game_roles_text(session, game)
+    ranking_text = await _game_ranking_text(session)
+
+    def panel(value: str) -> str:
+        return value.replace("\n", "<br/>")
+
+    # With is_rtl=True the DOM order is rendered right-to-left:
+    # result (right) | roles (center) | ranking (left).
+    return (
+        '<h2>🏁 گزارش نهایی بازی</h2>'
+        '<p>سه بخش گزارش در یک پیام نگه داشته شده تا نتیجه و اطلاعات بازی از هم جدا نشوند.</p>'
+        '<table bordered striped compact>'
+        '<tr>'
+        '<th>🏆 رتبه‌بندی کلی گروه</th>'
+        '<th>🎭 بازیکنان و نقش‌ها</th>'
+        '<th>🏁 نتیجه بازی</th>'
+        '</tr>'
+        '<tr>'
+        f'<td>{panel(ranking_text)}</td>'
+        f'<td>{panel(roles_text)}</td>'
+        f'<td>{panel(result_text)}</td>'
+        '</tr>'
+        '</table>'
+        '<p><tg-button-row align="center">'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
+        f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
+        '</tg-button-row></p>'
+    )
 
 
 @router.callback_query(lambda c: c.data.startswith("gameresult:view:"))
@@ -1207,11 +1267,32 @@ async def game_result_view(callback: CallbackQuery) -> None:
                 "━━━━━━━━━━━━━━━━━━━━\n"
                 + (await _game_result_text(session, game, winner))
             )
-        await callback.message.edit_text(
-            text,
-            reply_markup=game_result_keyboard(game.group_id, game.id),
-            parse_mode="HTML",
+        rich_view = (
+            "<h2>" + (
+                "🏁 نتیجه بازی" if view == "result"
+                else "🎭 لیست بازیکنان و نقش‌ها" if view == "roles"
+                else "🏆 رتبه‌بندی کلی گروه"
+            ) + "</h2><p>" + text.replace("\n", "<br/>") + "</p>"
+            f'<p><tg-button-row align="center">'
+            f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
+            f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
+            f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
+            "</tg-button-row></p>"
         )
+        try:
+            await edit_rich_message(
+                callback.bot,
+                callback.message.chat.id,
+                callback.message.message_id,
+                rich_view,
+                is_rtl=True,
+            )
+        except Exception:
+            await callback.message.edit_text(
+                text,
+                reply_markup=game_result_keyboard(game.group_id, game.id),
+                parse_mode="HTML",
+            )
     await callback.answer()
 
 
@@ -1227,24 +1308,19 @@ async def game_result_back(callback: CallbackQuery) -> None:
             GameEvent.game_id == game.id, GameEvent.event_type.in_(["game_finished", "stats_recorded"])
         ).order_by(GameEvent.id.desc()))
         winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
-        result_html = await _game_result_text(session, game, winner)
-        result_html = (
-            "<h2>🏁 نتیجه نهایی بازی</h2>"
-            "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
-            "<p>━━━━━━━━━━━━━━━━━━━━</p>"
-            + result_html.replace("\\n", "<br/>")
-        )
+        result_html = await _game_result_rich_html(session, game, winner)
+        fallback_text = await _game_result_text(session, game, winner)
         try:
             await edit_rich_message(
                 callback.bot,
                 callback.message.chat.id,
                 callback.message.message_id,
                 result_html,
-                reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
+                is_rtl=True,
             )
         except Exception:
             await callback.message.edit_text(
-                await _game_result_text(session, game, winner),
+                fallback_text,
                 reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
                 parse_mode="HTML",
             )
