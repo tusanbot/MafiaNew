@@ -13,8 +13,40 @@ from app.handlers.keyboards import main_menu, ranking_menu, profile_menu, profil
 from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
+from app.services.rich_message import edit_rich_message
 
 router = Router(name="profile")
+
+
+async def _profile_rich_html(session, user: User) -> str:
+    position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
+    rank, next_score, remaining = rank_progress(user.score)
+    win_rate = (user.games_won / user.games_played * 100) if user.games_played else 0
+    return (
+        f"<h2>📊 امتیازات {tg_name(user.display_name or user.first_name or 'بازیکن')}</h2>"
+        f"<table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>"
+        f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr>"
+        f"<tr><td>رتبه</td><td>{rank} — #{position}</td></tr>"
+        f"<tr><td>بازی</td><td>{int(user.games_played)}</td></tr>"
+        f"<tr><td>برد</td><td>{int(user.games_won)}</td></tr>"
+        f"<tr><td>نرخ برد</td><td>{win_rate:.0f}%</td></tr></table>"
+        f"<p>{('تا رتبه بعد: ' + str(remaining) + ' امتیاز') if next_score is not None else 'بالاترین رتبه را دارید.'}</p>"
+        '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:score">💰 امتیازات</tg-button><tg-button type="callback_data" style="success" data="profile:rank">🏆 رتبه</tg-button></tg-button-row>'
+        '<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>'
+    )
+
+async def _achievements_rich_html(session, user: User) -> str:
+    rows = await achievement_progress(session, user)
+    earned = sum(1 for _, ok, _, _ in rows if ok)
+    body = []
+    for achievement, is_earned, current, target in rows:
+        if is_earned:
+            body.append(f"<tr><td>🏅 {achievement.name_fa}</td><td>✅ +{achievement.points}</td></tr>")
+        else:
+            progress = f"{current}/{target}" if target is not None else str(current)
+            body.append(f"<tr><td>🔒 {achievement.name_fa}</td><td>{progress}</td></tr>")
+    table = '<table bordered striped compact><tr><th>دستاورد</th><th>وضعیت</th></tr>' + ''.join(body) + '</table>' if body else '<p>هنوز دستاوردی ثبت نشده است.</p>'
+    return f"<h2>🏅 دستاوردها</h2><p>تعداد کسب‌شده: <b>{earned}</b></p>{table}<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>"
 
 class ProfileEditState(StatesGroup):
     name = State()
@@ -311,7 +343,10 @@ async def achievements_callback(callback: CallbackQuery) -> None:
         if not user:
             await callback.message.edit_text("هنوز پروفایلی برای شما ثبت نشده است.", reply_markup=main_menu())
         else:
-            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu() if callback.data == "menu:achievements" else profile_menu())
+            try:
+            await edit_rich_message(callback.bot, callback.message.chat.id, callback.message.message_id, await _achievements_rich_html(session, user))
+        except Exception:
+            await callback.message.edit_text(await _achievements_text(session, user), reply_markup=main_menu() if callback.data == "menu:achievements" else profile_menu(), parse_mode="HTML")
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:score")
@@ -320,7 +355,10 @@ async def profile_score(callback: CallbackQuery) -> None:
     async with session_factory() as session:
         user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
         await session.commit()
-        await callback.message.edit_text(await _profile_text(session, user), reply_markup=profile_menu())
+        try:
+            await edit_rich_message(callback.bot, callback.message.chat.id, callback.message.message_id, await _profile_rich_html(session, user))
+        except Exception:
+            await callback.message.edit_text(await _profile_text(session, user), reply_markup=profile_menu())
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:rank")
@@ -332,7 +370,11 @@ async def profile_rank(callback: CallbackQuery) -> None:
         rank, next_score, remaining = rank_progress(user.score)
         text = "🏆 رتبه شما\n\n" + f"رتبه: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
         text += f"تا رتبه بعد: {remaining} امتیاز" if next_score is not None else "بالاترین رتبه را دارید."
-        await callback.message.edit_text(text, reply_markup=profile_menu())
+        rich_html = f"<h2>🏆 رتبه شما</h2><table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr><tr><td>رتبه</td><td>{rank}</td></tr><tr><td>جایگاه</td><td>#{position}</td></tr><tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr></table><p>{('تا رتبه بعد: ' + str(remaining) + ' امتیاز') if next_score is not None else 'بالاترین رتبه را دارید.'}</p><tg-button-row align="center"><tg-button type="callback_data" data="profile:score">💰 امتیازات</tg-button><tg-button type="callback_data" style="primary" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>"
+        try:
+            await edit_rich_message(callback.bot, callback.message.chat.id, callback.message.message_id, rich_html)
+        except Exception:
+            await callback.message.edit_text(text, reply_markup=profile_menu())
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "profile:name")
