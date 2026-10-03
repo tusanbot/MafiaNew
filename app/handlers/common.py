@@ -33,6 +33,12 @@ class GroupLockMiddleware(BaseMiddleware):
         if message.chat.type not in ("group", "supergroup") or not message.from_user:
             return await handler(event, data)
 
+        # Slash commands are explicit bot interactions and must reach their
+        # handlers even when chat/night/turn locks are active. Authorization
+        # for each command is still enforced by the command handler itself.
+        if message.text and message.text.lstrip().startswith("/"):
+            return await handler(event, data)
+
         async with session_factory() as session:
             group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
             if not group:
