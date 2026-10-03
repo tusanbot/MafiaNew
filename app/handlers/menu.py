@@ -981,7 +981,8 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
         ))
         await session.commit()
         try:
-            from app.handlers.gameplay import delete_main_roster
+            from app.handlers.gameplay import delete_main_roster, release_global_lock
+            await release_global_lock(callback.bot, session, game)
             await delete_main_roster(callback.bot, session, game)
             await callback.bot.send_message(
                 group.telegram_id,
