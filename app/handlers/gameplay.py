@@ -4,6 +4,7 @@ from sqlalchemy import select
 import json
 import asyncio
 from datetime import datetime, timezone
+from html import escape
 
 from app.db.models import Game, Group, GroupSettings, User, Scenario, GameEvent
 from app.db.session import session_factory
@@ -891,11 +892,20 @@ async def start_match_handler(callback: CallbackQuery):
                 description = description.strip("༄").strip()
                 role_name = (role.name_fa or "بدون نقش").strip("༄").strip()
                 team_name = (role.team or "نامشخص").strip("༄").strip()
+                host = await session.get(User, game.host_user_id) if game.host_user_id else None
+                host_name = escape(host.display_name or host.first_name or host.username or "نامشخص") if host else "نامشخص"
                 text = (
+                    f"༄\n"
+                    f"📓 <b>بازی شماره : {game.id}</b>\n\n"
+                    f"🗓 سناریو : {escape(scenario.name_fa if scenario else 'نامشخص')}\n"
+                    f"👮‍♂ گرداننده : <b>{host_name}</b>\n\n"
+                    f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n"
                     f"<b>🎭 نقش شما</b>\n\n"
-                    f"نقش: {role_name}\n"
-                    f"ساید: {team_name}\n\n"
-                    f"توضیح نقش:\n{description}"
+                    f"نقش: {escape(role_name)}\n"
+                    f"ساید: {escape(team_name)}\n\n"
+                    f"توضیح نقش:\n{escape(description)}\n\n"
+                    f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n"
+                    f"༄"
                 )
                 await callback.bot.send_message(
                     user.telegram_id,
@@ -911,9 +921,10 @@ async def start_match_handler(callback: CallbackQuery):
         if host:
             role_lines = ["🎭 <b>لیست نقش‌های بازی</b>", ""]
             for seat, (_, role, user) in enumerate(assignments, 1):
+                user_name = escape(user.display_name or user.first_name or user.username or "بازیکن")
                 role_lines.append(
-                    f"{seat}. {user.display_name or user.first_name or user.username or 'بازیکن'} — "
-                    f"<b>{role.name_fa}</b> ({role.team})"
+                    f"{seat}. {user_name} — "
+                    f"<b>{escape(role.name_fa or 'بدون نقش')}</b> ({escape(role.team or 'نامشخص')})"
                 )
             try:
                 await callback.bot.send_message(
