@@ -897,7 +897,7 @@ async def start_match_handler(callback: CallbackQuery):
                 host_name = escape(host.display_name or host.first_name or host.username or "نامشخص") if host else "نامشخص"
                 text = (
                     f"༄\n"
-                    f"📓 <b>بازی شماره : {game.id}</b>\n\n"
+                    f"📓 <b>بازی شماره : {await get_game_number(session, game)}</b>\n\n"
                     f"🗓 سناریو : {escape(scenario.name_fa if scenario else 'نامشخص')}\n"
                     f"👮‍♂ گرداننده : <b>{host_name}</b>\n\n"
                     f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n"
