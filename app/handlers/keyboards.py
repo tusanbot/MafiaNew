@@ -805,6 +805,18 @@ def challenge_placement_keyboard(game_key: str, event_id: int, requester_name: s
     )
     return builder.as_markup()
 
+
+def readiness_keyboard(game_key: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text="✅ آماده‌ام",
+            callback_data=f"ready:toggle:{game_key}",
+        )
+    )
+    return builder.as_markup()
+
+
 def group_start_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="بازی جدید", callback_data=f"groupstart:new:{group_id}"))
