@@ -1362,6 +1362,9 @@ async def day_finish_handler(callback: CallbackQuery):
 _vote_tasks = {}
 _vote_transition_locks = {}
 _turn_transition_locks = {}
+# Serialize challenge request/accept/placement transitions per game. Without
+# this lock concurrent callbacks can race the same GameEvent/turn state.
+_challenge_transition_locks = {}
 
 def _vote_time(dt: datetime) -> str:
     local = dt.astimezone() if dt.tzinfo else dt
