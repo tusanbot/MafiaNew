@@ -1188,8 +1188,22 @@ async def _game_roles_text(session, game) -> str:
     return "\n".join(lines)
 
 
-async def _game_ranking_text(session) -> str:
-    rows = await leaderboard(session, 10)
+async def _game_ranking_text(session, game) -> str:
+    # Group ranking is based on players who have participated in games of this
+    # same Telegram group, not the global bot leaderboard.
+    rows = list((await session.execute(
+        select(User)
+        .join(GamePlayer, GamePlayer.user_id == User.id)
+        .join(Game, Game.id == GamePlayer.game_id)
+        .where(
+            Game.group_id == game.group_id,
+            User.is_active.is_(True),
+            User.games_played > 0,
+        )
+        .distinct()
+        .order_by(User.score.desc(), User.games_won.desc(), User.games_played.desc())
+        .limit(10)
+    )).scalars().all())
     lines = ["🏆 <b>رتبه‌بندی بازیکنان</b>", ""]
     if not rows:
         lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
@@ -1206,7 +1220,7 @@ async def _game_result_rich_html(session, game, winner: str) -> str:
     """One RTL Rich Message containing result, roles and group ranking panels."""
     result_text = await _game_result_text(session, game, winner)
     roles_text = await _game_roles_text(session, game)
-    ranking_text = await _game_ranking_text(session)
+    ranking_text = await _game_ranking_text(session, game)
 
     def panel(value: str) -> str:
         return value.replace("\n", "<br/>")
@@ -1259,7 +1273,7 @@ async def game_result_view(callback: CallbackQuery) -> None:
         if view == "roles":
             text = await _game_roles_text(session, game)
         elif view == "ranking":
-            text = await _game_ranking_text(session)
+            text = await _game_ranking_text(session, game)
         else:
             text = (
                 "🏁 <b>نتیجه نهایی بازی</b>\n"
