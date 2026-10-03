@@ -234,15 +234,15 @@ async def resolve_night(session, game):
     await apply_pending_status_actions(session, game, round_no)
     if killed_id and killed_id != saved_id:
         eliminated = await session.get(User, killed_id)
+    # A game is never finalized automatically. The host must explicitly
+    # press «پایان بازی» and choose the winner from the game-management flow.
+    # We still expose the detected winner to the caller so it can be shown
+    # without changing the game's active status.
     winner = await check_winner(session, game.id)
-    if winner:
-        await finalize_game(session, game, winner)
-        await session.commit()
-        return {"winner": winner, "eliminated": eliminated, "saved": bool(killed_id and killed_id == saved_id)}
     game.phase = "day"
     await _event(session, game, "phase_changed", {"to": "day", "round_no": round_no})
     await session.commit()
-    return {"winner": None, "eliminated": eliminated, "saved": bool(killed_id and killed_id == saved_id)}
+    return {"winner": winner, "eliminated": eliminated, "saved": bool(killed_id and killed_id == saved_id)}
 
 async def start_new_day_round(session, game, first_user_id: int | None = None):
     """Create a durable round boundary and reset temporary per-round state."""
