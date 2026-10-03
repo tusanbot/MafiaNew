@@ -398,6 +398,134 @@ async def _group_chat_id(session, game):
     return group.telegram_id if group else None
 
 
+
+async def _latest_global_lock_event(session, game):
+    result = await session.execute(
+        select(GameEvent)
+        .where(GameEvent.game_id == game.id, GameEvent.event_type == "global_lock")
+        .order_by(GameEvent.id.desc())
+    )
+    return result.scalars().first()
+
+
+async def activate_global_lock(bot, session, game) -> dict:
+    """Temporarily demote editable in-game admins other than the host.
+
+    Telegram only lets a bot change administrator rights when it has the
+    required promotion authority; non-editable admins/owner are left untouched.
+    The exact previous rights are persisted in a GameEvent for restoration.
+    """
+    existing = await _latest_global_lock_event(session, game)
+    if existing:
+        data = json.loads(existing.payload or "{}")
+        if data.get("status") == "active":
+            return data
+
+    chat_id = await _group_chat_id(session, game)
+    if not chat_id:
+        raise ValueError("شناسه گروه پیدا نشد.")
+
+    player_rows = await all_players(session, game.id)
+    player_ids = {user.telegram_id for _, user, _ in player_rows if not _.is_reserved} if player_rows else set()
+    # Keep the comprehension explicit because all_players returns (player, user, role).
+    player_ids = {
+        user.telegram_id
+        for player, user, role in player_rows
+        if not player.is_reserved
+    }
+
+    demoted = []
+    failed = []
+    admins = await bot.get_chat_administrators(chat_id)
+    for member in admins:
+        if member.status == "creator" or member.user.id == getattr((await session.get(User, game.host_user_id)) if game.host_user_id else None, "telegram_id", None):
+            continue
+        if member.user.id not in player_ids:
+            continue
+        if not getattr(member, "can_be_edited", False):
+            failed.append({"user_id": member.user.id, "reason": "not_editable"})
+            continue
+
+        rights = {
+            "is_anonymous": bool(getattr(member, "is_anonymous", False)),
+            "can_manage_chat": bool(getattr(member, "can_manage_chat", False)),
+            "can_delete_messages": bool(getattr(member, "can_delete_messages", False)),
+            "can_manage_video_chats": bool(getattr(member, "can_manage_video_chats", False)),
+            "can_restrict_members": bool(getattr(member, "can_restrict_members", False)),
+            "can_promote_members": bool(getattr(member, "can_promote_members", False)),
+            "can_change_info": bool(getattr(member, "can_change_info", False)),
+            "can_invite_users": bool(getattr(member, "can_invite_users", False)),
+            "can_post_stories": bool(getattr(member, "can_post_stories", False)),
+            "can_edit_stories": bool(getattr(member, "can_edit_stories", False)),
+            "can_delete_stories": bool(getattr(member, "can_delete_stories", False)),
+            "can_pin_messages": bool(getattr(member, "can_pin_messages", False)),
+            "can_manage_topics": bool(getattr(member, "can_manage_topics", False)),
+            "can_manage_tags": bool(getattr(member, "can_manage_tags", False)),
+            "can_send_welcome_messages": bool(getattr(member, "can_send_welcome_messages", False)),
+        }
+        try:
+            await bot.promote_chat_member(
+                chat_id=chat_id,
+                user_id=member.user.id,
+                is_anonymous=False,
+                can_manage_chat=False,
+                can_delete_messages=False,
+                can_manage_video_chats=False,
+                can_restrict_members=False,
+                can_promote_members=False,
+                can_change_info=False,
+                can_invite_users=False,
+                can_post_stories=False,
+                can_edit_stories=False,
+                can_delete_stories=False,
+                can_pin_messages=False,
+                can_manage_topics=False,
+                can_manage_tags=False,
+                can_send_welcome_messages=False,
+            )
+            demoted.append({"user_id": member.user.id, "rights": rights})
+        except Exception as exc:
+            failed.append({"user_id": member.user.id, "reason": str(exc)[:200]})
+
+    data = {"status": "active", "demoted": demoted, "failed": failed}
+    session.add(GameEvent(
+        game_id=game.id,
+        event_type="global_lock",
+        payload=json.dumps(data, ensure_ascii=False),
+    ))
+    await session.commit()
+    return data
+
+
+async def release_global_lock(bot, session, game) -> dict:
+    """Restore administrator rights saved by the active global-lock event."""
+    event = await _latest_global_lock_event(session, game)
+    if not event:
+        return {"restored": [], "failed": []}
+    data = json.loads(event.payload or "{}")
+    if data.get("status") != "active":
+        return {"restored": [], "failed": []}
+
+    chat_id = await _group_chat_id(session, game)
+    restored, failed = [], []
+    for item in data.get("demoted", []):
+        try:
+            await bot.promote_chat_member(
+                chat_id=chat_id,
+                user_id=int(item["user_id"]),
+                **item.get("rights", {}),
+            )
+            restored.append(int(item["user_id"]))
+        except Exception as exc:
+            failed.append({"user_id": int(item["user_id"]), "reason": str(exc)[:200]})
+    data["status"] = "released"
+    data["restored"] = restored
+    data["restore_failed"] = failed
+    event.payload = json.dumps(data, ensure_ascii=False)
+    await session.commit()
+    return {"restored": restored, "failed": failed}
+
+
 async def _public_status_roster(session, game, *, include_state: bool = False, full_header: bool = False) -> str:
     try:
         emoji_settings = json.loads(game.emoji_settings or "{}")
