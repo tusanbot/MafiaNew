@@ -1284,7 +1284,7 @@ async def night_lock_handler(callback: CallbackQuery):
     async with session_factory() as session:
         game = await _load(session, key)
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
-        if not game or not actor or game.host_user_id != actor.id or field not in {"night_lock", "chat_lock"}:
+        if not game or not actor or game.host_user_id != actor.id or field not in {"night_lock", "chat_lock", "turn_lock"}:
             await callback.answer("فقط گرداننده می‌تواند قفل‌ها را تغییر دهد.", show_alert=True)
             return
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
@@ -1294,7 +1294,7 @@ async def night_lock_handler(callback: CallbackQuery):
             await session.flush()
         setattr(settings, field, not bool(getattr(settings, field)))
         await session.commit()
-        await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock))
+        await callback.message.edit_reply_markup(reply_markup=continue_night_keyboard(game.game_key, settings.night_lock, settings.chat_lock, settings.turn_lock))
         await _set_game_chat_lock(callback.bot, session, game, bool(settings.night_lock and game.phase == "night"))
         await callback.answer("تنظیم قفل ذخیره شد.")
 
