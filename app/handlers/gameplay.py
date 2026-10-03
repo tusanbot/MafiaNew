@@ -1194,9 +1194,12 @@ async def next_turn_handler(callback: CallbackQuery):
                 return
             turn = fresh_turn
             try:
+                # Advance the authoritative state first; Telegram cleanup is
+                # deliberately performed after the transition so the button
+                # feels immediate and duplicate callbacks cannot race it.
                 if turn.get("kind") == "defense":
-                    await _finish_turn_message(callback.bot, session, game, turn)
                     result = await advance_defense_turn(session, game)
+                    asyncio.create_task(_finish_turn_message(callback.bot, session, game, turn))
                     if result.get("finished"):
                         await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
                         _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
@@ -1208,9 +1211,9 @@ async def next_turn_handler(callback: CallbackQuery):
                         int(result["target_user_id"]),
                     )
                 else:
-                    await _finish_turn_message(callback.bot, session, game, turn)
-                    await _delete_turn_challenge_messages(callback.bot, session, game, turn)
                     result = await next_turn(session, game)
+                    asyncio.create_task(_finish_turn_message(callback.bot, session, game, turn))
+                    asyncio.create_task(_delete_turn_challenge_messages(callback.bot, session, game, turn))
             except ValueError as exc:
                 try:
                     await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
