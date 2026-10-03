@@ -413,6 +413,19 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data == "menu:close")
+async def menu_close(callback: CallbackQuery) -> None:
+    if callback.message:
+        try:
+            await callback.message.delete()
+        except Exception:
+            try:
+                await callback.message.edit_text("منو بسته شد.")
+            except Exception:
+                pass
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data == "menu:root")
 async def menu_root(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -1035,7 +1048,7 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
             "<h2>🏁 نتیجه نهایی بازی</h2>"
             "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
             "<p>━━━━━━━━━━━━━━━━━━━━</p>"
-            + result_html.replace("\\n", "<br/>")
+            + result_html.replace("\n", "<br/>")
         )
         try:
             await edit_rich_message(
@@ -1531,6 +1544,31 @@ async def game_set_time(callback: CallbackQuery) -> None:
         )
     await callback.answer("زمان ذخیره شد.")
 
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:extras:"))
+async def game_extras_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
+        custom_emoji = bool(settings and settings.custom_emoji)
+        await callback.message.edit_text(
+            "✨ <b>امکانات اضافی بازی</b>\n\nگزینه موردنظر را انتخاب کنید.",
+            reply_markup=game_extras_menu(
+                group.id, game.auto_play, game.turn_color, game.challenge_color,
+                game.turn_color_enabled, custom_emoji,
+                back_callback=f"gameadmin:active:{group.id}",
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:extra:"))
 async def game_extra_handler(callback: CallbackQuery) -> None:
