@@ -1707,6 +1707,11 @@ async def _start_vote1_after_delay(bot, game_key: str, chat_id: int, delay: int)
         _vote_tasks[game_key] = asyncio.create_task(_vote1_timer(bot, game_key, chat_id))
 
 async def _vote1_timer(bot, game_key: str, chat_id: int):
+    # Manual voting is fully host-driven; it must never sleep or transition.
+    async with session_factory() as session:
+        game = await _load(session, game_key)
+        if not game or game.voting_mode != "auto":
+            return
     try:
         while True:
             async with session_factory() as session:
@@ -1827,7 +1832,11 @@ async def vote_start1_handler(callback: CallbackQuery):
         else:
             await vote1_start(session, game)
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-            _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
+            # Manual voting has no timer. Only automatic voting owns a timer.
+            if game.voting_mode == "auto":
+                _vote_tasks[key] = asyncio.create_task(
+                    _vote1_timer(callback.bot, key, callback.message.chat.id)
+                )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:cast:"))
@@ -1870,7 +1879,11 @@ async def vote1_next_handler(callback: CallbackQuery):
                 )
             else:
                 await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-                _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
+                # Manual voting is advanced exclusively by the host's Next button.
+                if game.voting_mode == "auto":
+                    _vote_tasks[key] = asyncio.create_task(
+                        _vote1_timer(callback.bot, key, callback.message.chat.id)
+                    )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
@@ -1897,9 +1910,11 @@ async def vote1_finish_handler(callback: CallbackQuery):
             )
         else:
             await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-            _vote_tasks[key] = asyncio.create_task(
-                _vote1_timer(callback.bot, key, callback.message.chat.id)
-            )
+            # Never create a voting timer in manual mode.
+            if game.voting_mode == "auto":
+                _vote_tasks[key] = asyncio.create_task(
+                    _vote1_timer(callback.bot, key, callback.message.chat.id)
+                )
     await callback.answer()
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote2:select:"))
