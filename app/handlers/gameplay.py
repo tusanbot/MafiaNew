@@ -1453,6 +1453,7 @@ async def vote1_next_handler(callback: CallbackQuery):
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
         lock = _vote_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
+            await callback.answer("⏩ در حال رفتن به بازیکن بعدی…")
             task = _vote_tasks.pop(key, None)
             if task and task is not asyncio.current_task():
                 task.cancel()
@@ -1471,7 +1472,7 @@ async def vote1_next_handler(callback: CallbackQuery):
             else:
                 await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
                 _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
-    await callback.answer("بازیکن بعدی آماده شد." if not result["finished"] else "رأی اول تمام شد.")
+
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
 async def vote1_finish_handler(callback: CallbackQuery):
