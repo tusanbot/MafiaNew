@@ -49,7 +49,7 @@ from app.handlers.keyboards import (
     voting_setup_keyboard, voting_delay_keyboard, voting_duration_keyboard, voting_mode_keyboard,
     vote_rights_keyboard, vote_right_confirm_keyboard, vote1_target_keyboard, vote1_complete_keyboard,
     defense_selection_keyboard, vote2_target_keyboard, vote2_ballot_keyboard, vote2_private_voters_keyboard, vote2_private_targets_keyboard, vote2_complete_keyboard,
-    vote2_setup_keyboard, vote2_result_keyboard,
+    vote2_setup_keyboard, vote2_result_keyboard, active_game_entry_keyboard,
 )
 
 router = Router(name="gameplay")
@@ -446,7 +446,7 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
                 chat_id=int(target_chat),
                 message_id=int(message_id),
                 parse_mode="HTML",
-                reply_markup=active_game_menu(game.group_id, "menu:active_game", game.game_key, False),
+                reply_markup=active_game_entry_keyboard(game.game_key),
             )
             return
         except Exception:
@@ -822,7 +822,7 @@ async def next_turn_handler(callback: CallbackQuery):
         game = await _load(session, key)
         actor = (await session.execute(
             select(User).where(User.telegram_id == callback.from_user.id)
-        )).scalar_one_or_none()
+        )).scalar_one_or_none() if callback.from_user else None
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
@@ -842,51 +842,59 @@ async def next_turn_handler(callback: CallbackQuery):
         if not is_host and not is_turn_owner:
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
-        try:
-            if turn.get("kind") == "defense":
-                await _finish_turn_message(callback.bot, session, game, turn)
-                result = await advance_defense_turn(session, game)
-                if result.get("finished"):
-                    await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-                    _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
-                        _vote2_timer(callback.bot, key, callback.message.chat.id)
+
+        lock = _turn_transition_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            # Acknowledge the callback before Telegram edits / turn-message work.
+            await callback.answer("⏩ در حال رفتن به نوبت بعدی…")
+            try:
+                if turn.get("kind") == "defense":
+                    await _finish_turn_message(callback.bot, session, game, turn)
+                    result = await advance_defense_turn(session, game)
+                    if result.get("finished"):
+                        await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+                        _vote_tasks[f"vote2:{key}"] = asyncio.create_task(
+                            _vote2_timer(callback.bot, key, callback.message.chat.id)
+                        )
+                        return
+                    await _send_defense_message(
+                        callback.bot, session, game, callback.message.chat.id,
+                        int(result["target_user_id"]),
                     )
-                    await callback.answer("دفاع تمام شد؛ رای دوم آغاز شد.")
-                    return
-                await _send_defense_message(
-                    callback.bot, session, game, callback.message.chat.id,
-                    int(result["target_user_id"]),
+                else:
+                    await _finish_turn_message(callback.bot, session, game, turn)
+                    await _delete_turn_challenge_messages(callback.bot, session, game, turn)
+                    result = await next_turn(session, game)
+            except ValueError as exc:
+                try:
+                    await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                except Exception:
+                    pass
+                return
+
+            chat_id = await _group_chat_id(session, game)
+            if not chat_id:
+                return
+            if result["kind"] == "finished_day":
+                await callback.bot.send_message(
+                    chat_id,
+                    "🗳 نوبت‌های این دور تمام شد.",
+                    reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
+                )
+            elif result["kind"] == "defense":
+                new_turn = await current_turn(session, game.id)
+                if new_turn:
+                    await _send_defense_message(callback.bot, session, game, chat_id, int(new_turn["user_id"]))
+            elif result["kind"] == "voting2":
+                await _vote_target_message(callback.bot, session, game, chat_id)
+                _vote_tasks[f"vote2:{game.game_key}"] = asyncio.create_task(
+                    _vote2_timer(callback.bot, game.game_key, chat_id)
                 )
             else:
-                await _finish_turn_message(callback.bot, session, game, turn)
-                await _delete_turn_challenge_messages(callback.bot, session, game, turn)
-                result = await next_turn(session, game)
-        except ValueError as exc:
-            await callback.answer(str(exc), show_alert=True)
-            return
-        chat_id = await _group_chat_id(session, game)
-        if not chat_id:
-            await callback.answer("گروه بازی پیدا نشد.", show_alert=True)
-            return
-        if result["kind"] == "finished_day":
-            await callback.bot.send_message(
-                chat_id,
-                "🗳 نوبت‌های این دور تمام شد.",
-                reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
-            )
-        elif result["kind"] == "defense":
-            new_turn = await current_turn(session, game.id)
-            if new_turn:
-                await _send_defense_message(callback.bot, session, game, chat_id, int(new_turn["user_id"]))
-        elif result["kind"] == "voting2":
-            await _vote_target_message(callback.bot, session, game, chat_id)
-            _vote_tasks[f"vote2:{game.game_key}"] = asyncio.create_task(_vote2_timer(callback.bot, game.game_key, chat_id))
-        else:
-            new_turn = await current_turn(session, game.id)
-            if new_turn:
-                await _send_turn_message(callback.bot, session, game, chat_id, new_turn)
-                await _schedule_auto_next(callback.bot, game.game_key, chat_id)
-        await callback.answer("نوبت بعدی شروع شد.")
+                new_turn = await current_turn(session, game.id)
+                if new_turn:
+                    await _send_turn_message(callback.bot, session, game, chat_id, new_turn)
+                    await _schedule_auto_next(callback.bot, game.game_key, chat_id)
 @router.callback_query(lambda c: c.data and c.data.startswith("day:night:"))
 async def day_night_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
@@ -1010,6 +1018,7 @@ async def day_finish_handler(callback: CallbackQuery):
 
 _vote_tasks = {}
 _vote_transition_locks = {}
+_turn_transition_locks = {}
 
 def _vote_time(dt: datetime) -> str:
     local = dt.astimezone() if dt.tzinfo else dt
