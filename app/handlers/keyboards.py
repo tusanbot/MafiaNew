@@ -566,7 +566,6 @@ def leader_players_keyboard(game_key: str, players) -> InlineKeyboardMarkup:
 
 def continue_night_keyboard(game_key: str, night_locked: bool = False, chat_locked: bool = False, turn_locked: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="ارسال اقدامات شب", callback_data=f"night:resolve:{game_key}"))
     builder.row(
         InlineKeyboardButton(
             text=f"قفل شب: {'فعال' if night_locked else 'غیرفعال'}",
