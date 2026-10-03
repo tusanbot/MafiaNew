@@ -789,31 +789,73 @@ async def update_round_roster(bot, session, game, chat_id: int | None = None) ->
 
 
 async def _set_game_chat_lock(bot, session, game, locked: bool) -> None:
-    """Apply the game's chat/night lock to the Telegram group when possible."""
+    """Apply the real Telegram night lock and restore the group's prior permissions."""
     chat_id = await _group_chat_id(session, game)
-    if not chat_id:
+    if not chat_id or not game:
         return
     try:
+        result = await session.execute(
+            select(GameEvent)
+            .where(GameEvent.game_id == game.id, GameEvent.event_type == "night_permissions")
+            .order_by(GameEvent.id.desc())
+        )
+        event = result.scalars().first()
+
         if locked:
-            permissions = ChatPermissions(can_send_messages=False)
-        else:
-            permissions = ChatPermissions(
-                can_send_messages=True,
-                can_send_audios=True,
-                can_send_documents=True,
-                can_send_photos=True,
-                can_send_videos=True,
-                can_send_video_notes=True,
-                can_send_voice_notes=True,
-                can_send_polls=True,
-                can_send_other_messages=True,
-                can_add_web_page_previews=True,
+            if not event or json.loads(event.payload or "{}").get("status") != "active":
+                chat = await bot.get_chat(chat_id)
+                permissions = getattr(chat, "permissions", None)
+                saved = permissions.model_dump(exclude_none=True) if permissions else {
+                    "can_send_messages": True,
+                    "can_send_audios": True,
+                    "can_send_documents": True,
+                    "can_send_photos": True,
+                    "can_send_videos": True,
+                    "can_send_video_notes": True,
+                    "can_send_voice_notes": True,
+                    "can_send_polls": True,
+                    "can_send_other_messages": True,
+                    "can_add_web_page_previews": True,
+                }
+                session.add(GameEvent(
+                    game_id=game.id,
+                    event_type="night_permissions",
+                    payload=json.dumps({"status": "active", "permissions": saved}, ensure_ascii=False),
+                ))
+                await session.commit()
+            await bot.set_chat_permissions(
+                chat_id,
+                ChatPermissions(
+                    can_send_messages=False,
+                    can_send_audios=False,
+                    can_send_documents=False,
+                    can_send_photos=False,
+                    can_send_videos=False,
+                    can_send_video_notes=False,
+                    can_send_voice_notes=False,
+                    can_send_polls=False,
+                    can_send_other_messages=False,
+                    can_add_web_page_previews=False,
+                ),
+                use_independent_chat_permissions=True,
             )
-        await bot.set_chat_permissions(chat_id, permissions)
+            return
+
+        if event:
+            data = json.loads(event.payload or "{}")
+            if data.get("status") == "active":
+                await bot.set_chat_permissions(
+                    chat_id,
+                    ChatPermissions(**(data.get("permissions") or {"can_send_messages": True})),
+                    use_independent_chat_permissions=True,
+                )
+                data["status"] = "released"
+                event.payload = json.dumps(data, ensure_ascii=False)
+                await session.commit()
     except Exception:
-        # Telegram permissions require administrator rights; the DB setting
-        # remains authoritative if the bot cannot change group permissions.
+        # DB state remains authoritative if Telegram permissions cannot be changed.
         pass
+
 
 async def _send_night_menus(bot, session, game):
     players = await alive_players(session, game.id)
