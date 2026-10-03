@@ -698,13 +698,12 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
     text = await _public_status_roster(session, game, include_state=True, full_header=True)
     if message_id:
         try:
-            from app.handlers.keyboards import active_game_menu
             await bot.edit_message_text(
                 text,
                 chat_id=int(target_chat),
                 message_id=int(message_id),
                 parse_mode="HTML",
-                reply_markup=active_game_menu(game.group_id, "menu:active_game", game.game_key, False),
+                reply_markup=None,
             )
             if not data.get("pinned"):
                 try:
@@ -728,12 +727,11 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
             )):
                 return
     try:
-        from app.handlers.keyboards import active_game_menu
         msg = await bot.send_message(
             int(target_chat),
             text,
             parse_mode="HTML",
-            reply_markup=active_game_menu(game.group_id, "menu:active_game", game.game_key, False),
+            reply_markup=None,
         )
     except Exception:
         return
