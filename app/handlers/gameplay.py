@@ -334,12 +334,34 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     continue
                 if not game.next_auto_enabled:
                     return
-                await _finish_turn_message(bot, session, game, turn)
-                await _delete_turn_challenge_messages(bot, session, game, turn)
-                try:
-                    result = await next_turn(session, game)
-                except ValueError:
-                    return
+                lock = _turn_transition_locks.setdefault(game_key, asyncio.Lock())
+                async with lock:
+                    # Manual «next» and auto-next must never advance the same
+                    # turn concurrently.
+                    fresh_turn = await current_turn(session, game.id)
+                    if not fresh_turn or fresh_turn.get("status") not in ("active", "paused"):
+                        continue
+                    fresh_started_at = fresh_turn.get("started_at")
+                    if fresh_started_at:
+                        try:
+                            fresh_started = datetime.fromisoformat(fresh_started_at)
+                            if fresh_started.tzinfo is None:
+                                fresh_started = fresh_started.replace(tzinfo=timezone.utc)
+                            fresh_elapsed = max(0, int((datetime.now(timezone.utc) - fresh_started).total_seconds()))
+                            fresh_remaining = max(
+                                0,
+                                _turn_duration(game, str(fresh_turn.get("kind", "main"))) - fresh_elapsed,
+                            )
+                            if fresh_remaining > 0:
+                                continue
+                        except (TypeError, ValueError):
+                            pass
+                    await _finish_turn_message(bot, session, game, fresh_turn)
+                    await _delete_turn_challenge_messages(bot, session, game, fresh_turn)
+                    try:
+                        result = await next_turn(session, game)
+                    except ValueError:
+                        return
                 if not chat_id:
                     return
                 if result["kind"] == "finished_day":
