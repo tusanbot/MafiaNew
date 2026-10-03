@@ -976,7 +976,8 @@ async def night_callback(callback: CallbackQuery):
             if ready:
                 await callback.answer("اقدامات شب کامل است؛ حالا «شروع روز» را بزنید.")
             else:
-                await _send_night_menus(callback.bot, session, game)
+                # Manual games do not expose role-action controls in the night phase.
+            # The host records any required night status changes through management.
                 await callback.answer("اقدامات شب برای بازیکنان ارسال شد؛ پس از ثبت همه اقدامات «شروع روز» را بزنید.")
             return
         actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none()
@@ -1317,25 +1318,35 @@ async def night_start_day_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده می‌تواند روز را شروع کند.", show_alert=True)
             return
         try:
-            result = await resolve_night(session, game)
+            # Night actions are host-controlled in manual games. Starting a new
+            # day must never wait for role actions or call resolve_night().
+            new_round = await start_new_day_round(session, game)
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
         chat_id = await _group_chat_id(session, game)
-        # Detecting a winning condition is informational only. The game
-        # remains active until the host explicitly chooses «پایان بازی».
-        await start_new_day_round(session, game)
         settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
         if chat_id:
             await _set_game_chat_lock(callback.bot, session, game, False)
-
             await update_round_roster(callback.bot, session, game, chat_id)
             await update_main_roster(callback.bot, session, game, chat_id)
-            await callback.bot.send_message(chat_id, f"🌅 روز جدید شروع شد. دور {await current_round(session, game.id)}")
-            await _send_turn_message(callback.bot, session, game, chat_id)
-            await _schedule_auto_next(callback.bot, game.game_key, chat_id)
+            await callback.bot.send_message(
+                chat_id,
+                f"🌅 <b>روز جدید شروع شد</b> — دور {new_round}\n\nآماده انتخاب سردست و شروع دور بعدی.",
+                parse_mode="HTML",
+            )
+            # New round starts from setup; the host chooses the leader before
+            # the actual speaking turns begin.
+            await callback.bot.send_message(
+                chat_id,
+                "🎮 <b>تنظیمات شروع دور</b>",
+                reply_markup=__import__("app.handlers.keyboards", fromlist=["leader_settings_keyboard"]).leader_settings_keyboard(
+                    game.game_key, game, False
+                ),
+                parse_mode="HTML",
+            )
         await callback.message.edit_reply_markup(reply_markup=None)
-        await callback.answer("روز جدید شروع شد.")
+        await callback.answer("روز جدید آماده شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("day:finish:"))
 async def day_finish_handler(callback: CallbackQuery):
@@ -1351,10 +1362,13 @@ async def day_finish_handler(callback: CallbackQuery):
         if game.host_user_id != actor.id:
             await callback.answer("فقط گرداننده می‌تواند بازی را تمام کند.", show_alert=True)
             return
-        turn = await current_turn(session, game.id)
-        if not turn or turn.get("status") != "finished":
-            await callback.answer("تا پایان نوبت‌های این دور امکان اتمام بازی نیست.", show_alert=True)
-            return
+        # Voting completion is a valid terminal control state. In manual games
+        # no player is removed by voting; the host decides removal separately.
+        if game.phase not in {"vote1_complete", "vote2_complete"}:
+            turn = await current_turn(session, game.id)
+            if not turn or turn.get("status") != "finished":
+                await callback.answer("ابتدا رأی‌گیری یا نوبت‌های این دور را کامل کن.", show_alert=True)
+                return
         await callback.message.edit_text("🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:", reply_markup=finish_game_keyboard(game.group_id), parse_mode="HTML")
         await callback.answer("نتیجه نهایی را انتخاب کنید.")
 
