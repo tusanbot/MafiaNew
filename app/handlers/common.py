@@ -6,7 +6,7 @@ from typing import Any, Awaitable, Callable
 from sqlalchemy import select
 
 from app.db.session import session_factory
-from app.db.models import Game, Group, GroupSettings, User
+from app.db.models import Game, Group, GroupSettings, User, GamePlayer
 from app.handlers.keyboards import (
     group_start_menu,
     main_menu,
@@ -21,7 +21,19 @@ from app.config import get_settings
 
 
 class GroupLockMiddleware(BaseMiddleware):
-    """Enforce chat/night/turn locks before any message handler runs."""
+    """Enforce the game's chat/night/turn locks before message handlers run."""
+
+    @staticmethod
+    def _normalized_text(message: Message) -> str:
+        return " ".join((message.text or "").strip().split())
+
+    @staticmethod
+    def _is_control_command(message: Message) -> bool:
+        text = GroupLockMiddleware._normalized_text(message)
+        return text in {
+            "قفل شب", "قفل بازی", "قفل نوبت", "قفل کل",
+            "حاضری", "آماده‌ام", "آماده ام",
+        } or text.startswith("حذف تذکر")
 
     async def __call__(
         self,
@@ -33,9 +45,7 @@ class GroupLockMiddleware(BaseMiddleware):
         if message.chat.type not in ("group", "supergroup") or not message.from_user:
             return await handler(event, data)
 
-        # Slash commands are explicit bot interactions and must reach their
-        # handlers even when chat/night/turn locks are active. Authorization
-        # for each command is still enforced by the command handler itself.
+        # Explicit slash commands are handled by their own authorization checks.
         if message.text and message.text.lstrip().startswith("/"):
             return await handler(event, data)
 
@@ -54,45 +64,64 @@ class GroupLockMiddleware(BaseMiddleware):
             if not settings:
                 return await handler(event, data)
 
-            # Managers must retain control of the game even while the chat is
-            # locked; ordinary players are subject to the active lock.
             user = await session.scalar(
                 select(User).where(User.telegram_id == message.from_user.id)
             )
-            is_host = bool(user and game.host_user_id == user.id)
-            is_admin = False
-            try:
-                member = await message.bot.get_chat_member(
-                    message.chat.id, message.from_user.id
+            is_player = bool(
+                user
+                and await session.scalar(
+                    select(GamePlayer.id).where(
+                        GamePlayer.game_id == game.id,
+                        GamePlayer.user_id == user.id,
+                        GamePlayer.is_reserved.is_(False),
+                    )
                 )
-                is_admin = member.status in ("creator", "administrator")
-            except Exception:
-                pass
+            )
 
-            locked = bool(settings.chat_lock)
+            # Game lock: ordinary group chat is closed to everyone outside the game.
+            if settings.chat_lock and not is_player:
+                if await self._is_group_manager(message, game, user) and self._is_control_command(message):
+                    return await handler(event, data)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                return None
+
+            # Night lock: the whole non-admin chat is closed during the night.
             if settings.night_lock and game.phase == "night":
-                locked = True
+                if await self._is_group_manager(message, game, user) and self._is_control_command(message):
+                    return await handler(event, data)
+                try:
+                    await message.delete()
+                except Exception:
+                    pass
+                return None
 
+            # Turn lock: only the current active turn owner can send ordinary text.
             if settings.turn_lock and game.phase == "day":
                 from app.services.gameplay import current_turn
                 turn = await current_turn(session, game.id)
-                # turn_state.user_id stores the internal users.id, while
-                # Message.from_user.id is the Telegram ID. Compare the same
-                # identity domain or the active speaker gets locked out too.
-                if turn and int(turn.get("user_id", -1)) != int(user.id if user else -1):
-                    locked = True
+                current_user_id = int(turn.get("user_id", -1)) if turn else -1
+                if not user or user.id != current_user_id:
+                    if await self._is_group_manager(message, game, user) and self._is_control_command(message):
+                        return await handler(event, data)
+                    try:
+                        await message.delete()
+                    except Exception:
+                        pass
+                    return None
 
-            if not locked or is_host or is_admin:
-                return await handler(event, data)
+            return await handler(event, data)
 
-        # The bot must have Telegram permission to delete messages in the group.
-        # Ignore deletion errors so a missing Telegram permission cannot crash
-        # the dispatcher or block unrelated handlers.
+    async def _is_group_manager(self, message: Message, game, user) -> bool:
+        if user and game.host_user_id == user.id:
+            return True
         try:
-            await message.delete()
+            member = await message.bot.get_chat_member(message.chat.id, message.from_user.id)
+            return member.status in ("creator", "administrator")
         except Exception:
-            pass
-        return None
+            return False
 
 
 router = Router(name="common")
