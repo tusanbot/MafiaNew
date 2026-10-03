@@ -259,8 +259,10 @@ async def start_new_day_round(session, game, first_user_id: int | None = None):
             player.extra_turn_round = None
     await _event(session, game, "round_ended", {"round_no": old_round, "next_round_no": new_round})
     await _event(session, game, "round_started", {"round_no": new_round, "previous_round_no": old_round, "started_after_night": True})
+    # A new round first enters setup. No turn queue is created until the host
+    # selects a leader and explicitly presses «شروع دور».
+    game.phase = "setup"
     await session.commit()
-    await start_day_turns(session, game, first_user_id)
     return new_round
 
 async def start_voting(session, game):
