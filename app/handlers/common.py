@@ -70,7 +70,10 @@ class GroupLockMiddleware(BaseMiddleware):
             if settings.turn_lock and game.phase == "day":
                 from app.services.gameplay import current_turn
                 turn = await current_turn(session, game.id)
-                if turn and int(turn.get("user_id", -1)) != message.from_user.id:
+                # turn_state.user_id stores the internal users.id, while
+                # Message.from_user.id is the Telegram ID. Compare the same
+                # identity domain or the active speaker gets locked out too.
+                if turn and int(turn.get("user_id", -1)) != int(user.id if user else -1):
                     locked = True
 
             if not locked or is_host or is_admin:
