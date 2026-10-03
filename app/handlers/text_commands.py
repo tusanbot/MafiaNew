@@ -450,7 +450,8 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
         if not settings:
             settings = GroupSettings(group_id=group.id)
             session.add(settings)
-        command = _normalize_command_text(message.text)\n        field = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}[command]
+        command = _normalize_command_text(message.text)
+        field = {"قفل بازی": "chat_lock", "قفل شب": "night_lock", "قفل نوبت": "turn_lock"}[command]
         setattr(settings, field, not bool(getattr(settings, field)))
         enabled = bool(getattr(settings, field))
         await session.commit()
