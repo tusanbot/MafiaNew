@@ -21,7 +21,7 @@ from app.utils.text import tg_name
 router = Router(name="text_commands")
 
 
-_ZERO_WIDTH = re.compile(r"[\\u200b\\u200c\\u200d\\u200e\\u200f\\u202a-\\u202e\\ufeff]")
+_ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u202a-\u202e\ufeff]")
 
 def _normalize_command_text(value: str | None) -> str:
     """Normalize Persian/Arabic text commands without changing their meaning."""
