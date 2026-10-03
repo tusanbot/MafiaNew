@@ -445,7 +445,13 @@ async def update_main_roster(bot, session, game, chat_id: int | None = None) -> 
         except Exception:
             pass
     try:
-        msg = await bot.send_message(int(target_chat), text, parse_mode="HTML")
+        from app.handlers.keyboards import active_game_menu
+        msg = await bot.send_message(
+            int(target_chat),
+            text,
+            parse_mode="HTML",
+            reply_markup=active_game_menu(game.group_id, "menu:active_game", game.game_key, False),
+        )
     except Exception:
         return
     pinned = False
@@ -998,6 +1004,7 @@ async def day_finish_handler(callback: CallbackQuery):
 
 
 _vote_tasks = {}
+_vote_transition_locks = {}
 
 def _vote_time(dt: datetime) -> str:
     local = dt.astimezone() if dt.tzinfo else dt
@@ -1274,10 +1281,16 @@ async def _vote1_timer(bot, game_key: str, chat_id: int):
                 state_before = await _latest_vote_state(session, game.id)
                 if not state_before:
                     return
-                await finish_vote1_target(session, game)
-                is_last = int(state_before.get("index", 0)) + 1 >= len(state_before.get("queue", []))
-                await _finish_vote_message(bot, session, game, next_button=True)
-                result = await advance_vote1(session, game)
+                lock = _vote_transition_locks.setdefault(game_key, asyncio.Lock())
+                async with lock:
+                    state_locked = await _latest_vote_state(session, game.id)
+                    if not state_locked or state_locked.get("phase") != "vote1":
+                        return
+                    if state_locked.get("status") == "active":
+                        await finish_vote1_target(session, game)
+                    is_last = int(state_locked.get("index", 0)) + 1 >= len(state_locked.get("queue", []))
+                    await _finish_vote_message(bot, session, game, next_button=False)
+                    result = await advance_vote1(session, game)
                 if result["finished"] or is_last:
                     if result.get("finished"):
                         state_after = await _latest_vote_state(session, game.id)
@@ -1394,27 +1407,26 @@ async def vote1_next_handler(callback: CallbackQuery):
     async with session_factory() as session:
         game = await _load(session, key); actor = (await session.execute(select(User).where(User.telegram_id == callback.from_user.id))).scalar_one_or_none() if callback.from_user else None
         if not game or not actor or game.host_user_id != actor.id: await callback.answer("فقط گرداننده.", show_alert=True); return
-        task = _vote_tasks.pop(key, None)
-        if task:
-            task.cancel()
-        state = await _latest_vote_state(session, game.id)
-        if not state or state.get("phase") != "vote1":
-            await callback.answer("این رأی‌گیری دیگر فعال نیست.", show_alert=True)
-            return
-        # The timer already closes the current target. The manual "بعدی"
-        # button must advance that finished target and never try to vote it again.
-        if state.get("status") == "active":
-            await finish_vote1_target(session, game)
-        result = await advance_vote1(session, game)
-        if result["finished"]:
-            await callback.message.edit_text(
-                "🗳 <b>رأی اول تمام شد</b>\n\nاز گزینه‌های زیر مرحله بعد را انتخاب کنید.",
-                reply_markup=vote1_complete_keyboard(key),
-                parse_mode="HTML",
-            )
-        else:
-            await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
-            _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
+        lock = _vote_transition_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            task = _vote_tasks.pop(key, None)
+            if task and task is not asyncio.current_task():
+                task.cancel()
+            state = await _latest_vote_state(session, game.id)
+            if not state or state.get("phase") != "vote1":
+                await callback.answer("این رأی‌گیری دیگر فعال نیست.", show_alert=True)
+                return
+            # First freeze the current result in its own message. Only its
+            # buttons are removed; the next target gets a fresh message.
+            if state.get("status") == "active":
+                await finish_vote1_target(session, game)
+            await _finish_vote_message(bot=callback.bot, session=session, game=game, next_button=False)
+            result = await advance_vote1(session, game)
+            if result["finished"]:
+                await callback.message.edit_reply_markup(reply_markup=vote1_complete_keyboard(key))
+            else:
+                await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
+                _vote_tasks[key] = asyncio.create_task(_vote1_timer(callback.bot, key, callback.message.chat.id))
     await callback.answer("بازیکن بعدی آماده شد." if not result["finished"] else "رأی اول تمام شد.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("vote1:finish:"))
