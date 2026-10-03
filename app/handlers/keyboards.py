@@ -63,12 +63,12 @@ def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMar
     return builder.as_markup()
 
 
-def group_list_keyboard(groups, purpose: str = "games") -> InlineKeyboardMarkup:
+def group_list_keyboard(groups, purpose: str = "games", back_callback: str = "menu:group_management") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for group in groups:
         title = group.title or f"گروه {group.telegram_id}"
         builder.row(InlineKeyboardButton(text=title[:64], callback_data=f"groupmgmt:select:{purpose}:{group.id}"))
-    _back(builder, "menu:group_management")
+    _back(builder, back_callback)
     return builder.as_markup()
 
 
