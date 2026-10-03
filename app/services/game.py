@@ -195,7 +195,7 @@ async def role_messages(session: AsyncSession, game, assignments):
 
     header = (
         f"༄\n"
-        f"📓 بازی شماره : {game.id}\n\n"
+        f"📓 بازی شماره : {await get_game_number(session, game)}\n\n"
         f"⏱ زمان : {now:%H:%M}\n"
         f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
         f"🗓 سناریو : {scenario_name}\n"
@@ -215,7 +215,7 @@ async def role_messages(session: AsyncSession, game, assignments):
         player_messages.append(
             (telegram_id,
              f"༄\n"
-             f"📓 بازی شماره : {game.id}\n\n"
+             f"📓 بازی شماره : {await get_game_number(session, game)}\n\n"
              f"⏱ زمان : {now:%H:%M}\n"
              f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
              f"🗓 سناریو : {scenario_name}\n"
