@@ -748,17 +748,14 @@ async def resolve_vote2(session, game):
                 result_type = "tie_random"
             else:
                 result_type = "tie"
-    for uid in eliminated:
-        player = await session.scalar(select(GamePlayer).where(
-            GamePlayer.game_id == game.id, GamePlayer.user_id == uid, GamePlayer.alive.is_(True)
-        ))
-        if player:
-            player.alive = False
-            player.exit_type = "vote"
+    # Voting only produces a result. In a manual game it MUST NOT remove a
+    # player: the host explicitly removes the player through management if needed.
+    auto_eliminated = eliminated if game.auto_play else []
     state["status"] = "finished"
     state["result"] = {
         "counts": counts,
-        "eliminated_ids": eliminated,
+        "eliminated_ids": auto_eliminated,
+        "recommended_elimination_ids": eliminated,
         "result_type": result_type,
         "threshold": threshold,
         "voter_base_count": int(phase_rules.get("voter_base_count", 0)),
