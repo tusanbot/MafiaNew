@@ -41,7 +41,10 @@ async def run_bot() -> None:
     settings = get_settings()
     bot = Bot(settings.bot_token)
     install_rich_message_transport()
-    await _register_bot_commands(bot)
+    try:
+        await _register_bot_commands(bot)
+    except Exception:
+        logging.getLogger(__name__).exception("Failed to publish Telegram command menu; polling will continue.")
     dispatcher = Dispatcher()
     register_handlers(dispatcher)
     try:
