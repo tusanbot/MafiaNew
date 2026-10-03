@@ -934,7 +934,16 @@ async def start_match_handler(callback: CallbackQuery):
                     parse_mode="HTML",
                 )
             except Exception:
-                pass
+                # Telegram does not allow a bot to open a private chat that the
+                # user has never started. Make that failure visible instead of
+                # silently losing the host's role roster.
+                try:
+                    await callback.bot.send_message(
+                        callback.message.chat.id,
+                        f"⚠️ {escape(host.display_name or host.first_name or 'گرداننده')}، برای دریافت لیست نقش‌ها در PV ابتدا ربات را استارت کنید.",
+                    )
+                except Exception:
+                    pass
 
         await callback.answer("نقش‌ها پخش شد؛ مرحله انتخاب سردست آغاز شد.")
 
