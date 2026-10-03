@@ -1043,26 +1043,28 @@ async def finish_game_confirm(callback: CallbackQuery) -> None:
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        result_html = await _game_result_text(session, game, winner)
+        # The game belongs to the selected group, not to the private
+        # management chat where the host pressed the button.
         result_html = (
-            "<h2>🏁 نتیجه نهایی بازی</h2>"
-            "<p>گزارش کامل بازی و وضعیت بازیکنان:</p>"
-            "<p>━━━━━━━━━━━━━━━━━━━━</p>"
-            + result_html.replace("\n", "<br/>")
+            "🏁 <b>نتیجه نهایی بازی</b>\n"
+            "گزارش کامل بازی و وضعیت بازیکنان:\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            + (await _game_result_text(session, game, winner))
         )
+        group_chat_id = int(group.telegram_id)
         try:
-            await edit_rich_message(
-                callback.bot,
-                callback.message.chat.id,
-                callback.message.message_id,
+            await callback.bot.send_message(
+                group_chat_id,
                 result_html,
                 reply_markup=game_result_keyboard(group.id, game.id),
+                parse_mode="HTML",
+            )
+            await callback.message.edit_text(
+                "✅ نتیجه بازی ثبت شد و گزارش نهایی در گروه ارسال شد."
             )
         except Exception:
             await callback.message.edit_text(
-                await _game_result_text(session, game, winner),
-                reply_markup=game_result_keyboard(group.id, game.id),
-                parse_mode="HTML",
+                "⚠️ نتیجه بازی ثبت شد، اما ارسال گزارش نهایی به گروه ناموفق بود."
             )
     await callback.answer("نتیجه بازی ثبت شد.")
 
@@ -1137,6 +1139,78 @@ async def game_event_add_text(message: Message, state: FSMContext) -> None:
         await session.commit()
     await state.clear()
     await message.answer("اتفاق بازی ثبت شد.")
+
+
+async def _game_roles_text(session, game) -> str:
+    rows = list((await session.execute(
+        select(GamePlayer, User, Role)
+        .outerjoin(Role, Role.id == GamePlayer.role_id)
+        .join(User, User.id == GamePlayer.user_id)
+        .where(GamePlayer.game_id == game.id)
+        .order_by(GamePlayer.seat)
+    )).all())
+    lines = ["🎭 <b>نقش‌های بازی</b>", ""]
+    for index, (player, user, role) in enumerate(rows, 1):
+        if player.is_reserved:
+            continue
+        name = escape(user.display_name or user.first_name or user.username or "بازیکن")
+        role_name = escape(role.name_fa if role else "بدون نقش")
+        team = escape(role.team if role else "نامشخص")
+        lines.append(f"{index}. {name} — <b>{role_name}</b> ({team})")
+    return "\n".join(lines)
+
+
+async def _game_ranking_text(session) -> str:
+    rows = await leaderboard(session, 10)
+    lines = ["🏆 <b>رتبه‌بندی بازیکنان</b>", ""]
+    if not rows:
+        lines.append("هنوز بازی کاملی برای رتبه‌بندی ثبت نشده است.")
+    else:
+        for i, user in enumerate(rows, 1):
+            lines.append(
+                f"{i}. {escape(tg_name(user.display_name or user.first_name or 'بازیکن'))} — "
+                f"{user.score} امتیاز — {escape(rank_for_score(user.score))}"
+            )
+    return "\n".join(lines)
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:view:"))
+async def game_result_view(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("نمایش نتیجه نامعتبر است.", show_alert=True)
+        return
+    _, _, view, game_raw = parts
+    game_id = int(game_raw)
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        winner_event = await session.scalar(select(GameEvent).where(
+            GameEvent.game_id == game.id,
+            GameEvent.event_type.in_(["game_finished", "stats_recorded"])
+        ).order_by(GameEvent.id.desc()))
+        winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
+        if view == "roles":
+            text = await _game_roles_text(session, game)
+        elif view == "ranking":
+            text = await _game_ranking_text(session)
+        else:
+            text = (
+                "🏁 <b>نتیجه نهایی بازی</b>\n"
+                "گزارش کامل بازی و وضعیت بازیکنان:\n"
+                "━━━━━━━━━━━━━━━━━━━━\n"
+                + (await _game_result_text(session, game, winner))
+            )
+        await callback.message.edit_text(
+            text,
+            reply_markup=game_result_keyboard(game.group_id, game.id),
+            parse_mode="HTML",
+        )
+    await callback.answer()
 
 
 @router.callback_query(lambda c: c.data.startswith("gameresult:back:"))
