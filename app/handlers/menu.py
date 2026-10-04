@@ -4015,6 +4015,47 @@ async def tournament_input(message: Message,state:FSMContext):
     tid=int(data['tid'])
     async with session_factory() as session:
         t=await session.get(Tournament,tid)
+        if t and data.get('action')=='edit':
+            step=data.get('step')
+            if step=='name':
+                await state.update_data(step='emoji',name=value if value!='-' else t.name)
+                await message.answer('🎨 اموجی جدید را بفرست؛ برای حفظ اموجی فعلی -')
+                return
+            if step=='emoji':
+                await state.update_data(step='date',emoji=value if value!='-' else t.emoji)
+                await message.answer('📅 تاریخ شروع جدید را بفرست؛ برای حفظ تاریخ فعلی -')
+                return
+            if step=='date':
+                dt=_tour_date(value)
+                if value=='-': dt=t.start_at
+                if not dt: await message.answer('تاریخ معتبر نیست.'); return
+                await state.update_data(step='prizes',start_at=dt.isoformat())
+                await message.answer('🏅 امتیاز رتبه‌ها را هر رتبه در یک خط بفرست؛ برای حفظ فعلی -')
+                return
+            if step=='prizes':
+                prizes=t.prize_points
+                if value!='-':
+                    try: prizes='\\n'.join(map(str,_tour_prizes(value)))
+                    except ValueError: await message.answer('امتیازها نامعتبر است.'); return
+                await state.update_data(step='description',prizes=prizes)
+                await message.answer('📝 توضیحات جدید را بفرست؛ برای حفظ فعلی -')
+                return
+            if step=='description':
+                t.name=data['name']; t.emoji=data['emoji']; t.start_at=datetime.fromisoformat(data['start_at']); t.prize_points=data['prizes']
+                if value!='-': t.description=value
+                await session.commit(); await state.clear(); await message.answer('✅ تورنمنت ویرایش شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
+        if t and data.get('action') in {'rename_group','group_add','group_remove'}:
+            g=await session.get(TournamentGroup,int(data['group_id_no']))
+            if not g: await state.clear(); await message.answer('گروه پیدا نشد.'); return
+            if data['action']=='rename_group':
+                g.name=value
+            else:
+                users=await _tour_users(session,[value])
+                if not users: await message.answer('بازیکن پیدا نشد.'); return
+                tp=await session.scalar(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==users[0].id))
+                if not tp: await message.answer('این بازیکن در تورنمنت ثبت نشده.'); return
+                tp.group_no=g.group_no if data['action']=='group_add' else None
+            await session.commit(); await state.clear(); await message.answer('✅ تغییر ذخیره شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
         if not t: await state.clear(); await message.answer('تورنمنت پیدا نشد.'); return
         if data.get('action')=='add_player':
             users=await _tour_users(session,[value])
