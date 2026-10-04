@@ -178,7 +178,7 @@ def group_game_emoji_menu(group_id: int, settings) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def group_achievement_emoji_menu(group_id: int, achievements) -> InlineKeyboardMarkup:
+def group_achievement_emoji_menu(group_id: int, achievements, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for achievement in achievements:
         current = "✨" if getattr(achievement, "custom_emoji_id", None) else (achievement.icon or "🏅")
@@ -187,11 +187,11 @@ def group_achievement_emoji_menu(group_id: int, achievements) -> InlineKeyboardM
             callback_data=f"groupdefaults:achievement_emoji:{group_id}:{achievement.key}",
         ))
     builder.row(InlineKeyboardButton(text="🧹 حذف اموجی سفارشی دستاوردها", callback_data=f"groupdefaults:achievement_emoji_clear:{group_id}"))
-    _back(builder, f"groupdefaults:emoji_menu:{group_id}")
+    _back(builder, back_callback or f"groupdefaults:emoji_menu:{group_id}")
     return builder.as_markup()
 
 
-def group_tag_emoji_menu(group_id: int, tags) -> InlineKeyboardMarkup:
+def group_tag_emoji_menu(group_id: int, tags, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for achievement in tags:
         current = "✨" if getattr(achievement, "tag_custom_emoji_id", None) else (achievement.tag_emoji or "🏷️")
@@ -200,7 +200,7 @@ def group_tag_emoji_menu(group_id: int, tags) -> InlineKeyboardMarkup:
             callback_data=f"groupdefaults:tag_emoji:{group_id}:{achievement.key}",
         ))
     builder.row(InlineKeyboardButton(text="🧹 حذف اموجی سفارشی تگ‌ها", callback_data=f"groupdefaults:tag_emoji_clear:{group_id}"))
-    _back(builder, f"groupdefaults:emoji_menu:{group_id}")
+    _back(builder, back_callback or f"groupdefaults:emoji_menu:{group_id}")
     return builder.as_markup()
 
 
