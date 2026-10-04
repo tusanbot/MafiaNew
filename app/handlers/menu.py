@@ -4207,7 +4207,7 @@ async def _tour_member(session,t,user_id):
 async def public_tournaments(callback: CallbackQuery):
     async with session_factory() as session:
         u=await session.scalar(select(User).where(User.telegram_id==callback.from_user.id))
-        ts=list((await session.execute(select(Tournament).where(Tournament.status=='active').order_by(Tournament.start_at.desc()))).scalars().all()) if u else []
+        ts=list((await session.execute(select(Tournament).join(Game,Game.group_id==Tournament.group_id).join(GamePlayer,GamePlayer.game_id==Game.id).where(GamePlayer.user_id==u.id,Tournament.status=='active').distinct().order_by(Tournament.start_at.desc()))).scalars().all()) if u else []
     b=InlineKeyboardBuilder()
     for t in ts: b.row(InlineKeyboardButton(text=f'{t.emoji} {t.name[:50]}',callback_data=f'tourpub:open:{t.id}'))
     b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data='menu:root'))
