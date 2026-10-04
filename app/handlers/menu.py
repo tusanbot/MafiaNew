@@ -504,6 +504,42 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data in {"groupmgmt:achievements", "groupmgmt:tags"})
+async def group_management_achievements_tags(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    async with session_factory() as session:
+        groups = await _manageable_groups(session, callback.bot, callback.from_user.id)
+        if not groups:
+            await callback.message.edit_text(
+                "هیچ گروه قابل مدیریتی پیدا نشد.",
+                reply_markup=group_management_menu(),
+            )
+            await callback.answer()
+            return
+        # The catalog is global, but entry is protected by group-admin access.
+        from app.services.stats import ensure_achievements
+        await ensure_achievements(session)
+        achievements = list((await session.execute(select(Achievement).order_by(Achievement.id))).scalars().all())
+        tags = [a for a in achievements if a.tag_key]
+        if callback.data == "groupmgmt:achievements":
+            await callback.message.edit_text(
+                "🏆 <b>مدیریت دستاوردها</b>\n\n"
+                "برای هر دستاورد می‌توانی اموجی متحرک آن را ثبت یا ویرایش کنی.\n"
+                "اموجی فعلی کنار نام هر مورد نمایش داده می‌شود.",
+                reply_markup=group_achievement_emoji_menu(groups[0].id, achievements),
+                parse_mode="HTML",
+            )
+        else:
+            await callback.message.edit_text(
+                "🏷️ <b>مدیریت تگ‌ها</b>\n\n"
+                "تگ‌ها از دستاوردهای آزادشده ساخته می‌شوند و اموجی هر تگ جداگانه قابل تنظیم است.",
+                reply_markup=group_tag_emoji_menu(groups[0].id, tags),
+                parse_mode="HTML",
+            )
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data == "groupmgmt:games")
 async def group_management_games(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
