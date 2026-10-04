@@ -430,7 +430,7 @@ async def profile_name_save(message: Message, state: FSMContext) -> None:
         return
     # Display names are intentionally limited to Persian letters and spaces.
     # Digits, Latin/Arabic letters, emoji, punctuation and symbols are rejected.
-    if not re.fullmatch(r"[آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی‌ ]+", value):
+    if not re.fullmatch(r"[آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی‌ ]+", value) or not re.search(r"[آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی]", value):
         await message.answer("❌ نام فقط باید شامل حروف فارسی باشد؛ عدد، حروف انگلیسی، اموجی و علامت مجاز نیست.")
         return
     async with session_factory() as session:
