@@ -619,6 +619,8 @@ async def select_group(callback: CallbackQuery) -> None:
                 reply_markup=group_achievement_emoji_menu(group.id, achievements, "groupmgmt:achievements"),
                 parse_mode="HTML",
             )
+        elif purpose == "tournaments":
+            await callback.message.edit_text("🏆 مدیریت تورنمنت‌ها", reply_markup=tournament_admin_menu(group.id))
         elif purpose == "tags":
             from app.services.stats import ensure_achievements
             await ensure_achievements(session)
