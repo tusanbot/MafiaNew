@@ -281,3 +281,39 @@ class UserRoleStat(Base):
     saves: Mapped[int] = mapped_column(Integer, default=0)
     investigations: Mapped[int] = mapped_column(Integer, default=0)
     investigation_hits: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class Tournament(Base):
+    __tablename__ = "tournaments"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    emoji: Mapped[str] = mapped_column(String(20), default="🏆")
+    start_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    prize_points: Mapped[str] = mapped_column(Text, default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    group_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_by_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+class TournamentPlayer(Base):
+    __tablename__ = "tournament_players"
+    __table_args__ = (UniqueConstraint("tournament_id", "user_id", name="uq_tournament_player"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    group_no: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    final_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    awarded_points: Mapped[int] = mapped_column(Integer, default=0)
+    registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+class TournamentGroup(Base):
+    __tablename__ = "tournament_groups"
+    __table_args__ = (UniqueConstraint("tournament_id", "group_no", name="uq_tournament_group_no"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tournament_id: Mapped[int] = mapped_column(ForeignKey("tournaments.id", ondelete="CASCADE"), index=True)
+    group_no: Mapped[int] = mapped_column(Integer)
+    name: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
