@@ -1887,6 +1887,43 @@ async def game_result_view(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data.startswith("gameresult:back:"))
+async def game_result_back(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        allowed, reason = await _result_group_access(callback, session, game)
+        if not allowed:
+            await callback.answer(reason, show_alert=True)
+            return
+        if callback.message.chat.type in ("group", "supergroup"):
+            ok, remaining = await _apply_result_group_cooldown(session, game)
+            if not ok:
+                await session.rollback()
+                await callback.answer(f"⏳ برای تغییر تب {remaining} ثانیه صبر کنید.")
+                return
+        title, text = await _result_payload(session, game, "result")
+        rich = _result_rich_view(game.id, title, text)
+        try:
+            await edit_rich_message(
+                callback.bot, callback.message.chat.id, callback.message.message_id,
+                rich, is_rtl=True,
+            )
+        except Exception:
+            await callback.message.edit_text(
+                text,
+                reply_markup=game_result_keyboard(game.group_id, game.id),
+                parse_mode="HTML",
+            )
+        await session.commit()
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data.startswith("gameresult:register:"))
 async def game_result_register(callback: CallbackQuery) -> None:
     game_id = int(callback.data.rsplit(":", 1)[1])
