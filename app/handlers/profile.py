@@ -44,7 +44,7 @@ async def _achievements_rich_html(session, user: User) -> str:
         description = (achievement.description or "برای این دستاورد هنوز توضیحی ثبت نشده است.").strip()
         if is_earned:
             body.append(
-                f"<tr><td>{custom_emoji_html(achievement.custom_emoji_id, achievement.icon or "🏅") } {achievement.name_fa}</td><td>{description}</td><td>✅ +{achievement.points}</td></tr>"
+                f"<tr><td>{custom_emoji_html(achievement.custom_emoji_id, achievement.icon or '🏅')} {achievement.name_fa}</td><td>{description}</td><td>✅ +{achievement.points}</td></tr>"
             )
         else:
             progress = f"{current}/{target}" if target is not None else str(current)
