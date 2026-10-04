@@ -634,7 +634,7 @@ async def select_group(callback: CallbackQuery) -> None:
                     f"مدیریت بازی فعال\nگروه: {group.title or group.telegram_id}\n"
                     f"سناریو: {scenario.name_fa if scenario else 'نامشخص'}\n"
                     f"وضعیت: {_status_fa(game.status)}\nمرحله: {_phase_fa(game.phase)}",
-                    reply_markup=active_game_menu(group.id, "menu:active_game", game.game_key, game.status == "waiting"),
+                    reply_markup=active_game_menu(group.id, "groupmgmt:games", game.game_key, game.status == "waiting"),
                 )
         else:
             await callback.message.edit_text(
@@ -1399,7 +1399,9 @@ async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
 async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    key = callback.data.split(":", 2)[2]
+    scenario_parts = callback.data.split(":")
+    key = scenario_parts[2]
+    context = scenario_parts[3] if len(scenario_parts) > 3 else "lobby"
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -1416,8 +1418,12 @@ async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
             "🎭 سناریوی جدید را انتخاب کنید:",
             reply_markup=scenario_select_keyboard(
                 group.id, scenarios,
-                back_callback=f"game:return_lobby:{game.game_key}",
-                callback_prefix=f"gameadmin:setscenario:{game.game_key}",
+                back_callback=(
+                    f"game:return_lobby:{game.game_key}"
+                    if context == "lobby"
+                    else ("groupmgmt:games" if context == "groups" else "menu:active_game")
+                ),
+                callback_prefix=f"gameadmin:setscenario:{game.game_key}:{context}",
             ),
         )
     await callback.answer()
@@ -1428,10 +1434,12 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         await callback.answer("درخواست تغییر سناریو نامعتبر است.", show_alert=True)
         return
-    key, scenario_raw = parts[2], parts[4]
+    key = parts[2]
+    context = parts[3] if len(parts) == 6 else "lobby"
+    scenario_raw = parts[-1]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -1453,29 +1461,44 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
         game.scenario_id = scenario.id
         await session.commit()
         await callback.answer("سناریو تغییر کرد و صندلی‌ها تطبیق داده شدند.")
-        # Render the actual lobby in the same group-management message.
-        from app.services.game import render_lobby
-        from app.handlers.keyboards import lobby_keyboard_v2
-        text, full = await render_lobby(session, game)
-        host = await session.get(User, game.host_user_id) if game.host_user_id else None
-        await callback.message.edit_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=lobby_keyboard_v2(
-                game.game_key, scenario, await GameRepository.players(session, game.id),
-                await GameRepository.reserves(session, game.id),
-                is_host=bool(host and host.telegram_id == callback.from_user.id),
-                can_deal=full, reserve_enabled=game.reserve_enabled,
-                training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
-            ),
-        )
+        if context == "lobby":
+            from app.services.game import render_lobby
+            from app.handlers.keyboards import lobby_keyboard_v2
+            text, full = await render_lobby(session, game)
+            host = await session.get(User, game.host_user_id) if game.host_user_id else None
+            await callback.message.edit_text(
+                text,
+                parse_mode="HTML",
+                reply_markup=lobby_keyboard_v2(
+                    game.game_key, scenario, await GameRepository.players(session, game.id),
+                    await GameRepository.reserves(session, game.id),
+                    is_host=bool(host and host.telegram_id == callback.from_user.id),
+                    can_deal=full, reserve_enabled=game.reserve_enabled,
+                    training_url=scenario.training_url, telegram_training_url=scenario.telegram_training_url,
+                ),
+            )
+        else:
+            back_callback = "groupmgmt:games" if context == "groups" else "menu:active_game"
+            from app.handlers.keyboards import active_game_menu
+            await callback.message.edit_text(
+                "🎮 <b>مدیریت بازی فعال</b>\n\n"
+                f"سناریو: {escape(scenario.name_fa)}\n"
+                f"وضعیت: {_status_fa(game.status)}\n"
+                f"مرحله: {_phase_fa(game.phase)}",
+                reply_markup=active_game_menu(
+                    group.id, back_callback, game.game_key, game.status == "waiting"
+                ),
+                parse_mode="HTML",
+            )
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:host:"))
 async def gameadmin_host_select(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
-    key = callback.data.split(":", 2)[2]
+    host_parts = callback.data.split(":")
+    key = host_parts[2]
+    context = host_parts[3] if len(host_parts) > 3 else "lobby"
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -1490,8 +1513,12 @@ async def gameadmin_host_select(callback: CallbackQuery) -> None:
             "🎙 گرداننده جدید را انتخاب کنید:",
             reply_markup=host_select_keyboard(
                 group.id, admins,
-                callback_prefix=f"gameadmin:sethost:{game.game_key}",
-                back_callback=f"game:return_lobby:{game.game_key}",
+                callback_prefix=f"gameadmin:sethost:{game.game_key}:{context}",
+                back_callback=(
+                    f"game:return_lobby:{game.game_key}"
+                    if context == "lobby"
+                    else ("groupmgmt:games" if context == "groups" else "menu:active_game")
+                ),
             ),
         )
     await callback.answer()
@@ -1502,10 +1529,12 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         await callback.answer("درخواست تغییر گرداننده نامعتبر است.", show_alert=True)
         return
-    key, host_raw = parts[2], parts[4]
+    key = parts[2]
+    context = parts[3] if len(parts) == 6 else "lobby"
+    host_raw = parts[-1]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not game or game.status != "waiting":
@@ -1529,20 +1558,35 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
         game.host_user_id = host.id
         await session.commit()
         scenario = await session.get(Scenario, game.scenario_id)
-        from app.services.game import render_lobby
-        from app.handlers.keyboards import lobby_keyboard_v2
-        text, full = await render_lobby(session, game)
-        await callback.message.edit_text(
-            text, parse_mode="HTML",
-            reply_markup=lobby_keyboard_v2(
-                game.game_key, scenario, await GameRepository.players(session, game.id),
-                await GameRepository.reserves(session, game.id),
-                is_host=host.telegram_id == callback.from_user.id, can_deal=full,
-                reserve_enabled=game.reserve_enabled,
-                training_url=scenario.training_url if scenario else None,
-                telegram_training_url=scenario.telegram_training_url if scenario else None,
-            ),
-        )
+        if context == "lobby":
+            from app.services.game import render_lobby
+            from app.handlers.keyboards import lobby_keyboard_v2
+            text, full = await render_lobby(session, game)
+            await callback.message.edit_text(
+                text, parse_mode="HTML",
+                reply_markup=lobby_keyboard_v2(
+                    game.game_key, scenario, await GameRepository.players(session, game.id),
+                    await GameRepository.reserves(session, game.id),
+                    is_host=host.telegram_id == callback.from_user.id, can_deal=full,
+                    reserve_enabled=game.reserve_enabled,
+                    training_url=scenario.training_url if scenario else None,
+                    telegram_training_url=scenario.telegram_training_url if scenario else None,
+                ),
+            )
+        else:
+            back_callback = "groupmgmt:games" if context == "groups" else "menu:active_game"
+            from app.handlers.keyboards import active_game_menu
+            await callback.message.edit_text(
+                "🎮 <b>مدیریت بازی فعال</b>\n\n"
+                f"گرداننده: {escape(host.display_name or host.first_name or 'نامشخص')}\n"
+                f"سناریو: {escape(scenario.name_fa if scenario else 'نامشخص')}\n"
+                f"وضعیت: {_status_fa(game.status)}\n"
+                f"مرحله: {_phase_fa(game.phase)}",
+                reply_markup=active_game_menu(
+                    group.id, back_callback, game.game_key, game.status == "waiting"
+                ),
+                parse_mode="HTML",
+            )
     await callback.answer("گرداننده تغییر کرد.")
 
 
