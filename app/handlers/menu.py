@@ -4117,6 +4117,32 @@ async def tournament_open(callback: CallbackQuery):
     if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
     await callback.message.edit_text('🏆 مدیریت تورنمنت',reply_markup=tournament_manage_menu(tid,t.group_id)); await callback.answer()
 
+@router.callback_query(lambda c: c.data.startswith('tournament:link_game:'))
+async def tournament_link_game(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+        if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+        games=list((await session.execute(select(Game).where(Game.group_id==t.group_id,Game.tournament_id.is_(None)).order_by(Game.id.desc()).limit(20))).scalars().all())
+    b=InlineKeyboardBuilder()
+    for g in games:
+        b.row(InlineKeyboardButton(text=f'🎮 بازی #{g.id}',callback_data=f'tournament:link_game_pick:{tid}:{g.id}'))
+    b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data=f'tournament:open:{tid}'))
+    await callback.message.edit_text('🎮 بازی موردنظر را انتخاب کن تا به این تورنمنت متصل شود:',reply_markup=b.as_markup()); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:link_game_pick:'))
+async def tournament_link_game_pick(callback: CallbackQuery):
+    _,_,_,tid,gid=callback.data.split(':'); tid=int(tid); gid=int(gid)
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+        g=await session.get(Game,gid)
+        if not t or not g or g.group_id!=t.group_id:
+            await callback.answer('بازی معتبر نیست.',show_alert=True); return
+        if g.tournament_id and g.tournament_id!=tid:
+            await callback.answer('این بازی قبلاً به تورنمنت دیگری متصل شده.',show_alert=True); return
+        g.tournament_id=tid; await session.commit()
+    await callback.message.edit_text('✅ بازی به تورنمنت اضافه شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); await callback.answer()
+
 @router.callback_query(lambda c: c.data.startswith('tournament:delete:'))
 async def tournament_delete(callback: CallbackQuery):
     tid=int(callback.data.rsplit(':',1)[1])
