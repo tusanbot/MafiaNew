@@ -275,7 +275,7 @@ async def deal_roles(callback: CallbackQuery) -> None:
         failed = []
         for telegram_id, text in private_messages:
             try:
-                await callback.bot.send_message(telegram_id, text)
+                await callback.bot.send_message(telegram_id, text, parse_mode="HTML")
                 sent += 1
             except Exception:
                 failed.append(telegram_id)
