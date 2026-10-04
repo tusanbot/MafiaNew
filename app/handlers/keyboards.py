@@ -68,6 +68,10 @@ def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMar
         InlineKeyboardButton(text="🔔 اعلان‌های گروه", callback_data="groupmgmt:notifications"),
         InlineKeyboardButton(text="🔒 قفل‌های گروه", callback_data="groupmgmt:locks"),
     )
+    builder.row(
+        InlineKeyboardButton(text="🏆 مدیریت دستاوردها", callback_data="groupmgmt:achievements"),
+        InlineKeyboardButton(text="🏷️ مدیریت تگ‌ها", callback_data="groupmgmt:tags"),
+    )
     _back(builder, back_callback)
     return builder.as_markup()
 
