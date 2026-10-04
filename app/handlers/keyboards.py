@@ -509,6 +509,9 @@ def game_result_keyboard(group_id: int, game_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🎭 نقش‌ها", callback_data=f"gameresult:view:roles:{game_id}"),
         InlineKeyboardButton(text="🏆 رتبه‌بندی", callback_data=f"gameresult:view:ranking:{game_id}"),
     )
+    builder.row(
+        InlineKeyboardButton(text="📩 نمایش نتیجه برای من", callback_data=f"gameresult:private:{game_id}"),
+    )
     return builder.as_markup()
 
 def game_result_back_keyboard(game_id: int) -> InlineKeyboardMarkup:
