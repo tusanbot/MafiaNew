@@ -789,8 +789,8 @@ def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False)
             callback_data=f"round:toggle_challenge:{game_key}",
         ),
         InlineKeyboardButton(
-            text=f"⏩ نکست: {'فعال' if (game.next_host_enabled or game.next_player_enabled) else 'غیرفعال'}",
-            callback_data=f"round:toggle_next:{game_key}",
+            text="⏩ تنظیم نکست",
+            callback_data=f"round:next_menu:{game_key}",
         ),
     )
     if leader_selected:
@@ -1351,4 +1351,13 @@ def tournament_public_menu(tid: int) -> InlineKeyboardMarkup:
     b.row(InlineKeyboardButton(text="👥 گروه‌بندی", callback_data=f"tourpub:groups:{tid}"))
     b.row(InlineKeyboardButton(text="🎮 بازی‌ها", callback_data=f"tourpub:games:{tid}"))
     _back(b, "menu:tournaments")
+    return b.as_markup()
+
+
+def round_next_menu_keyboard(game_key: str, game) -> InlineKeyboardMarkup:
+    b = InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text=f"👑 نکست گرداننده {'✅' if game.next_host_enabled else '❌'}", callback_data=f"round:toggle_next_host:{game_key}"))
+    b.row(InlineKeyboardButton(text=f"👤 نکست بازیکن {'✅' if game.next_player_enabled else '❌'}", callback_data=f"round:toggle_next_player:{game_key}"))
+    b.row(InlineKeyboardButton(text=f"🤖 نکست خودکار {'✅' if game.next_auto_enabled else '❌'}", callback_data=f"round:toggle_next_auto:{game_key}"))
+    b.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"round:back:{game_key}"))
     return b.as_markup()
