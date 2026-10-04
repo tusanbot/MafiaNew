@@ -1,4 +1,6 @@
 from aiogram import Router, F
+import html
+import logging
 from aiogram.fsm.context import FSMContext
 from aiogram.types import Message, ReplyParameters
 import re
@@ -20,6 +22,7 @@ import json
 from app.utils.text import tg_name
 
 router = Router(name="text_commands")
+logger = logging.getLogger(__name__)
 
 
 _ZERO_WIDTH = re.compile(r"[\u200b\u200c\u200d\u200e\u200f\u202a-\u202e\ufeff]")
@@ -111,7 +114,6 @@ async def text_transcribe_voice(message: Message, state: FSMContext) -> None:
         await status_message.edit_text(f"❌ {exc}")
         return
     except Exception:
-        logger = __import__("logging").getLogger(__name__)
         logger.exception("Voice transcription failed")
         await status_message.edit_text("❌ تبدیل این پیام صوتی به متن انجام نشد. لطفاً دوباره تلاش کن.")
         return
@@ -119,7 +121,7 @@ async def text_transcribe_voice(message: Message, state: FSMContext) -> None:
     await status_message.delete()
     await message.bot.send_message(
         chat_id=message.chat.id,
-        text=f"📝 <b>متن پیام صوتی:</b>\n\n{transcript}",
+        text=f"📝 <b>متن پیام صوتی:</b>\n\n{html.escape(transcript)}",
         parse_mode="HTML",
         reply_parameters=ReplyParameters(
             message_id=replied.message_id,
