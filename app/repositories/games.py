@@ -105,10 +105,48 @@ class GameRepository:
         result = await session.execute(
             select(GamePlayer, User)
             .join(User, User.id == GamePlayer.user_id)
-            .where(GamePlayer.game_id == game_id, GamePlayer.is_reserved.is_(True))
+            .where(
+                GamePlayer.game_id == game_id,
+                GamePlayer.is_reserved.is_(True),
+                GamePlayer.is_substitute.is_(False),
+            )
             .order_by(GamePlayer.reserve_position)
         )
         return list(result.all())
+
+    @staticmethod
+    async def substitutes(session: AsyncSession, game_id: int) -> list[tuple[GamePlayer, User]]:
+        result = await session.execute(
+            select(GamePlayer, User)
+            .join(User, User.id == GamePlayer.user_id)
+            .where(GamePlayer.game_id == game_id, GamePlayer.is_substitute.is_(True))
+            .order_by(GamePlayer.substitute_position)
+        )
+        return list(result.all())
+
+    @staticmethod
+    async def join_substitute(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
+        if game.status not in ("waiting", "running"):
+            return None
+        existing = await session.scalar(select(GamePlayer).where(
+            GamePlayer.game_id == game.id, GamePlayer.user_id == user.id
+        ))
+        if existing:
+            return existing if existing.is_substitute else None
+        last = await session.scalar(
+            select(GamePlayer.substitute_position)
+            .where(GamePlayer.game_id == game.id, GamePlayer.is_substitute.is_(True))
+            .order_by(GamePlayer.substitute_position.desc())
+        )
+        player = GamePlayer(
+            game_id=game.id, user_id=user.id, seat=0,
+            is_reserved=True, is_substitute=True,
+            substitute_position=(last or 0) + 1,
+        )
+        session.add(player)
+        await session.commit()
+        await session.refresh(player)
+        return player
 
     @staticmethod
     async def join(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
@@ -317,28 +355,33 @@ class GameRepository:
     async def replace_player(session: AsyncSession, game: Game, source: GamePlayer, destination: GamePlayer) -> bool:
         if game.status not in ("waiting", "running"):
             return False
-        if source.is_reserved or not destination.is_reserved or not source.alive:
+        if not source.is_substitute or not destination.alive or destination.is_reserved:
             return False
-        old_reserve_position = destination.reserve_position
-        destination.is_reserved = False
-        destination.reserve_position = None
-        destination.seat = source.seat
-        destination.role_id = source.role_id
-        destination.alive = True
-        destination.exit_type = None
-        destination.warning_count = source.warning_count
+        old_sub_position = source.substitute_position
+        destination_seat = destination.seat
+        destination_role = destination.role_id
+        destination_warning = destination.warning_count
+        source.is_substitute = False
+        source.is_reserved = False
+        source.reserve_position = None
+        source.substitute_position = None
+        source.seat = destination_seat
+        source.role_id = destination_role
+        source.alive = True
+        source.exit_type = None
+        source.warning_count = destination_warning
         if game.status == "waiting":
-            await session.delete(source)
+            await session.delete(destination)
         else:
-            source.alive = False
-            source.exit_type = "replacement"
+            destination.alive = False
+            destination.exit_type = "replacement"
         await session.flush()
-        if old_reserve_position is not None:
+        if old_sub_position is not None:
             await session.execute(update(GamePlayer).where(
                 GamePlayer.game_id == game.id,
-                GamePlayer.is_reserved.is_(True),
-                GamePlayer.reserve_position > old_reserve_position,
-            ).values(reserve_position=GamePlayer.reserve_position - 1))
+                GamePlayer.is_substitute.is_(True),
+                GamePlayer.substitute_position > old_sub_position,
+            ).values(substitute_position=GamePlayer.substitute_position - 1))
         await session.commit()
         return True
 
