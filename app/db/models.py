@@ -64,6 +64,43 @@ class GroupSettings(Base):
     __tablename__ = "group_settings"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), unique=True)
+
+    # Permanent group defaults. A Game receives a snapshot of these values at creation.
+    default_scenario_id: Mapped[int | None] = mapped_column(ForeignKey("scenarios.id", ondelete="SET NULL"), nullable=True)
+    default_auto_play: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_reserve_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_challenge_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_challenge_mode: Mapped[str] = mapped_column(String(20), default="limited")
+    default_challenge_limit: Mapped[int | None] = mapped_column(Integer, nullable=True, default=1)
+    default_turn_seconds: Mapped[int] = mapped_column(Integer, default=120)
+    default_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    default_extra_challenge_seconds: Mapped[int] = mapped_column(Integer, default=60)
+    default_next_host_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_next_player_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_next_auto_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_auto_silence_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_auto_kick_warnings: Mapped[bool] = mapped_column(Boolean, default=False)
+    default_turn_color: Mapped[str] = mapped_column(String(50), default="پیش‌فرض")
+    default_challenge_color: Mapped[str] = mapped_column(String(50), default="پیش‌فرض")
+    default_turn_color_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_voting_pre_delay_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    default_vote_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    default_voting_mode: Mapped[str] = mapped_column(String(20), default="manual")
+    default_vote2_selection_mode: Mapped[str] = mapped_column(String(20), default="manual")
+    default_emoji_settings: Mapped[str] = mapped_column(Text, default='{"death": true, "kick": true, "slaughter": true, "challenge": true, "silence": true, "extra_turn": true, "warning": true}')
+
+    # Player policy.
+    allow_player_join: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_reserve_queue: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_substitute_queue: Mapped[bool] = mapped_column(Boolean, default=True)
+    max_warnings: Mapped[int] = mapped_column(Integer, default=3)
+    auto_silence_on_max_warning: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_kick_on_max_warning: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Group notifications. JSON keeps this extensible without another migration for every new event.
+    notification_settings: Mapped[str] = mapped_column(Text, default='{"game_start": true, "game_end": true, "role_distribution": true, "player_join_leave": true, "turn": true, "challenge": true, "vote": true, "night": true, "reserve_substitute": true}')
+
+    # Persistent locks.
     chat_lock: Mapped[bool] = mapped_column(Boolean, default=False)
     night_lock: Mapped[bool] = mapped_column(Boolean, default=False)
     turn_lock: Mapped[bool] = mapped_column(Boolean, default=False)
