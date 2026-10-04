@@ -601,7 +601,7 @@ async def select_group(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("groupdefaults:"))
-async def group_defaults_handler(callback: CallbackQuery) -> None:
+async def group_defaults_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
@@ -693,6 +693,36 @@ async def group_defaults_handler(callback: CallbackQuery) -> None:
             )
             await callback.answer()
             return
+        elif action == "emoji_menu":
+            await callback.message.edit_text(
+                "✨ <b>اموجی‌های متحرک گروه</b>\n\n"
+                "یک رویداد را انتخاب کن، بعد یک Custom Emoji از پک RestrictedEmoji بفرست. "
+                "خود تلگرام شناسه پایدار آن اموجی را به ربات می‌دهد.\n\n"
+                "اگر اموجی نامعتبر باشد یا در دسترس نباشد، ربات خودکار به اموجی معمولی برمی‌گردد.",
+                reply_markup=group_custom_emoji_menu(group.id, settings),
+                parse_mode="HTML",
+            )
+            await callback.answer()
+            return
+        elif action == "emoji_toggle":
+            settings.custom_emoji = not settings.custom_emoji
+        elif action == "emoji_clear":
+            settings.custom_emoji_ids = "{}"
+        elif action == "emoji_set" and len(parts) == 4:
+            key = parts[3]
+            allowed_keys = {"turn", "challenge", "vote", "defense", "silence", "extra_turn", "warning", "death", "kick", "slaughter", "night", "day", "win", "lose", "leader", "game", "role"}
+            if key not in allowed_keys:
+                await callback.answer("نوع اموجی نامعتبر است.", show_alert=True)
+                return
+            await state.set_state(CustomEmojiState.emoji)
+            await state.update_data(group_id=group.id, emoji_key=key)
+            await callback.message.answer(
+                f"✨ اموجی «{key}» را از پک RestrictedEmoji همین‌جا بفرست.\n"
+                "ربات شناسه واقعی Custom Emoji را دریافت و ذخیره می‌کند.\n"
+                "برای حذف این مورد، /clear بفرست."
+            )
+            await callback.answer()
+            return
         elif action == "emoji":
             settings.custom_emoji = not settings.custom_emoji
         elif action == "color" and len(parts) == 4:
@@ -717,6 +747,8 @@ async def group_defaults_handler(callback: CallbackQuery) -> None:
         await session.commit()
         if action in {"visual", "emoji", "color"}:
             markup = group_visual_settings_menu(group.id, settings)
+        elif action in {"emoji_menu", "emoji_toggle", "emoji_clear"}:
+            markup = group_custom_emoji_menu(group.id, settings)
         elif action in {"voting", "toggle_mode"}:
             markup = group_voting_settings_menu(group.id, settings)
         else:
