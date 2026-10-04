@@ -150,6 +150,23 @@ async def create_game(
         challenge_seconds=challenge_seconds if challenge_seconds is not None else getattr(scenario, "challenge_seconds", 60),
         extra_challenge_seconds=extra_challenge_seconds if extra_challenge_seconds is not None else getattr(scenario, "extra_challenge_seconds", 60),
     )
+    if settings is not None:
+        game.challenge_enabled = settings.default_challenge_enabled
+        game.challenge_mode = settings.default_challenge_mode
+        game.challenge_limit = settings.default_challenge_limit
+        game.next_host_enabled = settings.default_next_host_enabled
+        game.next_player_enabled = settings.default_next_player_enabled
+        game.next_auto_enabled = settings.default_next_auto_enabled
+        game.auto_silence_warnings = settings.default_auto_silence_warnings
+        game.auto_kick_warnings = settings.default_auto_kick_warnings
+        game.turn_color_enabled = settings.default_turn_color_enabled
+        game.voting_pre_delay_seconds = settings.default_voting_pre_delay_seconds
+        game.vote_seconds = settings.default_vote_seconds
+        game.voting_mode = settings.default_voting_mode
+        game.vote2_selection_mode = settings.default_vote2_selection_mode
+        game.emoji_settings = settings.default_emoji_settings
+        await session.commit()
+        await session.refresh(game)
     await assign_game_number(session, game)
     return game
 
