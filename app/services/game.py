@@ -230,11 +230,11 @@ async def role_messages(session: AsyncSession, game, assignments):
 
     header = (
         f"༄\n"
-        f"📓 بازی شماره : {await get_game_number(session, game)}\n\n"
+        f"{game_emoji(game, 'game')} بازی شماره : {await get_game_number(session, game)}\n\n"
         f"⏱ زمان : {now:%H:%M}\n"
         f"📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}\n"
         f"🗓 سناریو : {scenario_name}\n"
-        f"👮‍♂ گرداننده : {host_name}\n\n"
+        f"{game_emoji(game, 'leader')} گرداننده : {host_name}\n\n"
         f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
         f"👥 لیست بازیکنان حاضر در بازی\n"
         f"◤◢◣◥◤◢◣◥◤◢◣◥\n"
@@ -256,7 +256,7 @@ async def role_messages(session: AsyncSession, game, assignments):
              f"🗓 سناریو : {scenario_name}\n"
              f"👮‍♂ گرداننده : {host_name}\n\n"
              f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n"
-             f"نقش شما: {role_name}\n\n"
+             f"{game_emoji(game, 'role')} نقش شما: {role_name}\n\n"
              f"ساید: {team}\n\n"
              f"توضیح نقش:\n{explanation}\n\n"
              f"~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~\n\n"
