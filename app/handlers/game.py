@@ -5,7 +5,7 @@ from zoneinfo import ZoneInfo
 from aiogram.types import CallbackQuery
 from sqlalchemy import select
 
-from app.db.models import Group, Scenario, User
+from app.db.models import Group, GroupSettings, Scenario, User, GamePlayer
 from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -111,7 +111,27 @@ async def join_game(callback: CallbackQuery) -> None:
         )
         player = await GameRepository.join(session, game, user)
         if player is None:
-            await callback.answer("ظرفیت اصلی پر است؛ از گزینه «رزرو» استفاده کنید.", show_alert=True)
+            # Do not mask unrelated join failures as "seat full".
+            settings = await session.scalar(
+                select(GroupSettings).where(GroupSettings.group_id == game.group_id)
+            )
+            if settings is not None and not settings.allow_player_join:
+                await callback.answer("ورود بازیکن در تنظیمات گروه غیرفعال است.", show_alert=True)
+                return
+            scenario = await session.get(Scenario, game.scenario_id)
+            active_count = int(await session.scalar(
+                select(__import__("sqlalchemy").func.count(GamePlayer.id)).where(
+                    GamePlayer.game_id == game.id,
+                    GamePlayer.is_reserved.is_(False),
+                    GamePlayer.is_substitute.is_(False),
+                )
+            ) or 0)
+            if scenario and active_count >= scenario.max_players:
+                await callback.answer("ظرفیت اصلی این سناریو پر است؛ از گزینه «رزرو» استفاده کنید.", show_alert=True)
+            elif game.status != "waiting":
+                await callback.answer("این بازی دیگر در مرحله ورود بازیکنان نیست.", show_alert=True)
+            else:
+                await callback.answer("ورود به بازی در حال حاضر ممکن نیست؛ تنظیمات و وضعیت لابی را بررسی کنید.", show_alert=True)
             return
         await _render(callback, session, game, user.id)
         await callback.answer(f"صندلی {player.seat} برای شما ثبت شد.")
