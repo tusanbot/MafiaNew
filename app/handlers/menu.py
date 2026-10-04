@@ -4247,3 +4247,10 @@ async def public_tournament_section(callback: CallbackQuery):
     try: await edit_rich_message(callback.bot,callback.message.chat.id,callback.message.message_id,html)
     except Exception: await callback.message.edit_text(re.sub('<[^>]+>','',html),reply_markup=tournament_public_menu(tid))
     await callback.answer()
+@router.callback_query(lambda c: c.data.startswith('tournament:edit:'))
+async def tournament_edit_start(callback: CallbackQuery,state:FSMContext):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session: t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+    if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await state.clear(); await state.update_data(action='edit',tid=tid,step='name'); await state.set_state(TournamentState.input)
+    await callback.message.edit_text(f'✏️ نام جدید تورنمنت را بفرست.\nفعلی: {t.name}\nبرای حفظ نام: -'); await callback.answer()
