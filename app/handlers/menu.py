@@ -703,8 +703,10 @@ async def player_management(callback: CallbackQuery) -> None:
         emojis = _emoji_settings(game)
         lines = []
         for player, user in players:
-            if player.is_reserved:
-                lines.append(f"رزرو {player.reserve_position}. {tg_name(user.display_name or user.first_name)} — رزرو")
+            if getattr(player, "is_substitute", False):
+                lines.append(f"🔁 جایگزین {player.substitute_position}. {tg_name(user.display_name or user.first_name)} — Sub")
+            elif player.is_reserved:
+                lines.append(f"🪑 رزرو {player.reserve_position}. {tg_name(user.display_name or user.first_name)} — رزرو")
             else:
                 status = "زنده" if player.alive else {
                     "death": "کشته",
