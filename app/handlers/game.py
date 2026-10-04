@@ -26,6 +26,7 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
     scenario = await session.get(Scenario, game.scenario_id)
     players = await GameRepository.players(session, game.id)
     reserves = await GameRepository.reserves(session, game.id)
+    substitutes = await GameRepository.substitutes(session, game.id)
     host = await session.get(User, game.host_user_id) if game.host_user_id else None
     text, full = await render_lobby(session, game)
     await callback.message.edit_text(
@@ -36,6 +37,7 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
             scenario,
             players,
             reserves,
+            substitutes=substitutes,
             is_host=bool(host and host.id == user_id),
             can_deal=full,
             reserve_enabled=game.reserve_enabled,
@@ -115,6 +117,33 @@ async def join_game(callback: CallbackQuery) -> None:
         await callback.answer(f"صندلی {player.seat} برای شما ثبت شد.")
 
 
+@router.callback_query(lambda c: c.data and c.data.startswith("lobby:substitute:"))
+async def lobby_substitute(callback: CallbackQuery) -> None:
+    game_key = callback.data.split(":", 2)[2]
+    if not callback.from_user or not callback.message:
+        return
+    async with session_factory() as session:
+        game = await _load_game(session, game_key)
+        if not game:
+            await callback.answer("بازی پیدا نشد.", show_alert=True)
+            return
+        user = await UserRepository(session).upsert_from_telegram(
+            callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name,
+        )
+        player = await GameRepository.join_substitute(session, game, user)
+        if player is None:
+            await callback.answer("ثبت شما در لیست جایگزین ممکن نیست.", show_alert=True)
+            return
+        await _render(callback, session, game, user.id)
+        group = await session.get(Group, game.group_id)
+        if group:
+            await callback.bot.send_message(
+                group.telegram_id,
+                f"🔁 {tg_name(user.display_name or user.first_name)} وارد لیست جایگزین شد؛ نوبت {player.substitute_position}.",
+            )
+        await callback.answer(f"در لیست جایگزین ثبت شد؛ نوبت {player.substitute_position}.")
+
 @router.callback_query(lambda c: c.data and c.data.startswith("lobby:reserve:"))
 async def reserve_game(callback: CallbackQuery) -> None:
     game_key = callback.data.split(":", 2)[2]
@@ -138,7 +167,7 @@ async def reserve_game(callback: CallbackQuery) -> None:
         await _render(callback, session, game, user.id)
         group = await session.get(Group, game.group_id)
         if group:
-            await callback.bot.send_message(group.telegram_id, f"بازیکن {tg_name(user.display_name or user.first_name)} وارد لیست جایگزین شد؛ جایگاه رزرو {player.reserve_position}.")
+            await callback.bot.send_message(group.telegram_id, f"🪑 {tg_name(user.display_name or user.first_name)} وارد لیست رزرو شد؛ جایگاه رزرو {player.reserve_position}.")
         await callback.answer(f"رزرو شما ثبت شد؛ جایگاه رزرو {player.reserve_position}.")
 
 
