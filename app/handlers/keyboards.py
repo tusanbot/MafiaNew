@@ -338,8 +338,28 @@ def active_game_entry_keyboard(group_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def active_game_menu(group_id: int, back_callback: str | None = None, game_key: str | None = None, lobby_editable: bool = False) -> InlineKeyboardMarkup:
+def _game_menu_context(back_callback: str | None) -> str:
+    """Identify where the active-game menu was opened from.
+
+    The context is intentionally tiny because it is carried inside Telegram
+    callback_data. It lets shared scenario/host handlers return to the correct
+    parent menu instead of always rendering the lobby.
+    """
+    if back_callback == "groupmgmt:games":
+        return "groups"
+    if back_callback and back_callback.startswith("game:return_lobby:"):
+        return "lobby"
+    return "main"
+
+
+def active_game_menu(
+    group_id: int,
+    back_callback: str | None = None,
+    game_key: str | None = None,
+    lobby_editable: bool = False,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    context = _game_menu_context(back_callback)
     builder.row(InlineKeyboardButton(text="ℹ️ اطلاعات بازی", callback_data=f"gameadmin:info:{group_id}"))
     builder.row(InlineKeyboardButton(text="🛑 لغو بازی", callback_data=f"gameadmin:feature:{group_id}:cancel"))
     builder.row(InlineKeyboardButton(text="🏁 پایان بازی", callback_data=f"gameadmin:feature:{group_id}:finish"))
@@ -350,8 +370,8 @@ def active_game_menu(group_id: int, back_callback: str | None = None, game_key: 
     builder.row(InlineKeyboardButton(text="✨ امکانات اضافی", callback_data=f"gameadmin:extras:{group_id}"))
     if lobby_editable and game_key:
         builder.row(
-            InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}"),
-            InlineKeyboardButton(text="🎙 تغییر گرداننده", callback_data=f"gameadmin:host:{game_key}"),
+            InlineKeyboardButton(text="🎭 تغییر سناریو", callback_data=f"gameadmin:scenario:{game_key}:{context}"),
+            InlineKeyboardButton(text="🎙 تغییر گرداننده", callback_data=f"gameadmin:host:{game_key}:{context}"),
         )
     _back(builder, back_callback or "menu:active_game")
     return builder.as_markup()
