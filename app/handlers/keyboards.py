@@ -108,6 +108,58 @@ def group_default_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup
     return builder.as_markup()
 
 
+def group_visual_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"🎨 رنگ نوبت: {settings.default_turn_color}",
+        callback_data=f"groupdefaults:color:{group_id}:turn",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🎨 رنگ چالش: {settings.default_challenge_color}",
+        callback_data=f"groupdefaults:color:{group_id}:challenge",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🟢 نمایش رنگ نوبت: {'✅' if settings.default_turn_color_enabled else '❌'}",
+        callback_data=f"groupdefaults:toggle:{group_id}:default_turn_color_enabled",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"✨ اموجی‌های وضعیت: {'فعال' if settings.custom_emoji else 'پیش‌فرض'}",
+        callback_data=f"groupdefaults:emoji:{group_id}",
+    ))
+    _back(builder, "groupmgmt:defaults")
+    return builder.as_markup()
+
+
+def group_voting_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"🗳 حالت رأی اول: {'خودکار' if settings.default_voting_mode == 'auto' else 'دستی'}",
+        callback_data=f"groupdefaults:toggle_mode:{group_id}:voting",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🗳 رأی دوم: {'خودکار' if settings.default_vote2_selection_mode == 'auto' else 'دستی'}",
+        callback_data=f"groupdefaults:toggle_mode:{group_id}:vote2",
+    ))
+    builder.row(
+        InlineKeyboardButton(text=f"⏳ مکث رأی: {settings.default_voting_pre_delay_seconds}s", callback_data=f"groupdefaults:vote_time:{group_id}:pre"),
+        InlineKeyboardButton(text=f"⏱ زمان رأی: {settings.default_vote_seconds}s", callback_data=f"groupdefaults:vote_time:{group_id}:vote"),
+    )
+    _back(builder, "groupmgmt:defaults")
+    return builder.as_markup()
+
+
+def group_default_scenario_keyboard(group_id: int, scenarios) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for scenario in scenarios:
+        builder.row(InlineKeyboardButton(
+            text=f"🎭 {scenario.name_fa}",
+            callback_data=f"groupdefaults:setscenario:{group_id}:{scenario.id}",
+        ))
+    builder.row(InlineKeyboardButton(text="🧹 بدون سناریوی پیش‌فرض", callback_data=f"groupdefaults:setscenario:{group_id}:0"))
+    _back(builder, "groupmgmt:defaults")
+    return builder.as_markup()
+
+
 def group_player_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for field, label in (
