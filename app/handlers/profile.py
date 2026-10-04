@@ -424,8 +424,14 @@ async def profile_name_save(message: Message, state: FSMContext) -> None:
         await state.clear()
         await message.answer("ویرایش نام لغو شد.", reply_markup=profile_menu())
         return
+    import re
     if not 2 <= len(value) <= 40:
-        await message.answer("نام باید بین ۲ تا ۴۰ کاراکتر باشد.")
+        await message.answer("نام باید بین ۲ تا ۴۰ حرف باشد.")
+        return
+    # Display names are intentionally limited to Persian letters and spaces.
+    # Digits, Latin/Arabic letters, emoji, punctuation and symbols are rejected.
+    if not re.fullmatch(r"[آابپتثجچحخدذرزژسشصضطظعغفقکگلمنوهی‌ ]+", value):
+        await message.answer("❌ نام فقط باید شامل حروف فارسی باشد؛ عدد، حروف انگلیسی، اموجی و علامت مجاز نیست.")
         return
     async with session_factory() as session:
         user = await sync_telegram_user(session, message.from_user.id, message.from_user.username, message.from_user.first_name or "", message.from_user.last_name)
