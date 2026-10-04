@@ -4163,6 +4163,7 @@ async def tournament_finish(callback: CallbackQuery):
         t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
         if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
         players=list((await session.execute(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid))).scalars().all())
+        if t.status == 'finished': await callback.answer('این تورنمنت قبلاً تمام شده است.',show_alert=True); return
         if not any(p.final_rank for p in players): await callback.answer('ابتدا رتبه‌ها را ثبت کن.',show_alert=True); return
         for p in players:
             if p.final_rank and p.awarded_points: (await session.get(User,p.user_id)).score += p.awarded_points
