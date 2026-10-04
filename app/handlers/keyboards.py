@@ -44,6 +44,7 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🎮 مدیریت بازی فعال", callback_data="menu:active_game"))
     builder.row(InlineKeyboardButton(text="👥 مدیریت گروه", callback_data="menu:group_management"))
+    builder.row(InlineKeyboardButton(text="🏆 تورنمنت‌ها", callback_data="menu:tournaments"))
     if show_admin:
         builder.row(InlineKeyboardButton(text="🎭 سناریوها", callback_data="menu:scenarios"))
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات ربات", callback_data="menu:bot_settings"))
@@ -791,7 +792,6 @@ def leader_settings_keyboard(game_key: str, game, leader_selected: bool = False)
             callback_data=f"round:toggle_next:{game_key}",
         ),
     )
-    builder.row(InlineKeyboardButton(text="🛠 مدیریت بازی", callback_data=f"gameadmin:lobby:{game_key}"))
     if leader_selected:
         builder.row(InlineKeyboardButton(text="▶️ شروع دور", callback_data=f"round:start:{game_key}"))
     return builder.as_markup()
@@ -1323,3 +1323,31 @@ def scenario_delete_confirm_keyboard(scenario_id: int) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="انصراف", callback_data="menu:scenarios"),
     )
     return builder.as_markup()
+
+
+def tournament_admin_menu(group_id: int) -> InlineKeyboardMarkup:
+    b=InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="➕ افزودن تورنمنت", callback_data=f"tournament:add:{group_id}"))
+    b.row(InlineKeyboardButton(text="🗂 مدیریت تورنمنت‌ها", callback_data=f"tournament:list:{group_id}"))
+    _back(b, "menu:group_management")
+    return b.as_markup()
+
+def tournament_manage_menu(tid: int, group_id: int) -> InlineKeyboardMarkup:
+    b=InlineKeyboardBuilder()
+    for label, action in (
+        ("✏️ ویرایش تورنمنت","edit"),("🗑 حذف تورنمنت","delete"),
+        ("👤 افزودن بازیکن","add_player"),("🏅 ثبت امتیاز","score"),
+        ("🏁 ثبت گروه فینال","final"),("🎲 قرعه‌کشی","draw"),
+        ("👥 مدیریت گروه‌ها","groups"),("🏆 پایان تورنمنت","finish"),
+    ):
+        b.row(InlineKeyboardButton(text=label, callback_data=f"tournament:{action}:{tid}"))
+    _back(b, f"tournament:list:{group_id}")
+    return b.as_markup()
+
+def tournament_public_menu(tid: int) -> InlineKeyboardMarkup:
+    b=InlineKeyboardBuilder()
+    b.row(InlineKeyboardButton(text="🏆 جدول امتیازات", callback_data=f"tourpub:scores:{tid}"))
+    b.row(InlineKeyboardButton(text="👥 گروه‌بندی", callback_data=f"tourpub:groups:{tid}"))
+    b.row(InlineKeyboardButton(text="🎮 بازی‌ها", callback_data=f"tourpub:games:{tid}"))
+    _back(b, "menu:tournaments")
+    return b.as_markup()
