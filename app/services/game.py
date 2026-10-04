@@ -142,6 +142,7 @@ async def create_game(
 async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
     players = await GameRepository.players(session, game.id)
     reserves = await GameRepository.reserves(session, game.id)
+    substitutes = await GameRepository.substitutes(session, game.id)
     scenario = await session.get(Scenario, game.scenario_id)
     min_players = scenario.min_players if scenario else 999
     max_players = scenario.max_players if scenario else 0
