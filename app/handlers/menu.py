@@ -80,6 +80,9 @@ class GameEventState(StatesGroup):
 class CustomEmojiState(StatesGroup):
     emoji = State()
 
+class TournamentState(StatesGroup):
+    input = State()
+
 
 class ScenarioAdminState(StatesGroup):
     name = State()
