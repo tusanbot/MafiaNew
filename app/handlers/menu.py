@@ -3935,27 +3935,18 @@ def _tour_date(raw):
         y,m,d=[int(x) for x in raw.strip().replace('-', '/').split('/')[:3]]
         if y >= 1700:
             return datetime(y,m,d,12,tzinfo=ZoneInfo('Asia/Tehran'))
-        # Jalali -> Gregorian for the Persian date format used by the bot.
-        jy, jm, jd = y, m, d
-        jy += 1597
-        days = -355668 + 365*jy + (jy//33)*8 + ((jy%33)+3)//4 + jd
-        days += (31 if jm <= 7 else 30)*(jm-1)
-        gy = 400*(days//146097); days %= 146097
-        if days > 36524:
-            gy += 100*((days-1)//36524); days=(days-1)%36524
-            if days >= 365: days += 1
-        gy += 4*(days//1461); days %= 1461
-        if days > 365:
-            gy += (days-1)//365; days=(days-1)%365
-        gd = days+1
-        leap = (gy%4==0 and gy%100!=0) or gy%400==0
-        month_days=[31,29 if leap else 28,31,30,31,30,31,31,30,31,30,31]
-        gm=1
-        while gd > month_days[gm-1]: gd -= month_days[gm-1]; gm += 1
-        return datetime(gy,gm,gd,12,tzinfo=ZoneInfo('Asia/Tehran'))
+        # Persian date: find the exact Gregorian date through the bot's
+        # canonical Gregorian -> Jalali converter.
+        from datetime import timedelta
+        from app.services.game import gregorian_to_jalali
+        cursor=datetime(y+621,1,1)
+        for offset in range(0, 400):
+            day=cursor+timedelta(days=offset)
+            if gregorian_to_jalali(day.year,day.month,day.day)==(y,m,d):
+                return day.replace(hour=12,tzinfo=ZoneInfo('Asia/Tehran'))
+        return None
     except (ValueError, TypeError):
         return None
-
 def _tour_prizes(raw):
     out=[]
     for line in raw.replace('،', '\n').replace(',', '\n').splitlines():
