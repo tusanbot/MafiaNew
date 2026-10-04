@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from aiogram.types import ChatMemberAdministrator, ChatMemberOwner, ChatMemberRestricted
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.db.models import Group, GroupSettings
 from app.repositories.groups import GroupRepository
@@ -77,9 +78,7 @@ async def register_group(session: AsyncSession, chat, user_id: int) -> Group:
 
     group = await GroupRepository.upsert_from_chat(session, chat)
     group = await GroupRepository.register(session, group, user_id)
-    settings = await session.scalar(
-        __import__("sqlalchemy", fromlist=["select"]).select(GroupSettings).where(GroupSettings.group_id == group.id)
-    )
+    settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
     if settings is None:
         session.add(GroupSettings(group_id=group.id))
         await session.flush()
