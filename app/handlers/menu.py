@@ -2154,12 +2154,26 @@ async def _ensure_draft(session, group, telegram_user_id: int):
     if draft:
         return draft
 
-    scenario = (await session.execute(
-        select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
-    )).scalars().first()
+    settings = await session.scalar(
+        select(GroupSettings).where(GroupSettings.group_id == group.id)
+    )
+    if settings is None:
+        settings = GroupSettings(group_id=group.id)
+        session.add(settings)
+        await session.flush()
+
+    scenario = None
+    if settings.default_scenario_id:
+        scenario = await session.get(Scenario, settings.default_scenario_id)
+        if scenario and (not scenario.enabled or scenario.key == "classic"):
+            scenario = None
+    if scenario is None:
+        scenario = (await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().first()
     if not scenario:
         return None
-    return await create_game(session, group, scenario, user, status="draft", reserve_enabled=True)
+    return await create_game(session, group, scenario, user, status="draft")
 
 
 async def render_new_game_menu(session, group, user_id: int | None = None):
