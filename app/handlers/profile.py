@@ -26,11 +26,11 @@ async def _profile_rich_html(session, user: User) -> str:
         f"<h2>📊 امتیازات {tg_name(user.display_name or user.first_name or 'بازیکن')}</h2>"
         f"<table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>"
         f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr>"
-        f"<tr><td>رتبه</td><td>{rank} — #{position}</td></tr>"
+        f"<tr><td>سطح</td><td>{rank}</td></tr><tr><td>جایگاه</td><td>#{position}</td></tr>"
         f"<tr><td>بازی</td><td>{int(user.games_played)}</td></tr>"
         f"<tr><td>برد</td><td>{int(user.games_won)}</td></tr>"
         f"<tr><td>نرخ برد</td><td>{win_rate:.0f}%</td></tr></table>"
-        f"<p>{('تا رتبه بعد: ' + str(remaining) + ' امتیاز') if next_score is not None else 'بالاترین رتبه را دارید.'}</p>"
+        f"<p>{('تا سطح بعد: ' + str(remaining) + ' امتیاز') if next_score is not None else 'بالاترین سطح را دارید.'}</p>"
         '<tg-button-row align="center"><tg-button type="callback_data" style="primary" data="profile:score">💰 امتیازات</tg-button><tg-button type="callback_data" style="success" data="profile:rank">🏆 رتبه</tg-button></tg-button-row>'
         '<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>'
     )
@@ -386,12 +386,12 @@ async def profile_rank(callback: CallbackQuery) -> None:
         user = await sync_telegram_user(session, callback.from_user.id, callback.from_user.username, callback.from_user.first_name or "", callback.from_user.last_name)
         position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
         rank, next_score, remaining = rank_progress(user.score)
-        text = "🏆 رتبه شما\n\n" + f"رتبه: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
+        text = "🏆 سطح شما\n\n" + f"سطح: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
         text += f"تا رتبه بعد: {remaining} امتیاز" if next_score is not None else "بالاترین رتبه را دارید."
         rich_html = (
-            f'<h2>🏆 رتبه شما</h2>'
+            f'<h2>🏆 سطح شما</h2>'
             f'<table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>'
-            f'<tr><td>رتبه</td><td>{rank}</td></tr>'
+            f'<tr><td>سطح</td><td>{rank}</td></tr>'
             f'<tr><td>جایگاه</td><td>#{position}</td></tr>'
             f'<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr></table>'
             f'<p>{("تا رتبه بعد: " + str(remaining) + " امتیاز") if next_score is not None else "بالاترین رتبه را دارید."}</p>'
