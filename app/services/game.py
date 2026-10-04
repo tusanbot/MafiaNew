@@ -165,6 +165,8 @@ async def create_game(
         game.voting_mode = settings.default_voting_mode
         game.vote2_selection_mode = settings.default_vote2_selection_mode
         game.emoji_settings = settings.default_emoji_settings
+        game.custom_emoji_ids = settings.custom_emoji_ids
+        game.custom_emoji_enabled = settings.custom_emoji
         await session.commit()
         await session.refresh(game)
     await assign_game_number(session, game)
