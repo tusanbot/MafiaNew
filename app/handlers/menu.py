@@ -1009,10 +1009,31 @@ async def finish_game_result(callback: CallbackQuery) -> None:
         labels = {"citizen": "برد شهروند", "mafia": "برد مافیا", "independent": "برد مستقل", "citizen_independent": "برد شهروند/مستقل", "draw": "مساوی"}
         await callback.message.edit_text(
             f"🏁 <b>تعیین نتیجه بازی</b>\n\nنتیجه انتخاب‌شده: <b>{labels.get(winner, winner)}</b>\n\nآیا نتیجه را تأیید می‌کنید؟",
-            reply_markup=finish_game_confirm_keyboard(group.id, winner),
+            reply_markup=finish_game_confirm_keyboard(group.id, winner, f"day:finish_back:{game.game_key}"),
             parse_mode="HTML",
         )
     await callback.answer("نتیجه انتخاب شد؛ تأیید کنید.")
+
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:finish_change:"))
+async def finish_game_change_winner(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    group_id = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not game or game.status != "running":
+            await callback.answer("بازی در حال اجرا پیدا نشد.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            "🏁 <b>تعیین برنده بازی</b>\n\nتیم برنده را انتخاب کنید:",
+            reply_markup=__import__("app.handlers.keyboards", fromlist=["finish_game_keyboard"]).finish_game_keyboard(
+                group.id, f"day:finish_back:{game.game_key}"
+            ),
+            parse_mode="HTML",
+        )
+    await callback.answer("انتخاب برنده را دوباره انجام بده.")
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:finish_confirm:"))
