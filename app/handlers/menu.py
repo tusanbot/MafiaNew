@@ -24,6 +24,9 @@ from app.handlers.keyboards import (
     group_notification_settings_menu,
     group_visual_settings_menu,
     group_custom_emoji_menu,
+    group_game_emoji_menu,
+    group_achievement_emoji_menu,
+    group_tag_emoji_menu,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
     main_menu,
@@ -57,7 +60,7 @@ from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
-from app.utils.custom_emoji import dump_emoji_map, extract_custom_emoji_id, game_emoji, normalize_emoji_map
+from app.utils.custom_emoji import dump_emoji_map, extract_custom_emoji_id, game_emoji, normalize_emoji_map, custom_emoji_html
 from uuid import uuid4
 
 router = Router(name="menu")
@@ -111,7 +114,7 @@ async def _bot_is_active(bot, group: Group) -> bool:
 
 async def _manageable_groups(session, bot, user_id: int) -> list[Group]:
     result = await session.execute(
-        select(Group).where(Group.is_active.is_(True), Group.registered_at.is_not(None)).order_by(Group.title)
+        select(Group).where(Group.is_active.is_(True)).order_by(Group.title)
     )
     groups = []
     for group in result.scalars().all():
@@ -158,7 +161,7 @@ async def _can_manage_game_events(session, bot, game: Game, actor: User, group: 
 
 async def _selected_group(session, bot, user_id: int, group_id: int) -> Group | None:
     group = await session.get(Group, group_id)
-    if not group or not group.is_active or group.registered_at is None:
+    if not group or not group.is_active:
         return None
     if not await _is_group_admin(bot, group, user_id):
         return None
@@ -747,7 +750,7 @@ async def group_defaults_handler(callback: CallbackQuery, state: FSMContext) -> 
         await session.commit()
         if action in {"visual", "emoji", "color"}:
             markup = group_visual_settings_menu(group.id, settings)
-        elif action in {"emoji_menu", "emoji_toggle", "emoji_clear"}:
+        elif action in {"emoji_menu", "emoji_toggle", "emoji_clear", "achievement_emoji_clear", "tag_emoji_clear"}:
             markup = group_custom_emoji_menu(group.id, settings)
         elif action in {"voting", "toggle_mode"}:
             markup = group_voting_settings_menu(group.id, settings)
@@ -764,6 +767,7 @@ async def custom_emoji_capture(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     group_id = data.get("group_id")
     key = data.get("emoji_key")
+    target_type = data.get("target_type", "game")
     if not group_id or not key:
         await state.clear()
         return
@@ -776,9 +780,18 @@ async def custom_emoji_capture(message: Message, state: FSMContext) -> None:
                 await message.answer("دسترسی گروه تأیید نشد.")
                 return
             settings = await _ensure_group_settings(session, group)
-            mapping = normalize_emoji_map(settings.custom_emoji_ids)
-            mapping.pop(key, None)
-            settings.custom_emoji_ids = dump_emoji_map(mapping)
+            if target_type == "achievement":
+                achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+                if achievement:
+                    achievement.custom_emoji_id = None
+            elif target_type == "tag":
+                achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+                if achievement:
+                    achievement.tag_custom_emoji_id = None
+            else:
+                mapping = normalize_emoji_map(settings.custom_emoji_ids)
+                mapping.pop(key, None)
+                settings.custom_emoji_ids = dump_emoji_map(mapping)
             await session.commit()
         await state.clear()
         await message.answer("🧹 اموجی این بخش حذف شد.")
@@ -799,17 +812,34 @@ async def custom_emoji_capture(message: Message, state: FSMContext) -> None:
             await message.answer("دسترسی گروه تأیید نشد.")
             return
         settings = await _ensure_group_settings(session, group)
-        mapping = normalize_emoji_map(settings.custom_emoji_ids)
-        mapping[key] = custom_id
-        settings.custom_emoji_ids = dump_emoji_map(mapping)
-        settings.custom_emoji = True
+        if target_type == "achievement":
+            achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+            if not achievement:
+                await state.clear()
+                await message.answer("دستاورد پیدا نشد.")
+                return
+            achievement.custom_emoji_id = custom_id
+            label = achievement.name_fa
+        elif target_type == "tag":
+            achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+            if not achievement or not achievement.tag_key:
+                await state.clear()
+                await message.answer("تگ پیدا نشد.")
+                return
+            achievement.tag_custom_emoji_id = custom_id
+            label = achievement.tag_name or achievement.name_fa
+        else:
+            mapping = normalize_emoji_map(settings.custom_emoji_ids)
+            mapping[key] = custom_id
+            settings.custom_emoji_ids = dump_emoji_map(mapping)
+            settings.custom_emoji = True
+            label = key
         await session.commit()
 
     await state.clear()
     await message.answer(
-        f"✅ اموجی متحرک «{key}» ذخیره شد.\n"
-        "از این به بعد در پیام‌های مربوط به این رویداد استفاده می‌شود؛ "
-        "اگر شناسه نامعتبر باشد، Unicode معمولی جایگزین خواهد شد."
+        f"✅ اموجی متحرک «{label}» ذخیره شد.\n"
+        "اموجی قبلی با این مورد جایگزین شد و در صورت خطای Telegram، اموجی معمولی نمایش داده می‌شود."
     )
 
 
