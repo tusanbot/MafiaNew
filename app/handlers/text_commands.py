@@ -488,6 +488,38 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
     await message.answer(response)
 
 
+@router.message(_exact("جایگزین", "sub", "substitute"))
+async def text_substitute(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"}:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        if not game or game.status not in {"waiting", "running"}:
+            await message.answer("بازی فعالی وجود ندارد.")
+            return
+        requester = message.from_user
+        if not requester:
+            return
+        replied = message.reply_to_message.from_user if message.reply_to_message else None
+        target_tg_id = replied.id if replied else requester.id
+        target_user = await UserRepository(session).get_by_telegram_id(target_tg_id)
+        if not target_user:
+            target_user = await UserRepository(session).upsert_from_telegram(
+                target_tg_id,
+                replied.username if replied else requester.username,
+                replied.first_name if replied else requester.first_name or "",
+                replied.last_name if replied else requester.last_name,
+            )
+        player = await GameRepository.join_substitute(session, game, target_user)
+        if not player:
+            await message.answer("این بازیکن قبلاً در بازی یا لیست جایگزین ثبت شده است.")
+            return
+        await message.answer(
+            f"🔁 {tg_name(target_user.display_name or target_user.first_name or 'بازیکن')} وارد لیست جایگزین شد.\n"
+            f"📋 نوبت جایگزینی: <b>{player.substitute_position}</b>",
+            parse_mode="HTML",
+        )
+
 @router.message(_exact("قفل بازی", "قفل شب", "قفل نوبت"))
 async def text_toggle_lock(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
@@ -633,12 +665,38 @@ async def text_next(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("دستورات", "دستورها"))
 async def text_commands(message: Message, state: FSMContext) -> None:
-    await message.answer(
-        "📚 دستورات متنی\n\n"
-        "پیوی: پروفایل، نقش من، رتبه\n"
-        "گروه: لابی، انتخاب سردست، تنظیمات بازی، شروع دور، لغو بازی\n"
-        "کنترل بازی: نکست، بعدی، قفل بازی، قفل شب، قفل نوبت\n"
-        "مدیریت بازیکن: تذکر، تذکر-، کیک بازیکن، سکوت بازیکن، ترن اضافه، تولد بازیکن، حذف بازیکن\n\n"
-        "دستور فقط وقتی اجرا می‌شود که متن پیام دقیقاً برابر خود دستور باشد؛ "
-        "مثلاً «جایگزین میخوایم» هیچ دستوری را اجرا نمی‌کند."
-    )
+    lines = [
+        "📚 <b>دستورات متنی</b>",
+        "",
+        "پیوی:",
+        "<code>پنل</code> — باز کردن پنل شخصی",
+        "<code>پروفایل</code> — نمایش پروفایل",
+        "<code>نقش من</code> — نمایش نقش بازی فعلی",
+        "<code>رتبه</code> — نمایش رتبه‌بندی",
+        "",
+        "بازی:",
+        "<code>لابی</code> — نمایش لابی",
+        "<code>بازیکنان</code> — نمایش بازیکنان و جایگزین‌ها",
+        "<code>جایگزین</code> — ورود شما یا بازیکن ریپلای‌شده به لیست جایگزین",
+        "<code>انتخاب سردست</code> — انتخاب سردست",
+        "<code>تنظیمات بازی</code> — باز کردن تنظیمات",
+        "<code>شروع دور</code> — شروع دور",
+        "<code>لغو بازی</code> — لغو بازی",
+        "",
+        "کنترل:",
+        "<code>نکست</code> — رفتن به نوبت بعد",
+        "<code>بعدی</code> — رفتن به بازیکن بعدی رأی‌گیری",
+        "<code>قفل بازی</code> — روشن/خاموش کردن قفل چت",
+        "<code>قفل شب</code> — روشن/خاموش کردن قفل شب",
+        "<code>قفل نوبت</code> — روشن/خاموش کردن قفل نوبت",
+        "",
+        "مدیریت بازیکن — روی پیام بازیکن ریپلای کن:",
+        "<code>تذکر</code> — ثبت تذکر",
+        "<code>تذکر-</code> — حذف یک تذکر",
+        "<code>کیک بازیکن</code> — خروج بازیکن با کیک",
+        "<code>سکوت بازیکن</code> — ساکت کردن بازیکن برای این دور",
+        "<code>ترن اضافه</code> — دادن ترن اضافه",
+        "<code>تولد بازیکن</code> — بازگرداندن بازیکن کشته‌شده",
+        "<code>حذف بازیکن</code> — حذف بازیکن",
+    ]
+    await message.answer("\n".join(lines), parse_mode="HTML")
