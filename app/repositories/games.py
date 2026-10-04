@@ -92,6 +92,7 @@ class GameRepository:
         turn_seconds: int = 120,
         challenge_seconds: int = 60,
         extra_challenge_seconds: int = 60,
+        tournament_id: int | None = None,
     ) -> Game:
         """Create a Game using only settings that are part of the Game schema."""
         game = Game(
@@ -99,6 +100,7 @@ class GameRepository:
             group_id=group.id,
             scenario_id=scenario.id,
             host_user_id=host.id,
+            tournament_id=tournament_id,
             status=status,
             phase="lobby",
             auto_play=auto_play,
