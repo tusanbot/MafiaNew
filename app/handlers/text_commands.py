@@ -169,13 +169,18 @@ async def text_players(message: Message, state: FSMContext) -> None:
             return
         players = await GameRepository.players(session, game.id)
         reserves = await GameRepository.reserves(session, game.id)
+        substitutes = await GameRepository.substitutes(session, game.id)
         lines = ["👥 بازیکنان حاضر", ""]
         for player, user in players:
             lines.append(f"{player.seat}. {tg_name(user.display_name or user.first_name or 'بازیکن')}")
         if reserves:
-            lines += ["", "🔁 جایگزین‌ها"]
+            lines += ["", "🪑 لیست رزرو"]
             for player, user in reserves:
                 lines.append(f"{player.reserve_position}. {tg_name(user.display_name or user.first_name or 'بازیکن')}")
+        if substitutes:
+            lines += ["", "🔁 لیست جایگزین (Sub)"]
+            for player, user in substitutes:
+                lines.append(f"{player.substitute_position}. {tg_name(user.display_name or user.first_name or 'بازیکن')}")
     await message.answer("\n".join(lines))
 
 
