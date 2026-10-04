@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Scenario, User
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Scenario, User, Vote
 
 
 class GameRepository:
