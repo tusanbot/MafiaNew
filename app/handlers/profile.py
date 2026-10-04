@@ -324,11 +324,12 @@ async def _achievements_text(session, user: User) -> str:
     rows = await achievement_progress(session, user)
     lines = ["🏅 دستاوردها", f"تعداد کسب‌شده: {user.achievements_count}", ""]
     for achievement, earned, current, target in rows:
+        description = (achievement.description or "برای این دستاورد هنوز توضیحی ثبت نشده است.").strip()
         if earned:
-            lines.append(f"{achievement.icon} {achievement.name_fa}  ✓  +{achievement.points}")
+            lines.append(f"{achievement.icon} {achievement.name_fa}  ✓  +{achievement.points}\n   {description}")
         else:
             progress = f"{current}/{target}" if target is not None else str(current)
-            lines.append(f"🔒 {achievement.name_fa}  —  {progress}\n   {achievement.description}")
+            lines.append(f"🔒 {achievement.name_fa}  —  {progress}\n   {description}")
     return "\n".join(lines)
 
 @router.message(Command("achievements"))
