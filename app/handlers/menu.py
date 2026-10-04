@@ -1,14 +1,15 @@
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from html import escape
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import desc, func, select
 import json
 
-from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
