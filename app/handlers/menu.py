@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import desc, func, select
 import json
 
-from app.db.models import Game, GameEvent, GamePlayer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
@@ -1706,6 +1706,7 @@ async def _game_result_rich_html(session, game, winner: str) -> str:
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
         f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
+        f'<tg-button type="callback_data" style="link" data="gameresult:private:{game.id}">📩 نمایش نتیجه برای من</tg-button>'
         '</tg-button-row></p>'
     )
 
