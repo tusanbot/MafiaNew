@@ -1630,18 +1630,30 @@ async def cancel_game_confirm(callback: CallbackQuery) -> None:
             payload=json.dumps({"reason": "admin_cancelled"}, ensure_ascii=False),
         ))
         await session.commit()
+
+        # Release Telegram-side locks and remove the canonical roster before
+        # destructively deleting the cancelled game.
         try:
-            from app.handlers.gameplay import delete_main_roster, release_global_lock
+            from app.handlers.gameplay import release_global_lock
             await release_global_lock(callback.bot, session, game)
-            await delete_main_roster(callback.bot, session, game)
-            await release_game_number(session, game)
-            await callback.bot.send_message(
-                group.telegram_id,
-                "❌ بازی توسط گرداننده لغو شد."
-            )
         except Exception:
             pass
-        await callback.message.edit_text("بازی لغو شد و سوابق آن برای تاریخچه حفظ شد.", reply_markup=group_management_menu())
+        try:
+            from app.handlers.gameplay import delete_main_roster
+            await delete_main_roster(callback.bot, session, game)
+        except Exception:
+            pass
+        try:
+            await release_game_number(session, game)
+        except Exception:
+            pass
+
+        await GameRepository.purge(session, game.id)
+        await callback.bot.send_message(
+            group.telegram_id,
+            "❌ بازی لغو شد و اطلاعات بازی از پایگاه داده حذف شد."
+        )
+        await callback.message.edit_text("بازی لغو شد و اطلاعات بازی حذف شد.", reply_markup=group_management_menu())
     await callback.answer("بازی لغو شد.")
 
 
