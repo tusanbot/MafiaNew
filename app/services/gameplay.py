@@ -1121,10 +1121,7 @@ async def select_challenge_placement(session, game, turn_owner: User, request_ev
     data = _payload(event)
     if data.get("status") != "accepted":
         raise ValueError("ابتدا باید یک درخواست چالش انتخاب شود.")
-    started = datetime.fromisoformat(turn["started_at"])
     now = datetime.now(timezone.utc)
-    if now - started >= timedelta(minutes=1):
-        placement = "after"
     data["placement"] = placement
     data["placement_selected_at"] = now.isoformat()
     event.payload = json.dumps(data, ensure_ascii=False)
