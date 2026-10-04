@@ -63,7 +63,7 @@ class ProfileEditState(StatesGroup):
 async def _profile_text(session, user: User) -> str:
     position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
     rank, next_rank_score, rank_remaining = rank_progress(user.score)
-    rank_hint = f"تا رتبه بعد: {rank_remaining} امتیاز" if next_rank_score is not None else "بالاترین رتبه"
+    rank_hint = f"تا سطح بعد: {rank_remaining} امتیاز" if next_rank_score is not None else "بالاترین رتبه"
     win_rate = (user.games_won / user.games_played * 100) if user.games_played else 0
     role_rows = list((await session.execute(
         select(UserRoleStat, Role).join(Role, Role.id == UserRoleStat.role_id)
@@ -387,14 +387,14 @@ async def profile_rank(callback: CallbackQuery) -> None:
         position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
         rank, next_score, remaining = rank_progress(user.score)
         text = "🏆 سطح شما\n\n" + f"سطح: {rank}\nجایگاه: #{position}\nامتیاز: {user.score}\n"
-        text += f"تا رتبه بعد: {remaining} امتیاز" if next_score is not None else "بالاترین رتبه را دارید."
+        text += f"تا سطح بعد: {remaining} امتیاز" if next_score is not None else "بالاترین سطح را دارید."
         rich_html = (
             f'<h2>🏆 سطح شما</h2>'
             f'<table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>'
             f'<tr><td>سطح</td><td>{rank}</td></tr>'
             f'<tr><td>جایگاه</td><td>#{position}</td></tr>'
             f'<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr></table>'
-            f'<p>{("تا رتبه بعد: " + str(remaining) + " امتیاز") if next_score is not None else "بالاترین رتبه را دارید."}</p>'
+            f'<p>{("تا سطح بعد: " + str(remaining) + " امتیاز") if next_score is not None else "بالاترین سطح را دارید."}</p>'
             '<tg-button-row align="center">'
             '<tg-button type="callback_data" data="profile:score">💰 امتیازات</tg-button>'
             '<tg-button type="callback_data" style="primary" data="menu:root">🏠 منوی اصلی</tg-button>'
