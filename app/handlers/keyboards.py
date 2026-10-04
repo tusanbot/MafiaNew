@@ -341,10 +341,11 @@ def finish_game_keyboard(group_id: int, back_callback: str | None = None) -> Inl
     return builder.as_markup()
 
 
-def finish_game_confirm_keyboard(group_id: int, winner: str) -> InlineKeyboardMarkup:
+def finish_game_confirm_keyboard(group_id: int, winner: str, back_callback: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="تأیید نتیجه", callback_data=f"gameadmin:finish_confirm:{group_id}:{winner}"))
-    builder.row(InlineKeyboardButton(text="تغییر برنده", callback_data=f"gameadmin:feature:{group_id}:finish"))
+    builder.row(InlineKeyboardButton(text="تغییر برنده", callback_data=f"gameadmin:finish_change:{group_id}"))
+    _back(builder, back_callback or f"gameadmin:features:{group_id}")
     return builder.as_markup()
 
 
