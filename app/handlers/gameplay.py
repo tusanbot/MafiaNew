@@ -208,12 +208,17 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
     text = (f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n"
             f"⏱ {_duration_text(_turn_duration(game, kind))}{request_section}")
-    msg = await bot.send_message(
-        chat_id, text,
-        reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
-                                       game.turn_color, game.challenge_color, True, kind == "main" and not turn.get("challenge_consumed", False), requests),
-        parse_mode="HTML",
+    markup = day_turn_keyboard(
+        game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
+        game.turn_color, game.challenge_color, True,
+        kind == "main" and not turn.get("challenge_consumed", False), requests,
     )
+    try:
+        msg = await bot.send_message(chat_id, text, reply_markup=markup, parse_mode="HTML")
+    except Exception:
+        # A malformed/unsupported rich keyboard must never leave the turn without
+        # a public message. Retry the same turn as plain HTML without controls.
+        msg = await bot.send_message(chat_id, text, parse_mode="HTML")
     await _register_turn_message(session, game, chat_id=chat_id, message_id=msg.message_id, turn=turn)
     await _schedule_turn_live(bot, game.game_key)
     return msg
@@ -1272,9 +1277,16 @@ async def next_turn_handler(callback: CallbackQuery):
                 )
             else:
                 new_turn = await current_turn(session, game.id)
-                if new_turn:
+                if not new_turn:
+                    await callback.answer("⚠️ نوبت بعدی ساخته نشد؛ لطفاً دوباره «نکست» را بزنید.", show_alert=True)
+                    return
+                try:
                     await _send_turn_message(callback.bot, session, game, chat_id, new_turn)
                     await _schedule_auto_next(callback.bot, game.game_key, chat_id)
+                except Exception:
+                    await callback.answer("⚠️ نوبت بعدی ایجاد شد اما پیام آن ارسال نشد. دوباره تلاش کنید.", show_alert=True)
+                    return
+        await callback.answer("✅ انجام شد.")
 @router.callback_query(lambda c: c.data and c.data.startswith("day:night:"))
 async def day_night_handler(callback: CallbackQuery):
     key = callback.data.split(":", 2)[2]
