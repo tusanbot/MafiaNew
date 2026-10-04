@@ -594,6 +594,196 @@ async def select_group(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data.startswith("groupdefaults:"))
+async def group_defaults_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    try:
+        group_id = int(parts[2])
+    except (IndexError, ValueError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
+            return
+        settings = await _ensure_group_settings(session, group)
+
+        if action == "toggle" and len(parts) == 4:
+            field = parts[3]
+            allowed = {
+                "default_auto_play", "default_reserve_enabled", "default_challenge_enabled",
+                "default_next_host_enabled", "default_next_player_enabled", "default_next_auto_enabled",
+                "default_turn_color_enabled",
+            }
+            if field not in allowed:
+                await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+                return
+            setattr(settings, field, not bool(getattr(settings, field)))
+        elif action == "time" and len(parts) == 4:
+            kind = parts[3]
+            current = {
+                "turn": settings.default_turn_seconds,
+                "challenge": settings.default_challenge_seconds,
+                "extra_challenge": settings.default_extra_challenge_seconds,
+            }.get(kind)
+            if current is None:
+                await callback.answer("نوع زمان نامعتبر است.", show_alert=True)
+                return
+            from app.handlers.keyboards import duration_keyboard
+            await callback.message.edit_text(
+                "⏱ زمان موردنظر را انتخاب کنید:",
+                reply_markup=duration_keyboard("groupdefaults", group.id, kind, current, f"groupmgmt:select:defaults:{group.id}"),
+            )
+            await callback.answer()
+            return
+        elif action == "set_time" and len(parts) == 5:
+            kind, value = parts[3], int(parts[4])
+            mapping = {
+                "turn": "default_turn_seconds",
+                "challenge": "default_challenge_seconds",
+                "extra_challenge": "default_extra_challenge_seconds",
+                "vote_pre": "default_voting_pre_delay_seconds",
+                "vote_vote": "default_vote_seconds",
+            }
+            if kind not in mapping or not 15 <= value <= 600:
+                await callback.answer("مقدار زمان نامعتبر است.", show_alert=True)
+                return
+            setattr(settings, mapping[kind], value)
+        elif action == "scenario":
+            scenarios = (await session.execute(
+                select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+            )).scalars().all()
+            await callback.message.edit_text(
+                "🎭 سناریوی پیش‌فرض گروه را انتخاب کنید:",
+                reply_markup=group_default_scenario_keyboard(group.id, scenarios),
+            )
+            await callback.answer()
+            return
+        elif action == "setscenario" and len(parts) == 4:
+            scenario_id = int(parts[3])
+            if scenario_id == 0:
+                settings.default_scenario_id = None
+            else:
+                scenario = await session.get(Scenario, scenario_id)
+                if not scenario or not scenario.enabled or scenario.key == "classic":
+                    await callback.answer("سناریو قابل انتخاب نیست.", show_alert=True)
+                    return
+                settings.default_scenario_id = scenario.id
+        elif action == "visual":
+            await callback.message.edit_text(
+                "🎨 تنظیمات ظاهری پیش‌فرض",
+                reply_markup=group_visual_settings_menu(group.id, settings),
+            )
+            await callback.answer()
+            return
+        elif action == "voting":
+            await callback.message.edit_text(
+                "🗳 تنظیمات رأی‌گیری پیش‌فرض",
+                reply_markup=group_voting_settings_menu(group.id, settings),
+            )
+            await callback.answer()
+            return
+        elif action == "emoji":
+            settings.custom_emoji = not settings.custom_emoji
+        elif action == "color" and len(parts) == 4:
+            kind = parts[3]
+            colors = ["پیش‌فرض", "قرمز", "آبی", "سبز", "زرد", "بنفش"]
+            field = "default_turn_color" if kind == "turn" else "default_challenge_color"
+            current = getattr(settings, field)
+            setattr(settings, field, colors[(colors.index(current) + 1) % len(colors)] if current in colors else colors[0])
+        elif action == "toggle_mode" and len(parts) == 4:
+            field = "default_voting_mode" if parts[3] == "voting" else "default_vote2_selection_mode"
+            setattr(settings, field, "auto" if getattr(settings, field) != "auto" else "manual")
+        elif action == "vote_time" and len(parts) == 4:
+            kind = parts[3]
+            current = settings.default_voting_pre_delay_seconds if kind == "pre" else settings.default_vote_seconds
+            from app.handlers.keyboards import duration_keyboard
+            await callback.message.edit_text(
+                "⏱ زمان رأی را انتخاب کنید:",
+                reply_markup=duration_keyboard("groupdefaults", group.id, f"vote_{kind}", current, f"groupmgmt:select:defaults:{group.id}"),
+            )
+            await callback.answer()
+            return
+        await session.commit()
+        if action in {"visual", "emoji", "color"}:
+            markup = group_visual_settings_menu(group.id, settings)
+        elif action in {"voting", "toggle_mode"}:
+            markup = group_voting_settings_menu(group.id, settings)
+        else:
+            markup = group_default_settings_menu(group.id, settings)
+        await callback.message.edit_text(f"⚙️ تنظیمات پایه «{group.title}»", reply_markup=markup)
+    await callback.answer("تنظیم ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("groupplayers:"))
+async def group_players_settings_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    try:
+        group_id = int(parts[2])
+    except (IndexError, ValueError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
+            return
+        settings = await _ensure_group_settings(session, group)
+        if parts[1] == "toggle" and len(parts) == 4:
+            field = parts[3]
+            allowed = {
+                "allow_player_join", "allow_reserve_queue", "allow_substitute_queue",
+                "auto_silence_on_max_warning", "auto_kick_on_max_warning",
+            }
+            if field not in allowed:
+                await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+                return
+            setattr(settings, field, not bool(getattr(settings, field)))
+        elif parts[1] == "warnings":
+            settings.max_warnings = 1 if settings.max_warnings >= 5 else settings.max_warnings + 1
+        await session.commit()
+        await callback.message.edit_text(
+            f"👥 تنظیمات بازیکنان «{group.title}»",
+            reply_markup=group_player_settings_menu(group.id, settings),
+        )
+    await callback.answer("تنظیم ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("groupnotify:toggle:"))
+async def group_notification_settings_handler(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست اعلان نامعتبر است.", show_alert=True)
+        return
+    group_id, key = int(parts[2]), parts[3]
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی گروه تأیید نشد.", show_alert=True)
+            return
+        settings = await _ensure_group_settings(session, group)
+        try:
+            values = json.loads(settings.notification_settings or "{}")
+        except (TypeError, ValueError):
+            values = {}
+        values[key] = not bool(values.get(key, True))
+        settings.notification_settings = json.dumps(values, ensure_ascii=False)
+        await session.commit()
+        await callback.message.edit_text(
+            f"🔔 اعلان‌های «{group.title}»",
+            reply_markup=group_notification_settings_menu(group.id, settings),
+        )
+    await callback.answer("اعلان به‌روزرسانی شد.")
+
+
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:locks:"))
 async def legacy_group_locks(callback: CallbackQuery) -> None:
     await callback.answer("این بخش در نسخه جدید از منوی قفل گروه قابل دسترسی است.", show_alert=True)
