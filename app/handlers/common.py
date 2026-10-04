@@ -282,8 +282,9 @@ async def group_start_menu_callback(callback: CallbackQuery) -> None:
             from app.handlers.menu import render_new_game_menu
             from app.repositories.games import GameRepository
             # Every explicit "بازی جدید" starts a clean configuration draft.
-            # Returning from submenus uses newgame:menu and therefore preserves
-            # the current draft while navigating.
+            # Cancelled games are destructive by design; purge any leftovers
+            # from older bot versions before creating the next lobby.
+            await GameRepository.purge_cancelled(session, group.id)
             await GameRepository.delete_drafts(session, group.id)
             await callback.message.edit_text(
                 await render_new_game_menu(session, group, callback.from_user.id),
