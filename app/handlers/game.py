@@ -3,7 +3,7 @@ from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
 from aiogram.types import CallbackQuery
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.db.models import Group, GroupSettings, Scenario, User, GamePlayer
 from app.db.session import session_factory
@@ -120,7 +120,7 @@ async def join_game(callback: CallbackQuery) -> None:
                 return
             scenario = await session.get(Scenario, game.scenario_id)
             active_count = int(await session.scalar(
-                select(__import__("sqlalchemy").func.count(GamePlayer.id)).where(
+                select(func.count(GamePlayer.id)).where(
                     GamePlayer.game_id == game.id,
                     GamePlayer.is_reserved.is_(False),
                     GamePlayer.is_substitute.is_(False),
