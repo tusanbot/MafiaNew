@@ -1007,8 +1007,8 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        # Acknowledge immediately; DB/Telegram refresh must not block the callback.
-        await callback.answer("در حال ثبت درخواست چالش…")
+        # Do not acknowledge with a success message before validation; errors must
+        # be shown through the callback popup instead of a private-chat message.
         if not callback.message:
             return
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
@@ -1020,8 +1020,10 @@ async def turn_request_challenge_handler(callback: CallbackQuery):
                     message_id=None,
                 )
             except ValueError as exc:
-                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                await callback.answer(f"⚠️ {exc}", show_alert=True)
+                await session.rollback()
                 return
+        await callback.answer("✅ درخواست چالش ثبت شد.")
         asyncio.create_task(_refresh_turn_message_bg(callback.bot, key))
 
 @router.callback_query(lambda c: c.data and c.data.startswith("challenge:grant:"))
@@ -1036,13 +1038,13 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        await callback.answer("در حال تأیید چالش…")
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
             try:
                 result = await choose_challenge(session, game, actor, int(event_id))
             except ValueError as exc:
-                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                await callback.answer(f"⚠️ {exc}", show_alert=True)
+                await session.rollback()
                 return
         requester = await session.get(User, result["requester_id"])
         requester_name = requester.display_name or requester.first_name if requester else "بازیکن"
@@ -1103,14 +1105,14 @@ async def challenge_place_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        await callback.answer("در حال ثبت جایگاه چالش…")
         previous_turn = await current_turn(session, game.id)
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
             try:
                 result = await select_challenge_placement(session, game, actor, int(event_id), placement)
             except ValueError as exc:
-                await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
+                await callback.answer(f"⚠️ {exc}", show_alert=True)
+                await session.rollback()
                 return
             # Selecting the placement must not finish/invalidate the main turn.
             # The main turn remains the source of truth for an AFTER challenge;
@@ -1209,7 +1211,6 @@ async def next_turn_handler(callback: CallbackQuery):
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return
 
-        await callback.answer("⏩ در حال رفتن به نوبت بعدی…")
         lock = _turn_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
             fresh_turn = await current_turn(session, game.id)
@@ -1247,10 +1248,8 @@ async def next_turn_handler(callback: CallbackQuery):
                 else:
                     result = await next_turn(session, game)
             except ValueError as exc:
-                try:
-                    await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
-                except Exception:
-                    pass
+                await callback.answer(f"⚠️ {exc}", show_alert=True)
+                await session.rollback()
                 return
 
             chat_id = await _group_chat_id(session, game)
