@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     admin_ids: str = ""
     admin_id: str = ""
+    groq_api_key: str = ""
+    stt_model: str = "whisper-large-v3-turbo"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
