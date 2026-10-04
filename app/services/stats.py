@@ -1,7 +1,7 @@
 from sqlalchemy import select, func
 import json
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.db.models import Achievement, GameEvent, GamePlayer, Role, User, UserAchievement, UserRoleStat, Vote
+from app.db.models import Achievement, GameEvent, GamePlayer, Role, User, UserAchievement, UserRoleStat, UserScoreHistory, Vote
 
 ACHIEVEMENTS = (
     ("first_game", "اولین بازی", "اولین بازی کامل‌شده", "🎮", 10),
@@ -219,7 +219,7 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
             role_stat.kills += kills[user.id]; role_stat.saves += saves[user.id]
             role_stat.investigations += investigations[user.id]; role_stat.investigation_hits += investigation_hits[user.id]
         earned = await update_user_progress(session, user)
-        newly_earned[user.id] = {"achievements": earned, "score_delta": score_delta, "score_before": score_before, "score_after": user.score, "rank_before": rank_before, "rank_after": rank_for_score(user.score), "stats": {"kills": kills[user.id], "saves": saves[user.id], "investigations": investigations[user.id], "investigation_hits": investigation_hits[user.id], "correct_votes": correct_votes[user.id], "accepted_challenges": accepted_challenges[user.id], "faceoffs": faceoff_counts[user.id], "faceoff_wins": faceoff_wins[user.id], "survived": bool(player.alive), "performance": performance, "won": bool(winning)}}
+        newly_earned[user.id] = {"achievements": earned, "score_delta": score_delta, "score_before": score_before, "score_after": user.score, "rank_before": rank_for_score(score_before), "rank_after": rank_for_score(user.score), "stats": {"kills": kills[user.id], "saves": saves[user.id], "investigations": investigations[user.id], "investigation_hits": investigation_hits[user.id], "correct_votes": correct_votes[user.id], "accepted_challenges": accepted_challenges[user.id], "faceoffs": faceoff_counts[user.id], "faceoff_wins": faceoff_wins[user.id], "survived": bool(player.alive), "performance": performance, "won": bool(winning)}}
     # Build the in-game ranking after all players receive their final score.
     # Ranking is based on the score earned after this game; ties share a place.
     ordered = sorted(
@@ -242,6 +242,25 @@ async def record_game_result(session: AsyncSession, game_id: int, winner: str) -
             "independent": "مستقل",
         }.get(role.team if role else "", "نامشخص")
         report["alive"] = bool(player.alive)
+
+    # Persist a lightweight score/rank snapshot after every completed game.
+    # This is what powers the "rank change vs. one month ago" view later.
+    for uid, report in newly_earned.items():
+        user = by_user[uid][1]
+        position = (await session.scalar(
+            select(func.count(User.id)).where(
+                User.is_active.is_(True),
+                User.score > user.score,
+            )
+        ) or 0) + 1
+        session.add(UserScoreHistory(
+            user_id=uid,
+            game_id=game_id,
+            score_before=int(report["score_before"]),
+            score_delta=int(report["score_delta"]),
+            score_after=int(report["score_after"]),
+            rank_position=int(position),
+        ))
 
     return newly_earned
 
