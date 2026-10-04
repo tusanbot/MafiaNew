@@ -10,6 +10,7 @@ from sqlalchemy import func, select
 from app.db.models import Achievement, Group, GroupSettings, Role, User, UserAchievement, UserRoleStat
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu, profile_menu, profile_tags_keyboard
+from app.utils.custom_emoji import custom_emoji_html
 from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
@@ -43,7 +44,7 @@ async def _achievements_rich_html(session, user: User) -> str:
         description = (achievement.description or "برای این دستاورد هنوز توضیحی ثبت نشده است.").strip()
         if is_earned:
             body.append(
-                f"<tr><td>🏅 {achievement.name_fa}</td><td>{description}</td><td>✅ +{achievement.points}</td></tr>"
+                f"<tr><td>{custom_emoji_html(achievement.custom_emoji_id, achievement.icon or "🏅") } {achievement.name_fa}</td><td>{description}</td><td>✅ +{achievement.points}</td></tr>"
             )
         else:
             progress = f"{current}/{target}" if target is not None else str(current)
@@ -326,7 +327,7 @@ async def _achievements_text(session, user: User) -> str:
     for achievement, earned, current, target in rows:
         description = (achievement.description or "برای این دستاورد هنوز توضیحی ثبت نشده است.").strip()
         if earned:
-            lines.append(f"{achievement.icon} {achievement.name_fa}  ✓  +{achievement.points}\n   {description}")
+            lines.append(f"{custom_emoji_html(achievement.custom_emoji_id, achievement.icon or "🏅")} {achievement.name_fa}  ✓  +{achievement.points}\n   {description}")
         else:
             progress = f"{current}/{target}" if target is not None else str(current)
             lines.append(f"🔒 {achievement.name_fa}  —  {progress}\n   {description}")
