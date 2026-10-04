@@ -3430,6 +3430,8 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
         current_roles_text=current_roles_text,
         current_voting_rules=getattr(scenario, "voting_rules", "{}"),
         current_vote_rule_input="50",
+        max_players=scenario.max_players,
+        min_players=scenario.min_players,
         challenge_mode=scenario.challenge_mode,
         current_vote_defense_threshold=getattr(scenario, "vote_defense_threshold", 2),
     )
