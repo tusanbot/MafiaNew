@@ -2,10 +2,10 @@ from aiogram import Router, F
 from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 from sqlalchemy import select, func
 
-from app.db.models import Group, GroupSettings, Scenario, User, GamePlayer
+from app.db.models import Group, GroupSettings, Scenario, User, Game, GamePlayer
 from app.db.session import session_factory
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -83,7 +83,6 @@ async def group_management_from_lobby(callback: CallbackQuery) -> None:
         )
     await callback.answer()
 
-
 @router.callback_query(lambda c: c.data and c.data.startswith("game:return_lobby:"))
 async def return_to_lobby(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
@@ -119,7 +118,6 @@ async def join_game(callback: CallbackQuery) -> None:
         )
         player = await GameRepository.join(session, game, user)
         if player is None:
-            # Do not mask unrelated join failures as "seat full".
             settings = await session.scalar(
                 select(GroupSettings).where(GroupSettings.group_id == game.group_id)
             )
@@ -143,7 +141,6 @@ async def join_game(callback: CallbackQuery) -> None:
             return
         await _render(callback, session, game, user.id)
         await callback.answer(f"صندلی {player.seat} برای شما ثبت شد.")
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("lobby:substitute:"))
 async def lobby_substitute(callback: CallbackQuery) -> None:
@@ -183,10 +180,8 @@ async def reserve_game(callback: CallbackQuery) -> None:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         user = await UserRepository(session).upsert_from_telegram(
-            callback.from_user.id,
-            callback.from_user.username,
-            callback.from_user.first_name or "",
-            callback.from_user.last_name,
+            callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name,
         )
         player = await GameRepository.join_reserve(session, game, user)
         if player is None:
@@ -197,7 +192,6 @@ async def reserve_game(callback: CallbackQuery) -> None:
         if group:
             await callback.bot.send_message(group.telegram_id, f"🪑 {tg_name(user.display_name or user.first_name)} وارد لیست رزرو شد؛ جایگاه رزرو {player.reserve_position}.")
         await callback.answer(f"رزرو شما ثبت شد؛ جایگاه رزرو {player.reserve_position}.")
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("lobby:seat:"))
 async def change_or_take_seat(callback: CallbackQuery) -> None:
@@ -219,10 +213,8 @@ async def change_or_take_seat(callback: CallbackQuery) -> None:
             await callback.answer("تغییر صندلی در این مرحله ممکن نیست.", show_alert=True)
             return
         user = await UserRepository(session).upsert_from_telegram(
-            callback.from_user.id,
-            callback.from_user.username,
-            callback.from_user.first_name or "",
-            callback.from_user.last_name,
+            callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name,
         )
         player = await GameRepository.join_at_seat(session, game, user, seat)
         if player is None:
@@ -230,7 +222,6 @@ async def change_or_take_seat(callback: CallbackQuery) -> None:
             return
         await _render(callback, session, game, user.id)
         await callback.answer(f"صندلی {player.seat} برای شما ثبت شد.")
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("game:leave:"))
 async def leave_game(callback: CallbackQuery) -> None:
@@ -243,10 +234,8 @@ async def leave_game(callback: CallbackQuery) -> None:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
         user = await UserRepository(session).upsert_from_telegram(
-            callback.from_user.id,
-            callback.from_user.username,
-            callback.from_user.first_name or "",
-            callback.from_user.last_name,
+            callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name,
         )
         ok, promoted = await GameRepository.leave(session, game, user)
         if not ok:
@@ -258,7 +247,6 @@ async def leave_game(callback: CallbackQuery) -> None:
                 f"بازیکن رزرو {promoted.reserve_position or ''} به دلیل خالی شدن صندلی، وارد لیست اصلی بازی شد."
             )
         await callback.answer("از بازی خارج شدید.")
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("lobby:deal:"))
 async def deal_roles(callback: CallbackQuery) -> None:
@@ -279,14 +267,9 @@ async def deal_roles(callback: CallbackQuery) -> None:
         if not scenario or len(players) != scenario.max_players:
             await callback.answer(f"برای پخش نقش باید {scenario.max_players if scenario else 'تعداد کامل'} صندلی تکمیل باشد.", show_alert=True)
             return
-        # پاسخ callback را زود ارسال می‌کنیم تا دکمه در حالت loading گیر نکند؛
-        # ادامه‌ی پخش نقش مستقل از acknowledgement تلگرام انجام می‌شود.
         await callback.answer("در حال پخش نقش‌ها…")
-
         try:
             assignments = await assign_roles(session, game)
-            # role_messages فقط داده‌های انتساب را می‌خواند و قبل از تغییر وضعیت بازی
-            # ساخته می‌شود تا در صورت خطا، بازی ناخواسته وارد مرحله running نشود.
             group_list, private_messages = await role_messages(session, game, assignments)
         except Exception:
             await session.rollback()
@@ -294,11 +277,9 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 "پخش نقش انجام نشد. لطفاً دوباره تلاش کنید؛ وضعیت بازی به مرحله انتظار باقی ماند."
             )
             raise
-
         game.status = "running"
         game.phase = "setup"
         await session.commit()
-
         sent = 0
         failed = []
         for telegram_id, text in private_messages:
@@ -307,9 +288,6 @@ async def deal_roles(callback: CallbackQuery) -> None:
                 sent += 1
             except Exception:
                 failed.append(telegram_id)
-
-        # The host receives the complete role/side roster privately. Player
-        # messages never expose anyone else's role.
         try:
             if game.host_user_id:
                 host_user = await session.get(User, game.host_user_id)
@@ -321,7 +299,6 @@ async def deal_roles(callback: CallbackQuery) -> None:
                     )
         except Exception:
             pass
-
         try:
             await callback.message.delete()
         except Exception:
@@ -344,7 +321,6 @@ async def deal_roles(callback: CallbackQuery) -> None:
             except Exception:
                 pass
 
-
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:menu:"))
 async def leader_menu_handler(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
@@ -360,7 +336,6 @@ async def leader_menu_handler(callback: CallbackQuery) -> None:
         await callback.message.edit_text("👑 انتخاب سردست\n\nروش انتخاب را مشخص کنید:", reply_markup=leader_choice_keyboard(game.game_key, players))
     await callback.answer()
 
-
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:manual:"))
 async def leader_manual_handler(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
@@ -375,7 +350,6 @@ async def leader_manual_handler(callback: CallbackQuery) -> None:
         players = await GameRepository.players(session, game.id)
         await callback.message.edit_text("✋ انتخاب دستی سردست\n\nبازیکن موردنظر را انتخاب کنید:", reply_markup=leader_players_keyboard(game.game_key, players))
     await callback.answer()
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:pick:"))
 async def leader_pick_handler(callback: CallbackQuery) -> None:
@@ -410,7 +384,6 @@ async def leader_pick_handler(callback: CallbackQuery) -> None:
         )
     await callback.answer("سردست انتخاب شد.")
 
-
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:back:"))
 async def leader_back_handler(callback: CallbackQuery) -> None:
     if not callback.from_user or not callback.message:
@@ -424,7 +397,6 @@ async def leader_back_handler(callback: CallbackQuery) -> None:
             return
         await callback.message.edit_text("🎭 آماده شروع دور است.", reply_markup=leader_settings_keyboard(game.game_key, game, True))
     await callback.answer()
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("leader:auto:"))
 async def leader_selection_handler(callback: CallbackQuery) -> None:
@@ -521,7 +493,7 @@ async def next_mode_text_command(message: Message) -> None:
             await message.answer("⚠️ الان بازی در مرحله تنظیم نکست نیست.")
             return
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
-        if not host or host.telegram_id != message.from_user.id:
+        if not host or not message.from_user or host.telegram_id != message.from_user.id:
             await message.answer("⛔ فقط گرداننده می‌تواند وضعیت نکست را تغییر دهد.")
             return
         field = {"host":"next_host_enabled","player":"next_player_enabled","auto":"next_auto_enabled"}[mode]
@@ -637,6 +609,7 @@ async def round_start_handler(callback: CallbackQuery) -> None:
                 await _send_turn_message(callback.bot, session, game, group.telegram_id, turn)
                 await _schedule_auto_next(callback.bot, game.game_key, group.telegram_id)
     await callback.answer("دور شروع شد.")
+
 @router.callback_query(lambda c: c.data and c.data.startswith("gameadmin:lobby:"))
 async def lobby_game_management(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -667,7 +640,6 @@ async def lobby_game_management(callback: CallbackQuery) -> None:
             ),
         )
     await callback.answer()
-
 
 @router.callback_query(lambda c: c.data and c.data.startswith("groupadmin:lobby:"))
 async def lobby_group_management(callback: CallbackQuery) -> None:
