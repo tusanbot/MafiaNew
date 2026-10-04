@@ -599,7 +599,7 @@ async def lobby_game_management(callback: CallbackQuery) -> None:
             f"مدیریت بازی فعال\nگروه: {group.title}",
             reply_markup=active_game_menu(
                 group.id,
-                back_callback=f"groupmgmt:select:games:{group.id}",
+                back_callback=f"game:return_lobby:{game.game_key}",
                 game_key=game.game_key,
                 lobby_editable=waiting,
             ),
