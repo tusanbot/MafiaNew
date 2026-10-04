@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from sqlalchemy import desc, func, select
 import json
 
-from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
