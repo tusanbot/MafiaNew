@@ -4152,3 +4152,19 @@ async def tournament_group_delete(callback: CallbackQuery):
         t=await session.get(Tournament,tid); g=await session.get(TournamentGroup,gid)
         if t and g: await session.delete(g); await session.commit()
     await callback.message.edit_text('🗑 گروه حذف شد.',reply_markup=tournament_manage_menu(tid,t.group_id if t else 0)); await callback.answer()
+
+async def _tour_member(session,t,user_id):
+    u=await session.scalar(select(User).where(User.telegram_id==user_id))
+    if not u: return False
+    return bool(await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==t.id,TournamentPlayer.user_id==u.id)))
+
+@router.callback_query(lambda c: c.data=='menu:tournaments')
+async def public_tournaments(callback: CallbackQuery):
+    async with session_factory() as session:
+        u=await session.scalar(select(User).where(User.telegram_id==callback.from_user.id))
+        ts=list((await session.execute(select(Tournament).where(Tournament.status=='active').order_by(Tournament.start_at.desc()))).scalars().all()) if u else []
+    b=InlineKeyboardBuilder()
+    for t in ts: b.row(InlineKeyboardButton(text=f'{t.emoji} {t.name[:50]}',callback_data=f'tourpub:open:{t.id}'))
+    b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data='menu:root'))
+    await callback.message.edit_text('🏆 تورنمنت‌های فعال:',reply_markup=b.as_markup())
+    await callback.answer()
