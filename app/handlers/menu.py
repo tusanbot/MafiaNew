@@ -1348,7 +1348,7 @@ async def game_result_view(callback: CallbackQuery) -> None:
                 "🏁 نتیجه بازی" if view == "result"
                 else "🎭 لیست بازیکنان و نقش‌ها" if view == "roles"
                 else "🏆 رتبه‌بندی کلی گروه"
-            ) + "</h2>" + rich_body
+            ) + "</h2>" + rich_body +
             f'<p><tg-button-row align="center">'
             f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
             f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
