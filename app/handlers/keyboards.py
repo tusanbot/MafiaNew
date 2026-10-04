@@ -644,7 +644,8 @@ def profile_tags_keyboard(tags, active_key: str | None = None) -> InlineKeyboard
     builder = InlineKeyboardBuilder()
     for achievement in tags:
         mark = "✅" if achievement.tag_key == active_key else "🏷️"
-        label = f"{mark} {achievement.tag_emoji or '🏷️'} {achievement.tag_name or achievement.name_fa}"
+        current = "✨" if getattr(achievement, "tag_custom_emoji_id", None) else (achievement.tag_emoji or "🏷️")
+        label = f"{mark} {current} {achievement.tag_name or achievement.name_fa}"
         builder.row(InlineKeyboardButton(text=label, callback_data=f"profile:tag:{achievement.tag_key}"))
     if active_key:
         builder.row(InlineKeyboardButton(text="🧹 حذف تگ فعال", callback_data="profile:tag:clear"))
