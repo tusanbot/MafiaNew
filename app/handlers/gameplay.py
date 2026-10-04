@@ -1539,33 +1539,24 @@ async def _vote_target_message(bot, session, game, chat_id: int):
             lines.append("هنوز کسی رای نداده")
         markup = vote1_target_keyboard(game.game_key, target_id)
     else:
-        candidates = [int(x) for x in state.get("queue", [])]
-        records = await _vote_records_for_phase(session, game, round_no, phase)
-        selected_by = {int(vote.voter_user_id): int(vote.target_user_id) for vote, _ in records}
-        users = {}
-        for uid in candidates:
-            user = await session.get(User, uid)
-            if user:
-                users[uid] = user
-        lines = ["🗳 رای گیری دوم", "", "مدافعان:"]
-        for uid in candidates:
-            user = users.get(uid)
-            if user:
-                lines.append(f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}")
-        lines += ["", "کسانی که رای دادن:"]
+        target_id = int(state["target_user_id"])
+        target = await session.get(User, target_id)
+        if not target:
+            return None
+        records = await _vote_records_for_target(session, game, round_no, phase, target_id)
+        lines = [
+            f"🗳 <b>رای دوم برای</b> {tg_mention(target.telegram_id, target.display_name or target.first_name or 'بازیکن')}",
+            "",
+            "کسانی که برای این بازیکن رای داده‌اند:",
+        ]
         if records:
-            for vote, user in records:
-                target = users.get(int(vote.target_user_id))
-                target_name = target.display_name or target.first_name or "بازیکن" if target else str(vote.target_user_id)
-                lines.append(
-                    f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')} → {target_name} — {_vote_time(vote.created_at)}"
-                )
+            lines.extend(
+                f"• {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')} — {_vote_time(vote.created_at)}"
+                for vote, user in records
+            )
         else:
             lines.append("هنوز کسی رای نداده")
-        markup = vote2_ballot_keyboard(
-            game.game_key,
-            [(uid, users[uid].display_name or users[uid].first_name or "بازیکن") for uid in candidates if uid in users],
-        )
+        markup = vote2_target_keyboard(game.game_key, target_id)
     msg = await bot.send_message(chat_id, "\n".join(lines), reply_markup=markup, parse_mode="HTML")
     await _set_latest_vote_state_message(session, game, chat_id, msg.message_id)
     return msg
