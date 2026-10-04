@@ -739,13 +739,45 @@ async def group_defaults_handler(callback: CallbackQuery, state: FSMContext) -> 
             return
         elif action == "emoji_menu":
             await callback.message.edit_text(
-                "✨ <b>اموجی‌های متحرک گروه</b>\n\n"
-                "یک رویداد را انتخاب کن، بعد یک Custom Emoji از پک RestrictedEmoji بفرست. "
-                "خود تلگرام شناسه پایدار آن اموجی را به ربات می‌دهد.\n\n"
-                "اگر اموجی نامعتبر باشد یا در دسترس نباشد، ربات خودکار به اموجی معمولی برمی‌گردد.",
+                "✨ <b>مدیریت اموجی‌های متحرک</b>\n\n"
+                "اموجی‌ها بر اساس محل استفاده جدا شده‌اند. اموجی فعلی هر مورد در منوی مربوط نمایش داده می‌شود.\n"
+                "برای ثبت یا ویرایش، روی مورد بزن و یک Custom Emoji از پک RestrictedEmoji بفرست.",
                 reply_markup=group_custom_emoji_menu(group.id, settings),
                 parse_mode="HTML",
             )
+            await callback.answer()
+            return
+        elif action == "emoji_section" and len(parts) == 4:
+            section = parts[3]
+            if section == "game":
+                await callback.message.edit_text(
+                    "🎮 <b>اموجی‌های بازی</b>\n\nاموجی هر بخش را انتخاب کن تا ثبت یا ویرایش شود.",
+                    reply_markup=group_game_emoji_menu(group.id, settings),
+                    parse_mode="HTML",
+                )
+            elif section == "achievement":
+                from app.services.stats import ensure_achievements
+                await ensure_achievements(session)
+                achievements = list((await session.execute(select(Achievement).order_by(Achievement.id))).scalars().all())
+                await session.commit()
+                await callback.message.edit_text(
+                    "🏆 <b>اموجی دستاوردها</b>\n\nاموجی فعلی هر دستاورد کنار نامش نمایش داده می‌شود.",
+                    reply_markup=group_achievement_emoji_menu(group.id, achievements),
+                    parse_mode="HTML",
+                )
+            elif section == "tag":
+                from app.services.stats import ensure_achievements
+                await ensure_achievements(session)
+                tags = list((await session.execute(select(Achievement).where(Achievement.tag_key.is_not(None)).order_by(Achievement.id))).scalars().all())
+                await session.commit()
+                await callback.message.edit_text(
+                    "🏷️ <b>اموجی تگ‌ها</b>\n\nاموجی فعلی هر تگ کنار نامش نمایش داده می‌شود.",
+                    reply_markup=group_tag_emoji_menu(group.id, tags),
+                    parse_mode="HTML",
+                )
+            else:
+                await callback.answer("بخش اموجی نامعتبر است.", show_alert=True)
+                return
             await callback.answer()
             return
         elif action == "emoji_toggle":
@@ -759,14 +791,44 @@ async def group_defaults_handler(callback: CallbackQuery, state: FSMContext) -> 
                 await callback.answer("نوع اموجی نامعتبر است.", show_alert=True)
                 return
             await state.set_state(CustomEmojiState.emoji)
-            await state.update_data(group_id=group.id, emoji_key=key)
+            await state.update_data(group_id=group.id, emoji_key=key, target_type="game")
             await callback.message.answer(
-                f"✨ اموجی «{key}» را از پک RestrictedEmoji همین‌جا بفرست.\n"
-                "ربات شناسه واقعی Custom Emoji را دریافت و ذخیره می‌کند.\n"
-                "برای حذف این مورد، /clear بفرست."
+                "✨ اموجی این بخش را از پک RestrictedEmoji همین‌جا بفرست.\n"
+                "ربات شناسه واقعی Custom Emoji را ذخیره می‌کند.\n"
+                "برای حذف، /clear بفرست."
             )
             await callback.answer()
             return
+        elif action in {"achievement_emoji", "tag_emoji"} and len(parts) == 4:
+            key = parts[3]
+            achievement = await session.scalar(select(Achievement).where(Achievement.key == key))
+            if not achievement:
+                await callback.answer("دستاورد/تگ پیدا نشد.", show_alert=True)
+                return
+            if action == "tag_emoji" and not achievement.tag_key:
+                await callback.answer("این مورد تگ ندارد.", show_alert=True)
+                return
+            await state.set_state(CustomEmojiState.emoji)
+            await state.update_data(
+                group_id=group.id,
+                emoji_key=key,
+                target_type="achievement" if action == "achievement_emoji" else "tag",
+            )
+            label = achievement.name_fa if action == "achievement_emoji" else (achievement.tag_name or achievement.name_fa)
+            await callback.message.answer(
+                f"✨ اموجی «{label}» را از پک RestrictedEmoji بفرست.\n"
+                "این اموجی قبلی را جایگزین می‌کند. برای حذف، /clear بفرست."
+            )
+            await callback.answer()
+            return
+        elif action == "achievement_emoji_clear":
+            achievements = list((await session.execute(select(Achievement))).scalars().all())
+            for achievement in achievements:
+                achievement.custom_emoji_id = None
+        elif action == "tag_emoji_clear":
+            achievements = list((await session.execute(select(Achievement).where(Achievement.tag_key.is_not(None)))).scalars().all())
+            for achievement in achievements:
+                achievement.tag_custom_emoji_id = None
         elif action == "emoji":
             settings.custom_emoji = not settings.custom_emoji
         elif action == "color" and len(parts) == 4:
