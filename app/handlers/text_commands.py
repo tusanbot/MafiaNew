@@ -1,6 +1,6 @@
 from aiogram import Router, F
 from aiogram.fsm.context import FSMContext
-from aiogram.types import Message
+from aiogram.types import Message, ReplyParameters
 import re
 import unicodedata
 from sqlalchemy import select, func
@@ -15,6 +15,7 @@ from app.services.game import render_lobby
 from app.services.gameplay import choose_leader, start_round, current_round, next_turn, alive_players
 from app.services.profile import sync_telegram_user
 from app.services.stats import leaderboard, rank_for_score, rank_progress
+from app.services.speech_to_text import SpeechToTextError, transcribe_voice
 import json
 from app.utils.text import tg_name
 
@@ -59,6 +60,72 @@ async def _active_game(session, message: Message):
 
 async def _is_host(session, game, user) -> bool:
     return bool(game and user and game.host_user_id == user.id)
+
+
+@router.message(_exact("تبدیل به متن"))
+async def text_transcribe_voice(message: Message, state: FSMContext) -> None:
+    """Transcribe the voice message replied to by the current game host."""
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
+        return
+
+    replied = message.reply_to_message
+    if not replied:
+        await message.answer("🎤 برای تبدیل صدا، دستور «تبدیل به متن» را روی همان پیام صوتی ریپلای کن.")
+        return
+
+    if not replied.voice:
+        if replied.audio:
+            await message.answer("🎤 این دستور فعلاً فقط برای پیام صوتی تلگرام (Voice) فعال است.")
+        else:
+            await message.answer("🎤 باید روی یک پیام صوتی (Voice) ریپلای کنی.")
+        return
+
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        user = await _user(session, message)
+
+        if not game or game.status != "running":
+            await message.answer("🎮 بازی فعالی وجود ندارد.")
+            return
+
+        if not await _is_host(session, game, user):
+            await message.answer("👑 فقط گرداننده بازی می‌تواند پیام‌های صوتی را به متن تبدیل کند.")
+            return
+
+    status_message = await message.answer("⏳ دارم پیام صوتی رو به متن تبدیل می‌کنم...")
+
+    try:
+        telegram_file = await message.bot.get_file(replied.voice.file_id)
+        from io import BytesIO
+
+        audio_buffer = BytesIO()
+        await message.bot.download_file(telegram_file.file_path, destination=audio_buffer)
+        audio = audio_buffer.getvalue()
+
+        transcript = await transcribe_voice(
+            audio,
+            filename=f"{replied.voice.file_unique_id or replied.voice.file_id}.ogg",
+            language="fa",
+        )
+    except SpeechToTextError as exc:
+        await status_message.edit_text(f"❌ {exc}")
+        return
+    except Exception:
+        logger = __import__("logging").getLogger(__name__)
+        logger.exception("Voice transcription failed")
+        await status_message.edit_text("❌ تبدیل این پیام صوتی به متن انجام نشد. لطفاً دوباره تلاش کن.")
+        return
+
+    await status_message.delete()
+    await message.bot.send_message(
+        chat_id=message.chat.id,
+        text=f"📝 <b>متن پیام صوتی:</b>\n\n{transcript}",
+        parse_mode="HTML",
+        reply_parameters=ReplyParameters(
+            message_id=replied.message_id,
+            allow_sending_without_reply=True,
+        ),
+    )
 
 
 @router.message(_exact("پیوی", "پی وی", "پنل"))
@@ -752,6 +819,7 @@ async def text_commands(message: Message, state: FSMContext) -> None:
         "<code>پنل</code> — باز کردن پنل شخصی",
         "<code>پروفایل</code> — نمایش پروفایل",
         "<code>نقش من</code> — نمایش نقش بازی فعلی",
+        "<code>تبدیل به متن</code> — تبدیل پیام صوتی ریپلای‌شده به متن (فقط گرداننده)",
         "<code>رتبه</code> — نمایش رتبه‌بندی",
         "",
         "بازی:",
