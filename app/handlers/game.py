@@ -280,6 +280,20 @@ async def deal_roles(callback: CallbackQuery) -> None:
             except Exception:
                 failed.append(telegram_id)
 
+        # The host receives the complete role/side roster privately. Player
+        # messages never expose anyone else's role.
+        try:
+            if game.host_user_id:
+                host_user = await session.get(User, game.host_user_id)
+                if host_user:
+                    await callback.bot.send_message(
+                        host_user.telegram_id,
+                        "🎭 <b>لیست کامل نقش‌ها</b>\n\n" + group_list,
+                        parse_mode="HTML",
+                    )
+        except Exception:
+            pass
+
         try:
             await callback.message.delete()
         except Exception:
