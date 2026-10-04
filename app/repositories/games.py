@@ -1,8 +1,8 @@
 from datetime import datetime, timezone
-from sqlalchemy import select, update
+from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Game, GamePlayer, Group, GroupSettings, Scenario, User
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Scenario, User
 
 
 class GameRepository:
@@ -28,17 +28,47 @@ class GameRepository:
 
     @staticmethod
     async def delete_drafts(session: AsyncSession, group_id: int) -> int:
-        """Remove abandoned configuration drafts before starting a fresh flow."""
+        """Remove abandoned drafts and every dependent row before a fresh flow."""
         result = await session.execute(
             select(Game.id).where(Game.group_id == group_id, Game.status == "draft")
         )
-        ids = [row[0] for row in result.all()]
-        if not ids:
-            return 0
-        await session.execute(
-            Game.__table__.delete().where(Game.id.in_(ids))
+        ids = [int(row[0]) for row in result.all()]
+        for game_id in ids:
+            await GameRepository.purge(session, game_id, commit=False)
+        if ids:
+            await session.commit()
+        return len(ids)
+
+    @staticmethod
+    async def purge(session: AsyncSession, game_id: int, *, commit: bool = True) -> bool:
+        """Hard-delete a game and all game-scoped data.
+        
+        Cancellation is intentionally destructive: a cancelled lobby must not
+        leave stale seats/events/votes that can interfere with a new lobby.
+        """
+        game = await session.get(Game, int(game_id))
+        if game is None:
+            return False
+        await session.execute(delete(GameResultViewer).where(GameResultViewer.game_id == game.id))
+        await session.execute(delete(Vote).where(Vote.game_id == game.id))
+        await session.execute(delete(GameEvent).where(GameEvent.game_id == game.id))
+        await session.execute(delete(GamePlayer).where(GamePlayer.game_id == game.id))
+        await session.delete(game)
+        if commit:
+            await session.commit()
+        return True
+
+    @staticmethod
+    async def purge_cancelled(session: AsyncSession, group_id: int) -> int:
+        """Hard-delete all previously cancelled games in this group."""
+        result = await session.execute(
+            select(Game.id).where(Game.group_id == group_id, Game.status == "cancelled")
         )
-        await session.commit()
+        ids = [int(row[0]) for row in result.all()]
+        for game_id in ids:
+            await GameRepository.purge(session, game_id, commit=False)
+        if ids:
+            await session.commit()
         return len(ids)
 
     @staticmethod
@@ -477,7 +507,7 @@ class GameRepository:
 
     @staticmethod
     async def cancel(session: AsyncSession, game: Game) -> bool:
-        if game.status not in ("waiting", "running"):
+        if game.status not in ("waiting", "running", "draft"):
             return False
         game.status = "cancelled"
         game.phase = "finished"
