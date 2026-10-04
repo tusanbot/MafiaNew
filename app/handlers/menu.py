@@ -3920,3 +3920,134 @@ async def notification_toggle(callback: CallbackQuery) -> None:
         await session.commit()
         await callback.message.edit_reply_markup(reply_markup=notification_settings_menu(user))
     await callback.answer("ذخیره شد.")
+
+
+# Tournament management
+def _tour_date(raw):
+    try:
+        y,m,d=[int(x) for x in raw.strip().replace('-', '/').split('/')[:3]]
+        return datetime(y,m,d,12,tzinfo=ZoneInfo('Asia/Tehran'))
+    except (ValueError, TypeError):
+        return None
+
+def _tour_prizes(raw):
+    out=[]
+    for line in raw.replace('،', '\n').replace(',', '\n').splitlines():
+        if line.strip(): out.append(int(line.strip()))
+    if not out: raise ValueError
+    if any(x < 0 for x in out): raise ValueError
+    return out
+
+async def _tour_users(session, names):
+    users=list((await session.execute(select(User).where(User.is_active.is_(True)))).scalars().all())
+    result=[]
+    for name in names:
+        n=name.strip()
+        matches=[u for u in users if n in {u.display_name.strip(),u.name_base.strip(),u.first_name.strip(),(u.username or '').strip()}]
+        if len(matches)==1 and matches[0] not in result: result.append(matches[0])
+    return result
+
+async def _tour_allowed(session, bot, user_id, tid):
+    t=await session.get(Tournament,tid)
+    return t if t and await _selected_group(session,bot,user_id,t.group_id) else None
+
+@router.callback_query(lambda c: c.data == 'groupmgmt:tournaments')
+async def tournament_group_entry(callback: CallbackQuery):
+    async with session_factory() as session: groups=await _manageable_groups(session,callback.bot,callback.from_user.id)
+    if len(groups)==1: await callback.message.edit_text('🏆 مدیریت تورنمنت‌ها',reply_markup=tournament_admin_menu(groups[0].id))
+    elif groups: await callback.message.edit_text('گروه را انتخاب کن:',reply_markup=group_list_keyboard(groups,'tournaments','menu:group_management'))
+    else: await callback.message.edit_text('هیچ گروه قابل مدیریتی پیدا نشد.',reply_markup=group_management_menu())
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('groupmgmt:select:tournaments:'))
+async def tournament_group_selected(callback: CallbackQuery):
+    gid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session: ok=await _selected_group(session,callback.bot,callback.from_user.id,gid)
+    if not ok: await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await callback.message.edit_text('🏆 مدیریت تورنمنت‌ها',reply_markup=tournament_admin_menu(gid)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:list:'))
+async def tournament_list(callback: CallbackQuery):
+    gid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        if not await _selected_group(session,callback.bot,callback.from_user.id,gid): await callback.answer('دسترسی ندارید.',show_alert=True); return
+        ts=list((await session.execute(select(Tournament).where(Tournament.group_id==gid).order_by(Tournament.start_at.desc()))).scalars().all())
+    b=InlineKeyboardBuilder()
+    for t in ts: b.row(InlineKeyboardButton(text=f'{t.emoji} {t.name[:50]}',callback_data=f'tournament:open:{t.id}'))
+    b.row(InlineKeyboardButton(text='➕ افزودن تورنمنت',callback_data=f'tournament:add:{gid}'))
+    b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data='groupmgmt:tournaments'))
+    await callback.message.edit_text('🗂 تورنمنت‌های گروه:',reply_markup=b.as_markup()); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:add:'))
+async def tournament_add_start(callback: CallbackQuery,state:FSMContext):
+    gid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        if not await _selected_group(session,callback.bot,callback.from_user.id,gid): await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await state.clear(); await state.update_data(action='add',group_id=gid,step='name'); await state.set_state(TournamentState.input)
+    await callback.message.edit_text('➕ نام تورنمنت را بفرست.'); await callback.answer()
+
+@router.message(TournamentState.input)
+async def tournament_input(message: Message,state:FSMContext):
+    if message.chat.type!='private' or not message.from_user: return
+    value=(message.text or '').strip(); data=await state.get_data()
+    if value=='/cancel': await state.clear(); await message.answer('لغو شد.',reply_markup=tournament_admin_menu(int(data.get('group_id',0)))); return
+    if data.get('action')=='add':
+        step=data.get('step')
+        if step=='name': await state.update_data(name=value,step='emoji'); await message.answer('🎨 اموجی تورنمنت را بفرست.'); return
+        if step=='emoji': await state.update_data(emoji=value[:20],step='date'); await message.answer('📅 تاریخ شروع را بفرست (YYYY/MM/DD).'); return
+        if step=='date':
+            dt=_tour_date(value)
+            if not dt: await message.answer('تاریخ معتبر نیست.'); return
+            await state.update_data(start_at=dt.isoformat(),step='prizes'); await message.answer('🏅 امتیاز رتبه‌ها را هر رتبه در یک خط بفرست:\n300\n200\n100\n50'); return
+        if step=='prizes':
+            try: prizes=_tour_prizes(value)
+            except ValueError: await message.answer('امتیازها باید عددهای مثبت باشند.'); return
+            await state.update_data(prizes='\n'.join(map(str,prizes)),step='description'); await message.answer('📝 توضیحات را بفرست؛ برای بدون توضیح -'); return
+        if step=='description':
+            async with session_factory() as session:
+                group=await _selected_group(session,message.bot,message.from_user.id,int(data['group_id']))
+                user=await session.scalar(select(User).where(User.telegram_id==message.from_user.id))
+                if not group or not user: await state.clear(); await message.answer('دسترسی ندارید.'); return
+                session.add(Tournament(group_id=group.id,name=data['name'],emoji=data['emoji'],start_at=datetime.fromisoformat(data['start_at']),prize_points=data['prizes'],description='' if value=='-' else value,created_by_user_id=user.id)); await session.commit()
+            await state.clear(); await message.answer('✅ تورنمنت ساخته شد.',reply_markup=tournament_admin_menu(int(data['group_id']))); return
+    tid=int(data['tid'])
+    async with session_factory() as session:
+        t=await session.get(Tournament,tid)
+        if not t: await state.clear(); await message.answer('تورنمنت پیدا نشد.'); return
+        if data.get('action')=='add_player':
+            users=await _tour_users(session,[value])
+            if not users: await message.answer('بازیکن پیدا نشد.'); return
+            if not await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==users[0].id)): session.add(TournamentPlayer(tournament_id=tid,user_id=users[0].id))
+            await session.commit(); await state.clear(); await message.answer('✅ بازیکن اضافه شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
+        if data.get('action')=='score':
+            prizes=_tour_prizes(t.prize_points); entries=value.splitlines(); users=await _tour_users(session,[x.split(maxsplit=1)[1] for x in entries if len(x.split(maxsplit=1))==2])
+            for line in entries:
+                p=line.split(maxsplit=1)
+                if len(p)!=2 or not p[0].isdigit(): continue
+                matches=await _tour_users(session,[p[1]])
+                if not matches: continue
+                tp=await session.scalar(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==matches[0].id))
+                if tp: tp.final_rank=int(p[0]); tp.awarded_points=prizes[int(p[0])-1] if 0<int(p[0])<=len(prizes) else 0
+            await session.commit(); await state.clear(); await message.answer('✅ رتبه و امتیاز ثبت شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
+        if data.get('action')=='final':
+            users=await _tour_users(session,value.splitlines())
+            for u in users:
+                if not await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==u.id)): session.add(TournamentPlayer(tournament_id=tid,user_id=u.id))
+            await session.commit(); await state.clear(); await message.answer(f'✅ {len(users)} بازیکن برای فینال ثبت شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
+        if data.get('action')=='draw_count':
+            try: count=int(value); assert count>0
+            except: await message.answer('تعداد گروه باید عدد مثبت باشد.'); return
+            await state.update_data(group_count=count); await message.answer('منبع قرعه‌کشی را انتخاب کن:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='👥 بازیکنان ثبت‌شده',callback_data=f'tournament:draw_registered:{tid}'),InlineKeyboardButton(text='✍️ ورود دستی اسامی',callback_data=f'tournament:draw_manual:{tid}')]])); return
+        if data.get('action')=='draw_manual':
+            users=await _tour_users(session,value.splitlines()); count=int(data['group_count'])
+            if len(users)<count: await message.answer('تعداد بازیکنان کافی نیست.'); return
+            import random; random.shuffle(users)
+            old=list((await session.execute(select(TournamentGroup).where(TournamentGroup.tournament_id==tid))).scalars().all())
+            for g in old: await session.delete(g)
+            for n in range(1,count+1): session.add(TournamentGroup(tournament_id=tid,group_no=n,name=f'گروه {n}'))
+            await session.flush()
+            for i,u in enumerate(users):
+                tp=await session.scalar(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==u.id))
+                if tp: tp.group_no=i%count+1
+                else: session.add(TournamentPlayer(tournament_id=tid,user_id=u.id,group_no=i%count+1))
+            t.group_count=count; await session.commit(); await state.clear(); await message.answer('🎲 قرعه‌کشی انجام شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
