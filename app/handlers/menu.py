@@ -1710,6 +1710,118 @@ async def _game_result_rich_html(session, game, winner: str) -> str:
     )
 
 
+async def _result_payload(session, game, view: str) -> tuple[str, str]:
+    winner_event = await session.scalar(select(GameEvent).where(
+        GameEvent.game_id == game.id,
+        GameEvent.event_type.in_(["game_finished", "stats_recorded"]),
+    ).order_by(GameEvent.id.desc()))
+    winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
+    if view == "roles":
+        text = await _game_roles_text(session, game)
+        title = "🎭 لیست بازیکنان و نقش‌ها"
+    elif view == "ranking":
+        text = await _game_ranking_text(session, game)
+        title = "🏆 رتبه‌بندی کلی گروه"
+    else:
+        text = (
+            "🏁 <b>نتیجه نهایی بازی</b>\n"
+            "گزارش کامل بازی و وضعیت بازیکنان:\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            + (await _game_result_text(session, game, winner))
+        )
+        title = "🏁 نتیجه بازی"
+    return title, text
+
+
+def _result_rich_view(game_id: int, title: str, text: str) -> str:
+    rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
+    return (
+        f"<h2>{title}</h2>{rich_body}"
+        '<p><tg-button-row align="center">'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game_id}">🏆 رتبه‌بندی</tg-button>'
+        f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game_id}">🎭 نقش‌ها</tg-button>'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game_id}">🏁 نتیجه بازی</tg-button>'
+        '</tg-button-row></p>'
+    )
+
+
+async def _result_group_access(callback: CallbackQuery, session, game) -> tuple[bool, str]:
+    if callback.message.chat.type not in ("group", "supergroup"):
+        return True, ""
+    group = await session.get(Group, game.group_id)
+    actor = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+    if not group or not actor:
+        return False, "دسترسی به نتیجه بازی تأیید نشد."
+    if game.host_user_id == actor.id or await _is_group_admin(callback.bot, group, actor.telegram_id):
+        return True, ""
+    return False, "تب‌های نتیجه در گروه فقط برای گرداننده و مدیران گروه فعال است. برای مشاهده نتیجه شخصی، «📩 نمایش نتیجه برای من» را بزنید."
+
+
+async def _apply_result_group_cooldown(session, game) -> tuple[bool, int]:
+    settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id).with_for_update())
+    if settings is None:
+        settings = GroupSettings(group_id=game.group_id)
+        session.add(settings)
+        await session.flush()
+    now = datetime.now(timezone.utc)
+    cooldown = max(0, int(settings.result_tab_cooldown_seconds or 10))
+    last = settings.result_tab_last_changed_at
+    if last is not None:
+        elapsed = (now - last).total_seconds()
+        remaining = cooldown - int(elapsed)
+        if remaining > 0:
+            return False, remaining
+    settings.result_tab_last_changed_at = now
+    return True, 0
+
+
+@router.callback_query(lambda c: c.data.startswith("gameresult:private:"))
+async def game_result_private(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    game_id = int(callback.data.rsplit(":", 1)[1])
+    if callback.message.chat.type not in ("group", "supergroup"):
+        await callback.answer("این دکمه فقط از پیام نتیجه گروه استفاده می‌شود.", show_alert=True)
+        return
+    async with session_factory() as session:
+        game = await session.get(Game, game_id)
+        if not game or game.status != "finished":
+            await callback.answer("نتیجه این بازی در دسترس نیست.", show_alert=True)
+            return
+        user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+        if not user:
+            await callback.answer("حساب شما هنوز ثبت نشده است.", show_alert=True)
+            return
+        title, text = await _result_payload(session, game, "result")
+        rich = _result_rich_view(game.id, title, text)
+        viewer = await session.scalar(select(GameResultViewer).where(
+            GameResultViewer.game_id == game.id,
+            GameResultViewer.user_id == user.id,
+        ))
+        if viewer and viewer.chat_id == callback.from_user.id:
+            try:
+                await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, is_rtl=True)
+            except Exception:
+                sent = await send_rich_message(callback.bot, callback.from_user.id, rich, is_rtl=True)
+                viewer.message_id = sent.message_id
+        else:
+            sent = await send_rich_message(callback.bot, callback.from_user.id, rich, is_rtl=True)
+            if viewer:
+                viewer.chat_id = callback.from_user.id
+                viewer.message_id = sent.message_id
+                viewer.current_view = "result"
+            else:
+                session.add(GameResultViewer(
+                    game_id=game.id,
+                    user_id=user.id,
+                    chat_id=callback.from_user.id,
+                    message_id=sent.message_id,
+                    current_view="result",
+                ))
+        await session.commit()
+    await callback.answer("نتیجه در پیام خصوصی شما باز شد.")
+
+
 @router.callback_query(lambda c: c.data.startswith("gameresult:view:"))
 async def game_result_view(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -1720,85 +1832,57 @@ async def game_result_view(callback: CallbackQuery) -> None:
         return
     _, _, view, game_raw = parts
     game_id = int(game_raw)
+    if view not in {"result", "roles", "ranking"}:
+        await callback.answer("تب نتیجه نامعتبر است.", show_alert=True)
+        return
     async with session_factory() as session:
         game = await session.get(Game, game_id)
         if not game:
             await callback.answer("بازی پیدا نشد.", show_alert=True)
             return
-        winner_event = await session.scalar(select(GameEvent).where(
-            GameEvent.game_id == game.id,
-            GameEvent.event_type.in_(["game_finished", "stats_recorded"])
-        ).order_by(GameEvent.id.desc()))
-        winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
-        if view == "roles":
-            text = await _game_roles_text(session, game)
-        elif view == "ranking":
-            text = await _game_ranking_text(session, game)
+        allowed, reason = await _result_group_access(callback, session, game)
+        if not allowed:
+            await callback.answer(reason, show_alert=True)
+            return
+        if callback.message.chat.type in ("group", "supergroup"):
+            ok, remaining = await _apply_result_group_cooldown(session, game)
+            if not ok:
+                await session.rollback()
+                await callback.answer(f"⏳ برای تغییر تب {remaining} ثانیه صبر کنید.", show_alert=False)
+                return
+        title, text = await _result_payload(session, game, view)
+        rich_view = _result_rich_view(game.id, title, text)
+        if callback.message.chat.type in ("group", "supergroup"):
+            try:
+                await edit_rich_message(
+                    callback.bot, callback.message.chat.id, callback.message.message_id,
+                    rich_view, is_rtl=True,
+                )
+            except Exception:
+                await callback.message.edit_text(
+                    text,
+                    reply_markup=game_result_keyboard(game.group_id, game.id),
+                    parse_mode="HTML",
+                )
         else:
-            text = (
-                "🏁 <b>نتیجه نهایی بازی</b>\n"
-                "گزارش کامل بازی و وضعیت بازیکنان:\n"
-                "━━━━━━━━━━━━━━━━━━━━\n"
-                + (await _game_result_text(session, game, winner))
-            )
-        rich_body = text if view in {"roles", "ranking"} else text.replace("\n", "<br/>")
-        rich_view = (
-            "<h2>" + (
-                "🏁 نتیجه بازی" if view == "result"
-                else "🎭 لیست بازیکنان و نقش‌ها" if view == "roles"
-                else "🏆 رتبه‌بندی کلی گروه"
-            ) + "</h2>" + rich_body +
-            f'<p><tg-button-row align="center">'
-            f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
-            f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
-            f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
-            "</tg-button-row></p>"
-        )
-        try:
-            await edit_rich_message(
-                callback.bot,
-                callback.message.chat.id,
-                callback.message.message_id,
-                rich_view,
-                is_rtl=True,
-            )
-        except Exception:
-            await callback.message.edit_text(
-                text,
-                reply_markup=game_result_keyboard(game.group_id, game.id),
-                parse_mode="HTML",
-            )
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data.startswith("gameresult:back:"))
-async def game_result_back(callback: CallbackQuery) -> None:
-    game_id = int(callback.data.rsplit(":", 1)[1])
-    async with session_factory() as session:
-        game = await session.get(Game, game_id)
-        if not game:
-            await callback.answer("بازی پیدا نشد.", show_alert=True)
-            return
-        winner_event = await session.scalar(select(GameEvent).where(
-            GameEvent.game_id == game.id, GameEvent.event_type.in_(["game_finished", "stats_recorded"])
-        ).order_by(GameEvent.id.desc()))
-        winner = (json.loads(winner_event.payload or "{}").get("winner") if winner_event else "draw")
-        result_html = await _game_result_rich_html(session, game, winner)
-        fallback_text = await _game_result_text(session, game, winner)
-        try:
-            await edit_rich_message(
-                callback.bot,
-                callback.message.chat.id,
-                callback.message.message_id,
-                result_html,
-                is_rtl=True,
-            )
-        except Exception:
-            await callback.message.edit_text(
-                fallback_text,
-                reply_markup=game_result_keyboard((await session.get(Group, game.group_id)).id, game.id),
-                parse_mode="HTML",
-            )
+            user = await UserRepository(session).get_by_telegram_id(callback.from_user.id)
+            viewer = await session.scalar(select(GameResultViewer).where(
+                GameResultViewer.game_id == game.id,
+                GameResultViewer.user_id == user.id if user else False,
+            ))
+            if not viewer or viewer.message_id != callback.message.message_id:
+                await callback.answer("این پیام نتیجه دیگر معتبر نیست.", show_alert=True)
+                await session.rollback()
+                return
+            viewer.current_view = view
+            try:
+                await edit_rich_message(
+                    callback.bot, callback.message.chat.id, callback.message.message_id,
+                    rich_view, is_rtl=True,
+                )
+            except Exception:
+                await callback.message.edit_text(text, parse_mode="HTML")
+        await session.commit()
     await callback.answer()
 
 
