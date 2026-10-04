@@ -107,6 +107,19 @@ class GroupSettings(Base):
     custom_emoji: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    result_tab_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    result_tab_cooldown_seconds: Mapped[int] = mapped_column(Integer, default=10)
+
+class GameResultViewer(Base):
+    __tablename__ = "game_result_viewers"
+    __table_args__ = (UniqueConstraint("game_id", "user_id", name="uq_game_result_viewer"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("games.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    chat_id: Mapped[int] = mapped_column(BigInteger)
+    message_id: Mapped[int] = mapped_column(Integer)
+    current_view: Mapped[str] = mapped_column(String(20), default="result")
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 class Scenario(Base):
     __tablename__ = "scenarios"
