@@ -152,14 +152,16 @@ def player_management_menu(group_id: int, back_callback: str | None = None) -> I
     return builder.as_markup()
 
 
-def player_target_management_keyboard(group_id: int, action: str, players, *, only_alive: bool = False, only_dead: bool = False, only_reserve: bool = False) -> InlineKeyboardMarkup:
+def player_target_management_keyboard(group_id: int, action: str, players, *, only_alive: bool = False, only_dead: bool = False, only_reserve: bool = False, only_substitute: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for player, user in players:
         if only_alive and (player.is_reserved or not player.alive):
             continue
         if only_dead and (player.is_reserved or player.alive or player.exit_type != "death"):
             continue
-        if only_reserve and not player.is_reserved:
+        if only_reserve and (not player.is_reserved or getattr(player, "is_substitute", False)):
+            continue
+        if only_substitute and not getattr(player, "is_substitute", False):
             continue
         name = user.display_name or user.first_name or user.username or str(user.telegram_id)
         status = " — رزرو" if player.is_reserved else (" — حذف‌شده" if not player.alive else "")
@@ -187,12 +189,14 @@ def player_faceoff_destination_keyboard(group_id: int, source_id: int, players) 
     return builder.as_markup()
 
 
-def player_replace_destination_keyboard(group_id: int, source_id: int, reserves) -> InlineKeyboardMarkup:
+def player_replace_destination_keyboard(group_id: int, source_id: int, players) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    for player, user in reserves:
+    for player, user in players:
+        if player.is_reserved or not player.alive:
+            continue
         name = user.display_name or user.first_name or user.username or str(user.telegram_id)
         builder.row(InlineKeyboardButton(
-            text=f"رزرو {player.reserve_position} — {name[:38]}",
+            text=f"{player.seat}. {name[:38]}",
             callback_data=f"gameadmin:player_replace_to:{group_id}:{source_id}:{user.id}",
         ))
     _back(builder, f"gameadmin:players:{group_id}")
