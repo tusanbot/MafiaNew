@@ -544,16 +544,32 @@ async def select_group(callback: CallbackQuery) -> None:
             await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
             return
         if purpose == "locks":
-            settings = (await session.execute(
-                select(GroupSettings).where(GroupSettings.group_id == group.id)
-            )).scalar_one_or_none()
-            if settings is None:
-                settings = GroupSettings(group_id=group.id)
-                session.add(settings)
-                await session.commit()
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
             await callback.message.edit_text(
-                f"قفل‌های گروه «{group.title or group.telegram_id}»",
+                f"🔒 قفل‌های گروه «{group.title or group.telegram_id}»",
                 reply_markup=group_lock_keyboard(group.id, settings),
+            )
+        elif purpose == "defaults":
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
+            await callback.message.edit_text(
+                f"⚙️ تنظیمات پایه «{group.title or group.telegram_id}»",
+                reply_markup=group_default_settings_menu(group.id, settings),
+            )
+        elif purpose == "players":
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
+            await callback.message.edit_text(
+                f"👥 تنظیمات بازیکنان «{group.title or group.telegram_id}»",
+                reply_markup=group_player_settings_menu(group.id, settings),
+            )
+        elif purpose == "notifications":
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
+            await callback.message.edit_text(
+                f"🔔 اعلان‌های «{group.title or group.telegram_id}»",
+                reply_markup=group_notification_settings_menu(group.id, settings),
             )
         elif purpose == "active":
             game = await GameRepository.get_active(session, group.id)
