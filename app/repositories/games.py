@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Game, GamePlayer, Group, Scenario, User
+from app.db.models import Game, GamePlayer, Group, GroupSettings, Scenario, User
 
 
 class GameRepository:
@@ -128,6 +128,9 @@ class GameRepository:
     async def join_substitute(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
         if game.status not in ("waiting", "running"):
             return None
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+        if settings is not None and not settings.allow_substitute_queue:
+            return None
         existing = await session.scalar(select(GamePlayer).where(
             GamePlayer.game_id == game.id, GamePlayer.user_id == user.id
         ))
@@ -151,6 +154,9 @@ class GameRepository:
     @staticmethod
     async def join(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
         if game.status != "waiting":
+            return None
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+        if settings is not None and not settings.allow_player_join:
             return None
         existing = await session.execute(
             select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
@@ -265,6 +271,9 @@ class GameRepository:
     @staticmethod
     async def join_reserve(session: AsyncSession, game: Game, user: User) -> GamePlayer | None:
         if game.status != "waiting" or not game.reserve_enabled:
+            return None
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+        if settings is not None and not settings.allow_reserve_queue:
             return None
         existing = await session.execute(
             select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user.id)
