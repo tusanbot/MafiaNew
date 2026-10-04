@@ -2119,18 +2119,20 @@ async def _vote2_timer(bot, game_key: str, chat_id: int):
                 state = await _latest_vote_state(session, game.id)
                 if not state:
                     return
-                # Timeout always resolves the vote state. Actual player exit
-                # is gated inside resolve_vote2 by game.auto_play.
-                await finish_vote2(session, game)
-                if game.auto_play:
-                    await update_main_roster(bot, session, game, chat_id)
-                await _finish_vote_message(bot, session, game, next_button=False, final=True)
-                await _send_vote_completion_control(
-                    bot, session, game, chat_id,
-                    round_no=int(state.get("round_no", await current_round(session, game.id))),
-                    phase="vote2",
-                )
-                return
+                # Each defender has its own voting window. Timeout advances
+                # only the current defender; it never opens parallel ballots.
+                result = await advance_vote2(session, game)
+                await _finish_vote_message(bot, session, game, next_button=False, final=result["finished"])
+                if result["finished"]:
+                    if game.auto_play:
+                        await update_main_roster(bot, session, game, chat_id)
+                    await _send_vote_completion_control(
+                        bot, session, game, chat_id,
+                        round_no=int(state.get("round_no", await current_round(session, game.id))),
+                        phase="vote2",
+                    )
+                    return
+                await _vote_target_message(bot, session, game, chat_id)
     except asyncio.CancelledError:
         return
     finally:
@@ -2152,9 +2154,9 @@ async def vote2_next_handler(callback: CallbackQuery):
         if task:
             task.cancel()
         result = await advance_vote2(session, game)
-        await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
-        await _finish_vote_message(callback.bot, session, game, next_button=False, final=True)
+        await _finish_vote_message(callback.bot, session, game, next_button=False, final=result["finished"])
         if result["finished"]:
+            await update_main_roster(callback.bot, session, game, await _group_chat_id(session, game))
             await _send_vote_completion_control(
                 callback.bot, session, game, callback.message.chat.id,
                 round_no=int((await _latest_vote_state(session, game.id) or {}).get("round_no", await current_round(session, game.id))),
@@ -2162,6 +2164,7 @@ async def vote2_next_handler(callback: CallbackQuery):
             )
             await callback.answer("رای گیری دوم تمام شد.")
             return
+        await _vote_target_message(callback.bot, session, game, callback.message.chat.id)
     await callback.answer()
 
 
