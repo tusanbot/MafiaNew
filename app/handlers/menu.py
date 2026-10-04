@@ -757,6 +757,62 @@ async def group_defaults_handler(callback: CallbackQuery, state: FSMContext) -> 
     await callback.answer("تنظیم ذخیره شد.")
 
 
+@router.message(CustomEmojiState.emoji)
+async def custom_emoji_capture(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    data = await state.get_data()
+    group_id = data.get("group_id")
+    key = data.get("emoji_key")
+    if not group_id or not key:
+        await state.clear()
+        return
+
+    if (message.text or "").strip().lower() == "/clear":
+        async with session_factory() as session:
+            group = await _selected_group(session, message.bot, message.from_user.id, int(group_id))
+            if not group:
+                await state.clear()
+                await message.answer("دسترسی گروه تأیید نشد.")
+                return
+            settings = await _ensure_group_settings(session, group)
+            mapping = normalize_emoji_map(settings.custom_emoji_ids)
+            mapping.pop(key, None)
+            settings.custom_emoji_ids = dump_emoji_map(mapping)
+            await session.commit()
+        await state.clear()
+        await message.answer("🧹 اموجی این بخش حذف شد.")
+        return
+
+    custom_id = extract_custom_emoji_id(message)
+    if not custom_id:
+        await message.answer(
+            "❌ این پیام Custom Emoji قابل شناسایی ندارد.\n"
+            "یک اموجی را مستقیم از پک RestrictedEmoji انتخاب و ارسال کن."
+        )
+        return
+
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, int(group_id))
+        if not group:
+            await state.clear()
+            await message.answer("دسترسی گروه تأیید نشد.")
+            return
+        settings = await _ensure_group_settings(session, group)
+        mapping = normalize_emoji_map(settings.custom_emoji_ids)
+        mapping[key] = custom_id
+        settings.custom_emoji_ids = dump_emoji_map(mapping)
+        settings.custom_emoji = True
+        await session.commit()
+
+    await state.clear()
+    await message.answer(
+        f"✅ اموجی متحرک «{key}» ذخیره شد.\n"
+        "از این به بعد در پیام‌های مربوط به این رویداد استفاده می‌شود؛ "
+        "اگر شناسه نامعتبر باشد، Unicode معمولی جایگزین خواهد شد."
+    )
+
+
 @router.callback_query(lambda c: c.data.startswith("groupplayers:"))
 async def group_players_settings_handler(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
