@@ -4052,3 +4052,103 @@ async def tournament_input(message: Message,state:FSMContext):
                 if tp: tp.group_no=i%count+1
                 else: session.add(TournamentPlayer(tournament_id=tid,user_id=u.id,group_no=i%count+1))
             t.group_count=count; await session.commit(); await state.clear(); await message.answer('🎲 قرعه‌کشی انجام شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
+@router.callback_query(lambda c: c.data.startswith('tournament:open:'))
+async def tournament_open(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+    if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await callback.message.edit_text('🏆 مدیریت تورنمنت',reply_markup=tournament_manage_menu(tid,t.group_id)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:delete:'))
+async def tournament_delete(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+        if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+        gid=t.group_id; await session.delete(t); await session.commit()
+    await callback.message.edit_text('🗑 تورنمنت حذف شد.',reply_markup=tournament_admin_menu(gid)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:add_player:') or c.data.startswith('tournament:score:') or c.data.startswith('tournament:final:'))
+async def tournament_input_start(callback: CallbackQuery,state:FSMContext):
+    action,tid=callback.data.split(':')[1],int(callback.data.rsplit(':',1)[1])
+    prompts={'add_player':'👤 نام بازیکن را دقیق بفرست.','score':'🏅 رتبه و نام بازیکن را هر کدام در یک خط بفرست؛ مثال: 1 علی\n2 رضا','final':'🏁 اسامی بازیکنان فینال را هر کدام در یک خط بفرست.'}
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+    if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await state.clear(); await state.update_data(action=action,tid=tid); await state.set_state(TournamentState.input)
+    await callback.message.edit_text(prompts[action]); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:draw:'))
+async def tournament_draw_start(callback: CallbackQuery,state:FSMContext):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session: t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+    if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+    await state.clear(); await state.update_data(action='draw_count',tid=tid); await state.set_state(TournamentState.input)
+    await callback.message.edit_text('🎲 تعداد گروه‌ها را وارد کن.'); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:draw_registered:'))
+async def tournament_draw_registered(callback: CallbackQuery,state:FSMContext):
+    tid=int(callback.data.rsplit(':',1)[1]); data=await state.get_data(); count=int(data.get('group_count',0))
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+        users=list((await session.execute(select(User).join(TournamentPlayer,TournamentPlayer.user_id==User.id).where(TournamentPlayer.tournament_id==tid))).scalars().all())
+        if not t or not count or len(users)<count: await callback.answer('تعداد بازیکنان برای این قرعه کافی نیست.',show_alert=True); return
+        import random; random.shuffle(users)
+        old=list((await session.execute(select(TournamentGroup).where(TournamentGroup.tournament_id==tid))).scalars().all())
+        for g in old: await session.delete(g)
+        for n in range(1,count+1): session.add(TournamentGroup(tournament_id=tid,group_no=n,name=f'گروه {n}'))
+        await session.flush()
+        for i,u in enumerate(users): (await session.scalar(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==u.id))).group_no=i%count+1
+        t.group_count=count; await session.commit()
+    await state.clear(); await callback.message.edit_text('🎲 قرعه‌کشی انجام شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:draw_manual:'))
+async def tournament_draw_manual_start(callback: CallbackQuery,state:FSMContext):
+    tid=int(callback.data.rsplit(':',1)[1]); data=await state.get_data()
+    await state.update_data(action='draw_manual',tid=tid,group_count=int(data.get('group_count',0))); await state.set_state(TournamentState.input)
+    await callback.message.edit_text('✍️ اسامی بازیکنان را هر کدام در یک خط بفرست.'); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:finish:'))
+async def tournament_finish(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await _tour_allowed(session,callback.bot,callback.from_user.id,tid)
+        if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
+        players=list((await session.execute(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid))).scalars().all())
+        if not any(p.final_rank for p in players): await callback.answer('ابتدا رتبه‌ها را ثبت کن.',show_alert=True); return
+        for p in players:
+            if p.final_rank and p.awarded_points: (await session.get(User,p.user_id)).score += p.awarded_points
+        t.status='finished'; t.finished_at=datetime.now(timezone.utc); await session.commit(); gid=t.group_id
+    await callback.message.edit_text('🏆 تورنمنت تمام شد و امتیازها به پروفایل بازیکنان اضافه شد.',reply_markup=tournament_admin_menu(gid)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:groups:'))
+async def tournament_groups(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await session.get(Tournament,tid); groups=list((await session.execute(select(TournamentGroup).where(TournamentGroup.tournament_id==tid).order_by(TournamentGroup.group_no))).scalars().all())
+    b=InlineKeyboardBuilder()
+    for g in groups: b.row(InlineKeyboardButton(text=f'👥 {g.name}',callback_data=f'tournament:groupmenu:{tid}:{g.id}'))
+    b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data=f'tournament:open:{tid}'))
+    await callback.message.edit_text('👥 مدیریت گروه‌ها',reply_markup=b.as_markup()); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:groupmenu:'))
+async def tournament_groupmenu(callback: CallbackQuery):
+    _,_,tid,gid=callback.data.split(':'); tid=int(tid); gid=int(gid)
+    b=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='✏️ تغییر نام گروه',callback_data=f'tournament:group_rename:{tid}:{gid}')],[InlineKeyboardButton(text='➕ اضافه کردن بازیکن',callback_data=f'tournament:group_add:{tid}:{gid}')],[InlineKeyboardButton(text='➖ حذف بازیکن',callback_data=f'tournament:group_remove:{tid}:{gid}')],[InlineKeyboardButton(text='🗑 حذف گروه',callback_data=f'tournament:group_delete:{tid}:{gid}')],[InlineKeyboardButton(text='↩️ بازگشت',callback_data=f'tournament:groups:{tid}')]])
+    await callback.message.edit_text('👥 مدیریت گروه',reply_markup=b); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:group_rename:') or c.data.startswith('tournament:group_add:') or c.data.startswith('tournament:group_remove:'))
+async def tournament_group_input(callback: CallbackQuery,state:FSMContext):
+    action,tid,gid=callback.data.split(':')[1:]; tid=int(tid); gid=int(gid)
+    mapped={'group_rename':'rename_group','group_add':'group_add','group_remove':'group_remove'}
+    await state.clear(); await state.update_data(action=mapped[action],tid=tid,group_id_no=gid); await state.set_state(TournamentState.input)
+    await callback.message.edit_text({'group_rename':'✏️ نام جدید گروه را بفرست.','group_add':'➕ نام بازیکن را بفرست.','group_remove':'➖ نام بازیکن را بفرست.'}[action]); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tournament:group_delete:'))
+async def tournament_group_delete(callback: CallbackQuery):
+    _,_,tid,gid=callback.data.split(':'); tid=int(tid); gid=int(gid)
+    async with session_factory() as session:
+        t=await session.get(Tournament,tid); g=await session.get(TournamentGroup,gid)
+        if t and g: await session.delete(g); await session.commit()
+    await callback.message.edit_text('🗑 گروه حذف شد.',reply_markup=tournament_manage_menu(tid,t.group_id if t else 0)); await callback.answer()
