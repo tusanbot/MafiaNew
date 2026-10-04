@@ -1,4 +1,4 @@
-from aiogram import Router
+from aiogram import Router, F
 from datetime import datetime
 from html import escape
 from zoneinfo import ZoneInfo
@@ -495,6 +495,33 @@ async def round_settings_handler(callback: CallbackQuery) -> None:
             ),
         )
     await callback.answer()
+
+@router.message(F.text.in_({"نکست گرداننده","/next_host","/next-host","نکست_گرداننده","نکست بازیکن","/next_player","/next-player","نکست_بازیکن","نکست خودکار","/next_auto","/next-auto","نکست_خودکار"}))
+async def next_mode_text_command(message: Message) -> None:
+    text = (message.text or "").strip().lower()
+    aliases = {
+        "نکست گرداننده":"host","/next_host":"host","/next-host":"host","نکست_گرداننده":"host",
+        "نکست بازیکن":"player","/next_player":"player","/next-player":"player","نکست_بازیکن":"player",
+        "نکست خودکار":"auto","/next_auto":"auto","/next-auto":"auto","نکست_خودکار":"auto",
+    }
+    mode = aliases.get(text)
+    if not mode or not message.chat or message.chat.type not in {"group","supergroup"}:
+        return
+    async with session_factory() as session:
+        game = await _load_game_by_group(session, message.chat.id)
+        if not game or game.phase != "setup" or game.status != "running":
+            await message.answer("⚠️ الان بازی در مرحله تنظیم نکست نیست.")
+            return
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if not host or host.telegram_id != message.from_user.id:
+            await message.answer("⛔ فقط گرداننده می‌تواند وضعیت نکست را تغییر دهد.")
+            return
+        field = {"host":"next_host_enabled","player":"next_player_enabled","auto":"next_auto_enabled"}[mode]
+        setattr(game, field, not bool(getattr(game, field)))
+        await session.commit()
+        state = "فعال شد" if getattr(game, field) else "غیرفعال شد"
+    labels = {"host":"نکست گرداننده","player":"نکست بازیکن","auto":"نکست خودکار"}
+    await message.answer(f"⏩ {labels[mode]} {state}.")
 
 @router.callback_query(lambda c: c.data and c.data.startswith("round:next_menu:"))
 async def round_next_menu_handler(callback: CallbackQuery) -> None:
