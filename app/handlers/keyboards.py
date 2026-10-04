@@ -988,7 +988,7 @@ def new_game_emoji_menu(group_id: int, settings: dict) -> InlineKeyboardMarkup:
     _back(builder, f"newgame:extras:{group_id}")
     return builder.as_markup()
 
-def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True, training_url: str | None = None, telegram_training_url: str | None = None) -> InlineKeyboardMarkup:
+def lobby_keyboard_v2(game_key: str, scenario, players, reserves, substitutes=None, is_host: bool = False, can_deal: bool = False, reserve_enabled: bool = True, training_url: str | None = None, telegram_training_url: str | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     buttons = []
     for seat in range(1, scenario.max_players + 1):
@@ -1008,7 +1008,8 @@ def lobby_keyboard_v2(game_key: str, scenario, players, reserves, is_host: bool 
     for i in range(0, len(buttons), 4):
         builder.row(*buttons[i:i+4])
     if reserve_enabled and len(players) >= scenario.max_players:
-        builder.row(InlineKeyboardButton(text="رزرو", callback_data=f"lobby:reserve:{game_key}"))
+        builder.row(InlineKeyboardButton(text="🪑 رزرو", callback_data=f"lobby:reserve:{game_key}"))
+    builder.row(InlineKeyboardButton(text="🔁 ثبت جایگزین", callback_data=f"lobby:substitute:{game_key}"))
     builder.row(
         InlineKeyboardButton(text="پیوستن", callback_data=f"game:join:{game_key}"),
         InlineKeyboardButton(text="ترک بازی", callback_data=f"game:leave:{game_key}"),
