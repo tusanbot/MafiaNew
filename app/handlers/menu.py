@@ -1106,6 +1106,12 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
         elif action == "warning":
             target.warning_count += 1
             target_user.score -= min(target.warning_count, 5)
+            settings = await _ensure_group_settings(session, group)
+            if target.warning_count >= max(1, settings.max_warnings):
+                if settings.auto_kick_on_max_warning:
+                    target.alive, target.exit_type = False, "kick"
+                elif settings.auto_silence_on_max_warning:
+                    target.silence_until_round = round_no
         elif action == "birthday":
             target.alive, target.exit_type = True, None
             target.silence_until_round = None
