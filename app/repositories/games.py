@@ -358,23 +358,33 @@ class GameRepository:
         if not source.is_substitute or not destination.alive or destination.is_reserved:
             return False
         old_sub_position = source.substitute_position
-        destination_seat = destination.seat
-        destination_role = destination.role_id
-        destination_warning = destination.warning_count
-        source.is_substitute = False
-        source.is_reserved = False
-        source.reserve_position = None
-        source.substitute_position = None
-        source.seat = destination_seat
-        source.role_id = destination_role
-        source.alive = True
-        source.exit_type = None
-        source.warning_count = destination_warning
+        replacement_user_id = source.user_id
         if game.status == "waiting":
-            await session.delete(destination)
+            # The substitute takes the selected seat. The old substitute row is
+            # removed so the user is no longer present in any secondary list.
+            destination.user_id = replacement_user_id
+            destination.is_reserved = False
+            destination.is_substitute = False
+            destination.reserve_position = None
+            destination.substitute_position = None
+            destination.alive = True
+            destination.exit_type = None
+            destination.warning_count = 0
+            await session.delete(source)
         else:
-            destination.alive = False
-            destination.exit_type = "replacement"
+            # In a running game the destination seat/role is preserved, while
+            # the GamePlayer identity is swapped to the substitute user. The
+            # former player is therefore completely removed from all active
+            # lists and can register again later.
+            destination.user_id = replacement_user_id
+            destination.is_reserved = False
+            destination.is_substitute = False
+            destination.reserve_position = None
+            destination.substitute_position = None
+            destination.alive = True
+            destination.exit_type = None
+            destination.warning_count = 0
+            await session.delete(source)
         await session.flush()
         if old_sub_position is not None:
             await session.execute(update(GamePlayer).where(
