@@ -608,7 +608,7 @@ async def select_group(callback: CallbackQuery) -> None:
             await session.commit()
             await callback.message.edit_text(
                 "🏆 <b>مدیریت دستاوردها</b>\n\nاموجی فعلی هر دستاورد کنار نامش نمایش داده می‌شود.",
-                reply_markup=group_achievement_emoji_menu(group.id, achievements),
+                reply_markup=group_achievement_emoji_menu(group.id, achievements, "groupmgmt:achievements"),
                 parse_mode="HTML",
             )
         elif purpose == "tags":
@@ -618,7 +618,7 @@ async def select_group(callback: CallbackQuery) -> None:
             await session.commit()
             await callback.message.edit_text(
                 "🏷️ <b>مدیریت تگ‌ها</b>\n\nاموجی فعلی هر تگ کنار نامش نمایش داده می‌شود.",
-                reply_markup=group_tag_emoji_menu(group.id, tags),
+                reply_markup=group_tag_emoji_menu(group.id, tags, "groupmgmt:tags"),
                 parse_mode="HTML",
             )
         elif purpose == "active":
