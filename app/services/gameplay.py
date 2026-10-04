@@ -1374,13 +1374,13 @@ async def send_game_result_notifications(bot, session, game) -> None:
                 f"🥊 فیس‌آف: {stats.get('faceoff_wins', 0)} برد",
                 f"🛡 بقا: {'بله' if stats.get('survived') else 'خیر'}",
                 f"📈 امتیاز عملکرد: {stats.get('performance', 0)}/30",
-                f"🏅 رتبه کلی: {report.get('rank_after', '')}",
+                f"🏅 سطح فعلی: {report.get('rank_after', '')}",
             ]
 
         if report.get("rank_after") != report.get("rank_before") and user.notify_rank_changes:
             if not lines:
-                lines = ["🏆 <b>تغییر رتبه</b>"]
-            lines.append(f"🎉 ارتقای رتبه: {report.get('rank_before')} ← {report.get('rank_after')}")
+                lines = ["🏆 <b>تغییر سطح</b>"]
+            lines.append(f"🎉 ارتقای سطح: {report.get('rank_before')} ← {report.get('rank_after')}")
 
         earned = report.get("achievements") or []
         if earned and user.notify_achievements:
