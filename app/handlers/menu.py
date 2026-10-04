@@ -467,6 +467,34 @@ async def menu_active_game(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+async def _ensure_group_settings(session, group: Group) -> GroupSettings:
+    settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
+    if settings is None:
+        settings = GroupSettings(group_id=group.id)
+        session.add(settings)
+        await session.flush()
+    return settings
+
+
+@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications"})
+async def group_management_settings_entry(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    purpose = callback.data.split(":", 1)[1]
+    async with session_factory() as session:
+        groups = await _manageable_groups(session, callback.bot, callback.from_user.id)
+        if not groups:
+            await callback.message.edit_text("هیچ گروه قابل مدیریتی پیدا نشد.", reply_markup=group_management_menu())
+        else:
+            titles = {
+                "defaults": "گروه را برای تنظیمات پایه انتخاب کنید:",
+                "players": "گروه را برای تنظیمات بازیکنان انتخاب کنید:",
+                "notifications": "گروه را برای تنظیمات اعلان‌ها انتخاب کنید:",
+            }
+            await callback.message.edit_text(titles[purpose], reply_markup=group_list_keyboard(groups, purpose))
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data == "groupmgmt:games")
 async def group_management_games(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
