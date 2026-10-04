@@ -42,6 +42,31 @@ def normalize_emoji_map(value: str | Mapping[str, Any] | None) -> dict[str, str]
         if str(key) in DEFAULT_EMOJIS and str(item).strip()
     }
 
+
+def normalize_custom_emoji_map(value: str | Mapping[str, Any] | None) -> dict[str, str]:
+    """Normalize an arbitrary key -> custom emoji ID mapping."""
+    try:
+        raw = json.loads(value or "{}") if isinstance(value, str) else dict(value or {})
+    except (TypeError, ValueError, json.JSONDecodeError):
+        raw = {}
+    return {
+        str(key): str(item).strip()
+        for key, item in raw.items()
+        if str(key).strip() and str(item).strip().isdigit()
+    }
+
+
+def custom_emoji_html(
+    custom_emoji_id: str | None,
+    fallback: str,
+    *,
+    enabled: bool = True,
+) -> str:
+    """Render a single custom emoji with a safe Unicode fallback."""
+    if not enabled or not str(custom_emoji_id or "").strip().isdigit():
+        return fallback
+    return f'<tg-emoji emoji-id="{str(custom_emoji_id).strip()}">{fallback}</tg-emoji>'
+
 def dump_emoji_map(value: Mapping[str, Any] | None) -> str:
     return json.dumps(normalize_emoji_map(value), ensure_ascii=False, separators=(",", ":"))
 
