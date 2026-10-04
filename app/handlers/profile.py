@@ -192,12 +192,12 @@ async def text_profile_rank_stats(message: Message) -> None:
             await send_rich_message(message.bot, message.chat.id, content, reply_parameters={"message_id": message.message_id})
         except Exception:
             if kind == "profile":
-                text = f"👤 پروفایل {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nسطح: {rank_for_score(user.score)}\\nرتبه: #{await _user_position(session, user)}\\nامتیاز: {user.score}\\nبازی: {user.games_played}\\nبرد: {user.games_won}\\nتگ فعال: {_active_tag(user)}"
+                text = f"👤 پروفایل {tg_name(user.display_name or user.first_name or 'بازیکن')}\nسطح: {rank_for_score(user.score)}\nرتبه: #{await _user_position(session, user)}\nامتیاز: {user.score}\nبازی: {user.games_played}\nبرد: {user.games_won}\nتگ فعال: {_active_tag(user)}"
             elif kind == "rank":
                 latest, month_old = await _rank_history(session, user); pos = await _user_position(session, user); change = "—" if not month_old else str(int(month_old.rank_position or pos) - pos)
-                text = f"🏆 رتبه {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nرتبه: #{pos}\\nامتیاز: {user.score}\\nآخرین امتیاز: {latest.score_delta if latest else '—'}\\nتغییر رتبه ۳۰ روزه: {change}"
+                text = f"🏆 رتبه {tg_name(user.display_name or user.first_name or 'بازیکن')}\nرتبه: #{pos}\nامتیاز: {user.score}\nآخرین امتیاز: {latest.score_delta if latest else '—'}\nتغییر رتبه ۳۰ روزه: {change}"
             else:
-                text = f"📊 آمار {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nبازی: {user.games_played}\\nبرد: {user.games_won}\\nبرد٪: {(user.games_won/user.games_played*100 if user.games_played else 0):.1f}%\\nشهروند: {user.citizen_wins}\\nمافیا: {user.mafia_wins}\\nمستقل: {user.independent_wins}\\nچالش: {user.challenges}\\nبهترین برد پیاپی: {user.best_win_streak}"
+                text = f"📊 آمار {tg_name(user.display_name or user.first_name or 'بازیکن')}\nبازی: {user.games_played}\nبرد: {user.games_won}\nبرد٪: {(user.games_won/user.games_played*100 if user.games_played else 0):.1f}%\nشهروند: {user.citizen_wins}\nمافیا: {user.mafia_wins}\nمستقل: {user.independent_wins}\nچالش: {user.challenges}\nبهترین برد پیاپی: {user.best_win_streak}"
             await message.answer(text, reply_to_message_id=message.message_id)
 
 
