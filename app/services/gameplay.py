@@ -864,14 +864,24 @@ def _scenario_challenge_mode(game) -> str:
 
 
 async def current_turn(session, game_id: int) -> dict | None:
+    # A new round enters setup before a fresh turn_state is written. Never
+    # expose the previous round's turn as the current turn; doing so makes
+    # challenge/next callbacks act on a stale speaker.
+    active_round = await current_round(session, game_id)
     result = await session.execute(
         select(GameEvent).where(
             GameEvent.game_id == game_id,
             GameEvent.event_type == "turn_state",
         ).order_by(GameEvent.id.desc())
     )
-    event = result.scalars().first()
-    return _payload(event) if event else None
+    for event in result.scalars():
+        data = _payload(event)
+        try:
+            if int(data.get("round_no", -1)) == int(active_round):
+                return data
+        except (TypeError, ValueError):
+            continue
+    return None
 
 
 async def _current_scenario(session, game):
