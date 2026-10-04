@@ -22,6 +22,7 @@ from app.handlers.keyboards import (
     main_menu,
     player_management_menu,
     player_target_management_keyboard,
+    player_replace_destination_keyboard,
     ranking_menu,
     admin_panel_menu,
     admin_scenario_keyboard,
@@ -789,6 +790,135 @@ async def _remap_game_players_to_scenario(session, game, scenario, old_capacity:
         player.reserve_position = position
 
     await session.flush()
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:player_action:"))
+async def gameadmin_player_action(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("عملیات نامعتبر است.", show_alert=True)
+        return
+    group_id, action = int(parts[2]), parts[3]
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not group or not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        players = await GameRepository.players(session, game.id, include_reserve=True)
+        if action == "replace":
+            markup = player_target_management_keyboard(group_id, action, players, only_substitute=True)
+        elif action == "birthday":
+            markup = player_target_management_keyboard(group_id, action, players, only_dead=True)
+        else:
+            markup = player_target_management_keyboard(group_id, action, players, only_alive=True)
+        await callback.message.edit_text("👥 بازیکن موردنظر را انتخاب کنید:", reply_markup=markup)
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:player_target:"))
+async def gameadmin_player_target(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("بازیکن نامعتبر است.", show_alert=True)
+        return
+    group_id, action, user_id = int(parts[2]), parts[3], int(parts[4])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not group or not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        target = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == user_id))
+        target_user = await session.get(User, user_id)
+        if not target or not target_user:
+            await callback.answer("بازیکن پیدا نشد.", show_alert=True)
+            return
+        if action == "replace":
+            subs = await GameRepository.substitutes(session, game.id)
+            source = next((p for p, u in subs if int(u.id) == user_id), None)
+            if not source:
+                await callback.answer("این بازیکن در لیست جایگزین نیست.", show_alert=True)
+                return
+            alive = await GameRepository.players(session, game.id)
+            await callback.message.edit_text(
+                f"🔁 جایگزین {tg_name(target_user.display_name or target_user.first_name)}\n\nبازیکن داخل بازی را انتخاب کنید:",
+                reply_markup=player_replace_destination_keyboard(group_id, user_id, alive),
+            )
+            await callback.answer()
+            return
+        round_no = await current_round(session, game.id) if game.status == "running" else None
+        if action == "remove":
+            if game.status == "waiting":
+                await session.delete(target)
+            else:
+                target.alive, target.exit_type = False, "death"
+        elif action == "kick":
+            target.alive, target.exit_type = False, "kick"
+        elif action == "silence":
+            target.silence_until_round = round_no
+        elif action == "extra_turn":
+            target.extra_turn_round = round_no
+        elif action == "warning":
+            target.warning_count += 1
+            target_user.score -= min(target.warning_count, 5)
+        elif action == "birthday":
+            target.alive, target.exit_type = True, None
+            target.silence_until_round = None
+            target.extra_turn_round = None
+        elif action == "faceoff":
+            target.alive, target.exit_type = False, "faceoff"
+        elif action == "slaughter":
+            target.alive, target.exit_type = False, "slaughter"
+        else:
+            await callback.answer("عملیات نامعتبر است.", show_alert=True)
+            return
+        await session.commit()
+        players = await GameRepository.players(session, game.id, include_reserve=True)
+        lines = []
+        for p, u in players:
+            if getattr(p, "is_substitute", False):
+                lines.append(f"🔁 جایگزین {p.substitute_position}. {tg_name(u.display_name or u.first_name)}")
+            elif p.is_reserved:
+                lines.append(f"🪑 رزرو {p.reserve_position}. {tg_name(u.display_name or u.first_name)}")
+            else:
+                lines.append(f"{p.seat}. {tg_name(u.display_name or u.first_name)}")
+        await callback.message.edit_text(
+            "مدیریت بازیکنان\n\n" + ("\n".join(lines) or "بازیکنی نیست."),
+            reply_markup=player_management_menu(group_id, f"gameadmin:active:{group_id}"),
+        )
+    await callback.answer("عملیات انجام شد.")
+
+@router.callback_query(lambda c: c.data.startswith("gameadmin:player_replace_to:"))
+async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("درخواست جایگزینی نامعتبر است.", show_alert=True)
+        return
+    group_id, source_id, destination_id = int(parts[2]), int(parts[3]), int(parts[4])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not group or not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        source = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == source_id))
+        destination = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == destination_id))
+        if not source or not destination:
+            await callback.answer("بازیکن جایگزین یا بازیکن مقصد پیدا نشد.", show_alert=True)
+            return
+        if not await GameRepository.replace_player(session, game, source, destination):
+            await callback.answer("انجام جایگزینی ممکن نیست.", show_alert=True)
+            return
+        await callback.message.edit_text(
+            "✅ جایگزینی انجام شد. بازیکن قبلی از فهرست بازی خارج و جایگزین وارد بازی شد.",
+            reply_markup=player_management_menu(group_id, f"gameadmin:active:{group_id}"),
+        )
+    await callback.answer("جایگزینی انجام شد.")
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:scenario:"))
 async def gameadmin_scenario_select(callback: CallbackQuery) -> None:
