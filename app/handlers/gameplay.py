@@ -1460,16 +1460,11 @@ async def _send_vote2_private_controls(bot, session, game):
         return
     rules = state.get("rules") or {}
     visibility = rules.get("visibility", "public")
-    candidates = [int(x) for x in state.get("queue", [])]
-    users = {}
-    for uid in candidates:
-        user = await session.get(User, uid)
-        if user:
-            users[uid] = user
-    candidate_buttons = [
-        (uid, users[uid].display_name or users[uid].first_name or "بازیکن")
-        for uid in candidates if uid in users
-    ]
+    target_id = int(state.get("target_user_id"))
+    target_user = await session.get(User, target_id)
+    candidate_buttons = []
+    if target_user:
+        candidate_buttons = [(target_id, target_user.display_name or target_user.first_name or "بازیکن")]
     eligible = [int(x) for x in rules.get("eligible_voter_ids", [])]
     if visibility == "host_private":
         host = await session.get(User, int(game.host_user_id)) if game.host_user_id else None
@@ -1480,7 +1475,7 @@ async def _send_vote2_private_controls(bot, session, game):
                 if user:
                     voters.append((uid, user.display_name or user.first_name or "بازیکن"))
             voted = {
-                int(voter_id) for voter_id, _ in await _vote_records_for_phase(session, game, int(state["round_no"]), "vote2")
+                int(voter_id) for voter_id, _ in await _vote_records_for_target(session, game, int(state["round_no"]), "vote2", target_id)
             }
             await bot.send_message(
                 host.telegram_id,
