@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 from sqlalchemy import desc, func, select
 import json
+import re
 
 from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup
 from app.db.session import session_factory
@@ -4156,7 +4157,7 @@ async def tournament_group_delete(callback: CallbackQuery):
 async def _tour_member(session,t,user_id):
     u=await session.scalar(select(User).where(User.telegram_id==user_id))
     if not u: return False
-    return bool(await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==t.id,TournamentPlayer.user_id==u.id)))
+    return bool(await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==t.id,TournamentPlayer.user_id==u.id))) or bool(await session.scalar(select(GamePlayer.id).join(Game,Game.id==GamePlayer.game_id).where(GamePlayer.user_id==u.id,Game.group_id==t.group_id)))
 
 @router.callback_query(lambda c: c.data=='menu:tournaments')
 async def public_tournaments(callback: CallbackQuery):
@@ -4167,4 +4168,38 @@ async def public_tournaments(callback: CallbackQuery):
     for t in ts: b.row(InlineKeyboardButton(text=f'{t.emoji} {t.name[:50]}',callback_data=f'tourpub:open:{t.id}'))
     b.row(InlineKeyboardButton(text='↩️ بازگشت',callback_data='menu:root'))
     await callback.message.edit_text('🏆 تورنمنت‌های فعال:',reply_markup=b.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith('tourpub:open:'))
+async def public_tournament_open(callback: CallbackQuery):
+    tid=int(callback.data.rsplit(':',1)[1])
+    async with session_factory() as session:
+        t=await session.get(Tournament,tid)
+        if not t or not await _tour_member(session,t,callback.from_user.id): await callback.answer('این تورنمنت برای شما قابل مشاهده نیست.',show_alert=True); return
+    await callback.message.edit_text('🏆 تورنمنت',reply_markup=tournament_public_menu(tid)); await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith('tourpub:scores:') or c.data.startswith('tourpub:groups:') or c.data.startswith('tourpub:games:'))
+async def public_tournament_section(callback: CallbackQuery):
+    section,raw=callback.data.split(':')[1:]; tid=int(raw)
+    async with session_factory() as session:
+        t=await session.get(Tournament,tid)
+        if not t or not await _tour_member(session,t,callback.from_user.id): await callback.answer('دسترسی ندارید.',show_alert=True); return
+        rows=list((await session.execute(select(TournamentPlayer,User).join(User,User.id==TournamentPlayer.user_id).where(TournamentPlayer.tournament_id==tid).order_by(TournamentPlayer.final_rank.is_(None),TournamentPlayer.final_rank,TournamentPlayer.awarded_points.desc()))).all())
+        if section=='scores':
+            body=''.join(f'<tr><td align="center">{p.final_rank or "—"}</td><td>{escape(u.display_name or u.first_name or "بازیکن")}</td><td align="center"><b>{p.awarded_points}</b></td></tr>' for p,u in rows)
+            html=f'<h2>{t.emoji} {escape(t.name)}</h2><table bordered striped compact><tr><th>رتبه</th><th>بازیکن</th><th>امتیاز</th></tr>{body}</table>'
+        elif section=='groups':
+            groups=list((await session.execute(select(TournamentGroup).where(TournamentGroup.tournament_id==tid).order_by(TournamentGroup.group_no))).scalars().all())
+            parts=[]
+            for g in groups:
+                names=' • '.join(escape(u.display_name or u.first_name or 'بازیکن') for p,u in rows if p.group_no==g.group_no)
+                parts.append(f'<h3>👥 {escape(g.name)}</h3><p>{names or "خالی"}</p>')
+            html=f'<h2>{t.emoji} {escape(t.name)}</h2>'+''.join(parts)
+        else:
+            games=list((await session.execute(select(Game,Scenario).join(Scenario,Scenario.id==Game.scenario_id).where(Game.tournament_id==tid).order_by(Game.id))).all())
+            body=''.join(f'<tr><td>#{g.id}</td><td>{escape(s.name_fa)}</td><td>{_status_fa(g.status)}</td></tr>' for g,s in games)
+            html=f'<h2>{t.emoji} {escape(t.name)}</h2><table bordered striped compact><tr><th>بازی</th><th>سناریو</th><th>وضعیت</th></tr>{body}</table>' if body else f'<h2>{t.emoji} {escape(t.name)}</h2><p>هنوز بازی‌ای ثبت نشده است.</p>'
+    try: await edit_rich_message(callback.bot,callback.message.chat.id,callback.message.message_id,html)
+    except Exception: await callback.message.edit_text(re.sub('<[^>]+>','',html),reply_markup=tournament_public_menu(tid))
     await callback.answer()
