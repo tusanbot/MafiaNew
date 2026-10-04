@@ -23,6 +23,7 @@ from app.handlers.keyboards import (
     group_player_settings_menu,
     group_notification_settings_menu,
     group_visual_settings_menu,
+    group_custom_emoji_menu,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
     main_menu,
@@ -56,6 +57,7 @@ from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
+from app.utils.custom_emoji import dump_emoji_map, extract_custom_emoji_id, normalize_emoji_map
 from uuid import uuid4
 
 router = Router(name="menu")
@@ -70,6 +72,10 @@ def _phase_fa(value: str | None) -> str:
 class GameEventState(StatesGroup):
     description = State()
     game_number = State()
+
+
+class CustomEmojiState(StatesGroup):
+    emoji = State()
 
 
 class ScenarioAdminState(StatesGroup):
