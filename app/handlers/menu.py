@@ -57,7 +57,7 @@ from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
 from app.config import get_settings
 from app.utils.text import tg_name, tg_mention
-from app.utils.custom_emoji import dump_emoji_map, extract_custom_emoji_id, normalize_emoji_map
+from app.utils.custom_emoji import dump_emoji_map, extract_custom_emoji_id, game_emoji, normalize_emoji_map
 from uuid import uuid4
 
 router = Router(name="menu")
@@ -239,11 +239,11 @@ async def _game_result_text(session, game, winner: str) -> str:
     }
     lines = [
         "༄",
-        f"📓 <b>بازی شماره : {await get_game_number(session, game)}</b>",
+        f"{game_emoji(game, 'game')} <b>بازی شماره : {await get_game_number(session, game)}</b>",
         f"⏱️ زمان : {when:%H:%M}",
         f"📆 تاریخ : {_jalali_date(when)}",
         f"🗓 سناریو : {escape(scenario.name_fa if scenario else 'نامشخص')}",
-        f"👮‍♂️ گرداننده : {tg_mention(host.telegram_id, host.display_name or host.first_name or 'گرداننده') if host else 'نامشخص'}",
+        f"{game_emoji(game, 'leader')} گرداننده : {tg_mention(host.telegram_id, host.display_name or host.first_name or 'گرداننده') if host else 'نامشخص'}",
         "",
         "~ ~ ~ ~ ~ ~ ~ ~ ~ ~ ~",
         "<b>لیست بازیکنان</b>",
@@ -259,15 +259,15 @@ async def _game_result_text(session, game, winner: str) -> str:
             (winner == "citizen" and team == "citizen") or
             (winner == "independent" and team == "independent") or
             (winner == "citizen_independent" and team in {"citizen", "independent"})):
-            badges.append("🏆")
+            badges.append(game_emoji(game, "win"))
         if not player.alive:
-            badges.append("☠️")
+            badges.append(game_emoji(game, "death"))
             if player.exit_type == "kick" and emoji_settings.get("kick", True):
-                badges.append("⛔")
+                badges.append(game_emoji(game, "kick"))
             elif player.exit_type == "slaughter" and emoji_settings.get("slaughter", True):
-                badges.append("🔪")
+                badges.append(game_emoji(game, "slaughter"))
             elif player.exit_type == "vote":
-                badges.append("🗳")
+                badges.append(game_emoji(game, "vote"))
             elif player.exit_type == "faceoff":
                 badges.append("🎭")
         if player.warning_count and emoji_settings.get("warning", True):
