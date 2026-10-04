@@ -154,6 +154,8 @@ class GamePlayer(Base):
     seat: Mapped[int] = mapped_column(Integer)
     is_reserved: Mapped[bool] = mapped_column(Boolean, default=False)
     reserve_position: Mapped[int | None] = mapped_column(Integer)
+    is_substitute: Mapped[bool] = mapped_column(Boolean, default=False)
+    substitute_position: Mapped[int | None] = mapped_column(Integer)
     role_id: Mapped[int | None] = mapped_column(ForeignKey("roles.id"))
     alive: Mapped[bool] = mapped_column(Boolean, default=True)
     exit_type: Mapped[str | None] = mapped_column(String(30), nullable=True)
