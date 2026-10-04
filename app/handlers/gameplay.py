@@ -38,6 +38,7 @@ from app.services.gameplay import (
 )
 from app.services.game import get_game_number
 from app.utils.text import tg_name, tg_mention
+from app.utils.custom_emoji import game_emoji
 
 from app.handlers.keyboards import (
     day_keyboard,
@@ -378,13 +379,13 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                                 await start_voting(session, game)
                                 await bot.send_message(
                                     chat_id,
-                                    "🗳 رأی‌گیری دور شروع شد.",
+                                    f"{game_emoji(game, 'vote')} رأی‌گیری دور شروع شد.",
                                     reply_markup=vote_keyboard(game.game_key, await alive_players(session, game.id)),
                                 )
                             else:
                                 await bot.send_message(
                                     chat_id,
-                                    "🗳 نوبت‌های این دور تمام شد.",
+                                    f"{game_emoji(game, 'vote')} نوبت‌های این دور تمام شد.",
                                     reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
                                 )
                         except Exception:
@@ -851,7 +852,7 @@ async def _send_night_menus(bot, session, game):
         try:
             await bot.send_message(
                 user.telegram_id,
-                f"🌙 اقدام شب\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
+                f"{game_emoji(game, 'night')} اقدام شب\n\nنقش: {role.name_fa}\nاقدام خود را انتخاب کن:",
                 reply_markup=night_action_keyboard(game.game_key, action, players, user.id),
             )
         except Exception:
@@ -1070,7 +1071,7 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if chat_id:
             await callback.bot.send_message(
                 chat_id,
-                f"🤏🏻 چالش به <b>{requester_name}</b> داده شد.",
+                f"{game_emoji(game, 'challenge')} چالش به <b>{requester_name}</b> داده شد.",
                 reply_markup=challenge_placement_keyboard(game.game_key, int(event_id), requester_name),
                 parse_mode="HTML",
             )
@@ -1160,7 +1161,7 @@ async def challenge_place_handler(callback: CallbackQuery):
         chat_id = await _group_chat_id(session, game)
         try:
             await callback.message.edit_text(
-                f"🤏🏻 چالش به <b>{name}</b> داده شد.",
+                f"{game_emoji(game, 'challenge')} چالش به <b>{name}</b> داده شد.",
                 parse_mode="HTML",
                 reply_markup=None,
             )
@@ -1263,7 +1264,7 @@ async def next_turn_handler(callback: CallbackQuery):
             if result["kind"] == "finished_day":
                 await callback.bot.send_message(
                     chat_id,
-                    "🗳 نوبت‌های این دور تمام شد.",
+                    f"{game_emoji(game, 'vote')} نوبت‌های این دور تمام شد.",
                     reply_markup=day_keyboard(game.game_key, await alive_players(session, game.id)),
                 )
             elif result["kind"] == "defense":
@@ -1317,7 +1318,7 @@ async def day_night_handler(callback: CallbackQuery):
         if chat_id:
             await _set_game_chat_lock(callback.bot, session, game, bool(settings and settings.night_lock))
             await callback.bot.send_message(
-                chat_id, "🌙 فاز شب آغاز شد.",
+                chat_id, f"{game_emoji(game, 'night')} فاز شب آغاز شد.",
                 reply_markup=continue_night_keyboard(game.game_key, settings.night_lock if settings else False, settings.chat_lock if settings else False),
             )
             await _send_night_menus(callback.bot, session, game)
@@ -1406,7 +1407,7 @@ async def day_finish_back_handler(callback: CallbackQuery):
             return
         players = await alive_players(session, game.id)
         await callback.message.edit_text(
-            "🗳 <b>پایان دور</b>\n\nرأی‌گیری یا ادامه فاز بعدی را از همین‌جا انتخاب کن.",
+            f"{game_emoji(game, 'vote')} <b>پایان دور</b>\n\nرأی‌گیری یا ادامه فاز بعدی را از همین‌جا انتخاب کن.",
             reply_markup=day_keyboard(game.game_key, players),
             parse_mode="HTML",
         )
@@ -2018,7 +2019,7 @@ async def _send_defense_message(bot, session, game, chat_id: int, user_id: int):
         return None
     msg = await bot.send_message(
         chat_id,
-        f"🛡 نوبت دفاع {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}\n\n⏱ {_duration_text(game.turn_seconds)}",
+        f"{game_emoji(game, 'defense')} نوبت دفاع {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}\n\n⏱ {_duration_text(game.turn_seconds)}",
         reply_markup=day_turn_keyboard(game.game_key, True, False, game.turn_color_enabled, game.turn_color, game.challenge_color, False, False),
         parse_mode="HTML",
     )
