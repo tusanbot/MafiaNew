@@ -1309,12 +1309,12 @@ async def send_game_result_notifications(bot, session, game) -> None:
         key=lambda item: (int(item[1].get("game_rank", 999999)), item[0]),
     )
     role_lines = [
-        "<table bordered striped compact><caption>🎭 نقش بازیکن‌ها</caption>",
-        "<tr><th>#</th><th>بازیکن</th><th>نقش / تیم</th></tr>",
+        "<table bordered striped compact dir=\"rtl\"><caption align=\"right\">🎭 نقش بازیکن‌ها</caption>",
+        "<tr><th align=\"right\">بازیکن</th><th align=\"right\">نقش / تیم</th><th align=\"center\">#</th></tr>",
     ]
     rank_lines = [
-        "<table bordered striped compact><caption>🏆 رتبه‌بندی بازی</caption>",
-        "<tr><th>جایگاه</th><th>بازیکن</th><th>رتبه</th><th>امتیاز</th></tr>",
+        "<table bordered striped compact dir=\"rtl\"><caption align=\"right\">🏆 رتبه‌بندی بازی</caption>",
+        "<tr><th align=\"center\">امتیاز</th><th align=\"center\">جایگاه</th><th align=\"right\">بازیکن</th><th align=\"center\">#</th></tr>",
     ]
     for index, (uid_text, report) in enumerate(ranked_rows, start=1):
         player = await session.get(User, int(uid_text))
@@ -1329,12 +1329,12 @@ async def send_game_result_notifications(bot, session, game) -> None:
         game_rank = int(report.get("game_rank", index))
         score = int(report.get("score_after", 0))
         role_lines.append(
-            f"<tr><td align=\"center\">{index}</td><td>{escape(name)}</td>"
-            f"<td>{escape(role_cell)}</td></tr>"
+            f"<tr><td align=\"right\">{escape(name)}</td>"
+            f"<td align=\"right\">{escape(role_cell)}</td><td align=\"center\">{index}</td></tr>"
         )
         rank_lines.append(
-            f"<tr><td align=\"center\">{index}</td><td>{escape(name)}</td>"
-            f"<td align=\"center\">{game_rank}</td><td align=\"center\">{score}</td></tr>"
+            f"<tr><td align=\"right\">{escape(name)}</td>"
+            f"<td align=\"center\">{game_rank}</td><td align=\"center\">{score}</td><td align=\"center\">{index}</td></tr>"
         )
     role_lines.append("</table>")
     rank_lines.append("</table>")
