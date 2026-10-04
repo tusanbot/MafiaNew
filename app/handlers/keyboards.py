@@ -133,22 +133,70 @@ def group_visual_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
 
 def group_custom_emoji_menu(group_id: int, settings) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    mapping = normalize_emoji_map(getattr(settings, "custom_emoji_ids", "{}"))
     builder.row(InlineKeyboardButton(
-        text=f"✨ اموجی متحرک: {'فعال' if settings.custom_emoji else 'خاموش'}",
+        text=f"✨ اموجی‌های متحرک: {'فعال' if settings.custom_emoji else 'خاموش'}",
         callback_data=f"groupdefaults:emoji_toggle:{group_id}",
     ))
-    for key, fallback in DEFAULT_EMOJIS.items():
-        status = "✅" if key in mapping else fallback
-        builder.row(InlineKeyboardButton(
-            text=f"{status} {key}",
-            callback_data=f"groupdefaults:emoji_set:{group_id}:{key}",
-        ))
+    builder.row(
+        InlineKeyboardButton(text="🎮 بازی و روند بازی", callback_data=f"groupdefaults:emoji_section:{group_id}:game"),
+        InlineKeyboardButton(text="🏆 دستاوردها", callback_data=f"groupdefaults:emoji_section:{group_id}:achievement"),
+    )
     builder.row(InlineKeyboardButton(
-        text="🧹 پاک‌کردن همه اموجی‌های سفارشی",
+        text="🏷️ تگ‌ها",
+        callback_data=f"groupdefaults:emoji_section:{group_id}:tag",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="🧹 پاک‌کردن اموجی‌های بازی",
         callback_data=f"groupdefaults:emoji_clear:{group_id}",
     ))
     _back(builder, f"groupmgmt:select:defaults:{group_id}")
+    return builder.as_markup()
+
+
+def group_game_emoji_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    mapping = normalize_emoji_map(getattr(settings, "custom_emoji_ids", "{}"))
+    labels = {
+        "turn":"⏩ نوبت", "challenge":"🤏🏻 چالش", "vote":"🗳️ رأی‌گیری",
+        "defense":"🛡️ دفاع", "silence":"🔇 سکوت", "extra_turn":"➕ ترن اضافه",
+        "warning":"⚠️ تذکر", "death":"💀 حذف/مرگ", "kick":"⛔ کیک",
+        "slaughter":"🩸 سلاخی", "night":"🌙 شب", "day":"☀️ روز",
+        "win":"🏆 برد", "lose":"💔 باخت", "leader":"👑 سردست", "game":"🎮 بازی", "role":"🎭 نقش",
+    }
+    for key, fallback in DEFAULT_EMOJIS.items():
+        current = "✨" if key in mapping else fallback
+        builder.row(InlineKeyboardButton(
+            text=f"{current} {labels.get(key, key)}",
+            callback_data=f"groupdefaults:emoji_set:{group_id}:{key}",
+        ))
+    builder.row(InlineKeyboardButton(text="🧹 حذف همه اموجی‌های بازی", callback_data=f"groupdefaults:emoji_clear:{group_id}"))
+    _back(builder, f"groupdefaults:emoji_menu:{group_id}")
+    return builder.as_markup()
+
+
+def group_achievement_emoji_menu(group_id: int, achievements) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for achievement in achievements:
+        current = "✨" if getattr(achievement, "custom_emoji_id", None) else (achievement.icon or "🏅")
+        builder.row(InlineKeyboardButton(
+            text=f"{current} {achievement.name_fa}",
+            callback_data=f"groupdefaults:achievement_emoji:{group_id}:{achievement.key}",
+        ))
+    builder.row(InlineKeyboardButton(text="🧹 حذف اموجی سفارشی دستاوردها", callback_data=f"groupdefaults:achievement_emoji_clear:{group_id}"))
+    _back(builder, f"groupdefaults:emoji_menu:{group_id}")
+    return builder.as_markup()
+
+
+def group_tag_emoji_menu(group_id: int, tags) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for achievement in tags:
+        current = "✨" if getattr(achievement, "tag_custom_emoji_id", None) else (achievement.tag_emoji or "🏷️")
+        builder.row(InlineKeyboardButton(
+            text=f"{current} {achievement.tag_name or achievement.name_fa}",
+            callback_data=f"groupdefaults:tag_emoji:{group_id}:{achievement.key}",
+        ))
+    builder.row(InlineKeyboardButton(text="🧹 حذف اموجی سفارشی تگ‌ها", callback_data=f"groupdefaults:tag_emoji_clear:{group_id}"))
+    _back(builder, f"groupdefaults:emoji_menu:{group_id}")
     return builder.as_markup()
 
 
