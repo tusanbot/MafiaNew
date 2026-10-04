@@ -18,6 +18,14 @@ from app.utils.text import tg_name, tg_plain_name
 router = Router(name="game")
 
 
+async def _load_game_by_group(session, group_id: int):
+    return await session.scalar(
+        select(Game).where(
+            Game.group_id == group_id,
+            Game.status == "running",
+        ).order_by(Game.id.desc())
+    )
+
 async def _load_game(session, game_key: str):
     return await GameRepository.get_by_key(session, game_key)
 
