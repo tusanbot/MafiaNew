@@ -4198,7 +4198,9 @@ async def tournament_group_delete(callback: CallbackQuery):
     _,_,tid,gid=callback.data.split(':'); tid=int(tid); gid=int(gid)
     async with session_factory() as session:
         t=await session.get(Tournament,tid); g=await session.get(TournamentGroup,gid)
-        if t and g: await session.delete(g); await session.commit()
+        if t and g:
+            for p in (await session.execute(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.group_no==g.group_no))).scalars(): p.group_no=None
+            await session.delete(g); await session.commit()
     await callback.message.edit_text('🗑 گروه حذف شد.',reply_markup=tournament_manage_menu(tid,t.group_id if t else 0)); await callback.answer()
 
 async def _tour_member(session,t,user_id):
