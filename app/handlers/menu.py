@@ -52,6 +52,9 @@ from app.handlers.keyboards import (
     host_select_keyboard,
     game_event_management_keyboard,
     game_event_game_selector,
+    tournament_admin_menu,
+    tournament_manage_menu,
+    tournament_public_menu,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
