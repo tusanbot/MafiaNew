@@ -58,8 +58,105 @@ def main_menu(show_admin: bool = False) -> InlineKeyboardMarkup:
 
 def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="تنظیمات و قفل‌های گروه", callback_data="groupmgmt:locks"))
+    builder.row(InlineKeyboardButton(text="🎮 مدیریت بازی‌های گروه", callback_data="groupmgmt:games"))
+    builder.row(
+        InlineKeyboardButton(text="⚙️ تنظیمات پایه بازی", callback_data="groupmgmt:defaults"),
+        InlineKeyboardButton(text="👥 تنظیمات بازیکنان", callback_data="groupmgmt:players"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔔 اعلان‌های گروه", callback_data="groupmgmt:notifications"),
+        InlineKeyboardButton(text="🔒 قفل‌های گروه", callback_data="groupmgmt:locks"),
+    )
     _back(builder, back_callback)
+    return builder.as_markup()
+
+
+def group_default_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"🤖 بازی خودکار: {'✅' if settings.default_auto_play else '❌'}",
+        callback_data=f"groupdefaults:toggle:{group_id}:default_auto_play",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🤏 چالش: {'✅' if settings.default_challenge_enabled else '❌'}",
+        callback_data=f"groupdefaults:toggle:{group_id}:default_challenge_enabled",
+    ))
+    builder.row(
+        InlineKeyboardButton(text=f"⏱ نوبت: {settings.default_turn_seconds}s", callback_data=f"groupdefaults:time:{group_id}:turn"),
+        InlineKeyboardButton(text=f"🤏 زمان چالش: {settings.default_challenge_seconds}s", callback_data=f"groupdefaults:time:{group_id}:challenge"),
+    )
+    builder.row(InlineKeyboardButton(
+        text=f"➕ چالش اضافه: {settings.default_extra_challenge_seconds}s",
+        callback_data=f"groupdefaults:time:{group_id}:extra_challenge",
+    ))
+    builder.row(
+        InlineKeyboardButton(text=f"⏭ نکست گرداننده: {'✅' if settings.default_next_host_enabled else '❌'}", callback_data=f"groupdefaults:toggle:{group_id}:default_next_host_enabled"),
+        InlineKeyboardButton(text=f"⏭ نکست بازیکن: {'✅' if settings.default_next_player_enabled else '❌'}", callback_data=f"groupdefaults:toggle:{group_id}:default_next_player_enabled"),
+    )
+    builder.row(InlineKeyboardButton(
+        text=f"🔄 نکست خودکار: {'✅' if settings.default_next_auto_enabled else '❌'}",
+        callback_data=f"groupdefaults:toggle:{group_id}:default_next_auto_enabled",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"🪑 رزرو پیش‌فرض: {'✅' if settings.default_reserve_enabled else '❌'}",
+        callback_data=f"groupdefaults:toggle:{group_id}:default_reserve_enabled",
+    ))
+    builder.row(InlineKeyboardButton(text="🎨 رنگ‌ها و اموجی‌ها", callback_data=f"groupdefaults:visual:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🗳 تنظیمات رأی‌گیری", callback_data=f"groupdefaults:voting:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🎭 سناریوی پیش‌فرض", callback_data=f"groupdefaults:scenario:{group_id}"))
+    _back(builder, "menu:group_management")
+    return builder.as_markup()
+
+
+def group_player_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for field, label in (
+        ("allow_player_join", "پیوستن بازیکن"),
+        ("allow_reserve_queue", "صف رزرو"),
+        ("allow_substitute_queue", "صف جایگزین"),
+        ("auto_silence_on_max_warning", "سکوت خودکار"),
+        ("auto_kick_on_max_warning", "کیک خودکار"),
+    ):
+        builder.row(InlineKeyboardButton(
+            text=f"{'✅' if getattr(settings, field) else '❌'} {label}",
+            callback_data=f"groupplayers:toggle:{group_id}:{field}",
+        ))
+    builder.row(InlineKeyboardButton(
+        text=f"⚠️ سقف تذکر: {settings.max_warnings}",
+        callback_data=f"groupplayers:warnings:{group_id}",
+    ))
+    _back(builder, "menu:group_management")
+    return builder.as_markup()
+
+
+def group_notification_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    import json
+    defaults = {
+        "game_start": True, "game_end": True, "role_distribution": True,
+        "player_join_leave": True, "turn": True, "challenge": True,
+        "vote": True, "night": True, "reserve_substitute": True,
+    }
+    try:
+        values = {**defaults, **json.loads(settings.notification_settings or "{}")}
+    except (TypeError, ValueError):
+        values = defaults
+    labels = (
+        ("game_start", "شروع بازی"),
+        ("game_end", "پایان بازی"),
+        ("role_distribution", "پخش نقش"),
+        ("player_join_leave", "ورود/خروج بازیکن"),
+        ("turn", "نوبت‌ها"),
+        ("challenge", "چالش‌ها"),
+        ("vote", "رأی‌گیری"),
+        ("night", "فاز شب"),
+        ("reserve_substitute", "رزرو/جایگزین"),
+    )
+    for key, label in labels:
+        builder.row(InlineKeyboardButton(
+            text=f"{'✅' if values.get(key, True) else '❌'} {label}",
+            callback_data=f"groupnotify:toggle:{group_id}:{key}",
+        ))
+    _back(builder, "menu:group_management")
     return builder.as_markup()
 
 
