@@ -7,7 +7,7 @@ import json
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Game, GameEvent, GroupSettings, Scenario, User
+from app.db.models import Tournament, Game, GameEvent, GroupSettings, Scenario, User
 from app.repositories.games import GameRepository
 from app.utils.text import tg_name, tg_mention
 from app.utils.custom_emoji import game_emoji
@@ -136,6 +136,7 @@ async def create_game(
         challenge_color = settings.default_challenge_color if challenge_color is None else challenge_color
 
     key = uuid4().hex[:12]
+    active_tournament = await session.scalar(select(Tournament).where(Tournament.group_id == group.id, Tournament.status == 'active').order_by(Tournament.start_at.desc()))
     game = await GameRepository.create(
         session,
         group,
@@ -150,6 +151,7 @@ async def create_game(
         turn_seconds=turn_seconds if turn_seconds is not None else getattr(scenario, "turn_seconds", 120),
         challenge_seconds=challenge_seconds if challenge_seconds is not None else getattr(scenario, "challenge_seconds", 60),
         extra_challenge_seconds=extra_challenge_seconds if extra_challenge_seconds is not None else getattr(scenario, "extra_challenge_seconds", 60),
+        tournament_id=active_tournament.id if active_tournament else None,
     )
     if settings is not None:
         game.challenge_enabled = settings.default_challenge_enabled
