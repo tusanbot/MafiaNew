@@ -368,32 +368,23 @@ class GameRepository:
             return False
         old_sub_position = source.substitute_position
         replacement_user_id = source.user_id
-        if game.status == "waiting":
-            # The substitute takes the selected seat. The old substitute row is
-            # removed so the user is no longer present in any secondary list.
-            destination.user_id = replacement_user_id
-            destination.is_reserved = False
-            destination.is_substitute = False
-            destination.reserve_position = None
-            destination.substitute_position = None
-            destination.alive = True
-            destination.exit_type = None
-            destination.warning_count = 0
-            await session.delete(source)
-        else:
-            # In a running game the destination seat/role is preserved, while
-            # the GamePlayer identity is swapped to the substitute user. The
-            # former player is therefore completely removed from all active
-            # lists and can register again later.
-            destination.user_id = replacement_user_id
-            destination.is_reserved = False
-            destination.is_substitute = False
-            destination.reserve_position = None
-            destination.substitute_position = None
-            destination.alive = True
-            destination.exit_type = None
-            destination.warning_count = 0
-            await session.delete(source)
+        # The substitute row currently owns the same (game_id, user_id)
+        # identity that we are about to assign to the destination row. Delete
+        # and flush it first; otherwise PostgreSQL can hit the unique
+        # constraint before SQLAlchemy orders the DELETE ahead of the UPDATE.
+        await session.delete(source)
+        await session.flush()
+
+        # The destination seat/role is preserved. Only the user occupying that
+        # seat is replaced. This works identically for lobby and running games.
+        destination.user_id = replacement_user_id
+        destination.is_reserved = False
+        destination.is_substitute = False
+        destination.reserve_position = None
+        destination.substitute_position = None
+        destination.alive = True
+        destination.exit_type = None
+        destination.warning_count = 0
         await session.flush()
         if old_sub_position is not None:
             await session.execute(update(GamePlayer).where(
