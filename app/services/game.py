@@ -9,7 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import Game, GameEvent, GroupSettings, Scenario, User
 from app.repositories.games import GameRepository
-from app.utils.text import tg_name, tg_mention\nfrom app.utils.custom_emoji import game_emoji
+from app.utils.text import tg_name, tg_mention
+from app.utils.custom_emoji import game_emoji
 
 
 def gregorian_to_jalali(year: int, month: int, day: int) -> tuple[int, int, int]:
