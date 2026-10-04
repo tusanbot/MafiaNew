@@ -7,7 +7,7 @@ import json
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import Game, GameEvent, Scenario, User
+from app.db.models import Game, GameEvent, GroupSettings, Scenario, User
 from app.repositories.games import GameRepository
 from app.utils.text import tg_name, tg_mention
 
@@ -119,6 +119,21 @@ async def create_game(
     challenge_seconds: int | None = None,
     extra_challenge_seconds: int | None = None,
 ):
+    settings = await session.scalar(
+        select(GroupSettings).where(GroupSettings.group_id == group.id)
+    )
+    # Group settings are permanent defaults. Explicit arguments remain useful for
+    # a game-specific override, while a normal game no longer needs to recreate
+    # the group's configuration manually.
+    if settings is not None:
+        auto_play = settings.default_auto_play if auto_play is False else auto_play
+        reserve_enabled = settings.default_reserve_enabled if reserve_enabled is True else reserve_enabled
+        turn_seconds = turn_seconds if turn_seconds is not None else settings.default_turn_seconds
+        challenge_seconds = challenge_seconds if challenge_seconds is not None else settings.default_challenge_seconds
+        extra_challenge_seconds = extra_challenge_seconds if extra_challenge_seconds is not None else settings.default_extra_challenge_seconds
+        turn_color = settings.default_turn_color if turn_color == "پیش‌فرض" else turn_color
+        challenge_color = settings.default_challenge_color if challenge_color == "پیش‌فرض" else challenge_color
+
     key = uuid4().hex[:12]
     game = await GameRepository.create(
         session,
