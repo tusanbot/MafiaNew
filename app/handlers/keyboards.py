@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.utils.text import tg_plain_name
+from app.utils.custom_emoji import DEFAULT_EMOJIS, normalize_emoji_map
 
 _BUTTON_EMOJI_RULES = (
     ("مدیریت بازی فعال", "🎮"), ("مدیریت گروه", "👥"), ("تنظیمات و قفل", "🔐"),
@@ -123,10 +124,31 @@ def group_visual_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
         callback_data=f"groupdefaults:toggle:{group_id}:default_turn_color_enabled",
     ))
     builder.row(InlineKeyboardButton(
-        text=f"✨ اموجی‌های وضعیت: {'فعال' if settings.custom_emoji else 'پیش‌فرض'}",
-        callback_data=f"groupdefaults:emoji:{group_id}",
+        text=f"✨ اموجی‌های متحرک: {'فعال' if settings.custom_emoji else 'خاموش'}",
+        callback_data=f"groupdefaults:emoji_menu:{group_id}",
     ))
     _back(builder, "groupmgmt:defaults")
+    return builder.as_markup()
+
+
+def group_custom_emoji_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    mapping = normalize_emoji_map(getattr(settings, "custom_emoji_ids", "{}"))
+    builder.row(InlineKeyboardButton(
+        text=f"✨ اموجی متحرک: {'فعال' if settings.custom_emoji else 'خاموش'}",
+        callback_data=f"groupdefaults:emoji_toggle:{group_id}",
+    ))
+    for key, fallback in DEFAULT_EMOJIS.items():
+        status = "✅" if key in mapping else fallback
+        builder.row(InlineKeyboardButton(
+            text=f"{status} {key}",
+            callback_data=f"groupdefaults:emoji_set:{group_id}:{key}",
+        ))
+    builder.row(InlineKeyboardButton(
+        text="🧹 پاک‌کردن همه اموجی‌های سفارشی",
+        callback_data=f"groupdefaults:emoji_clear:{group_id}",
+    ))
+    _back(builder, f"groupmgmt:select:defaults:{group_id}")
     return builder.as_markup()
 
 
