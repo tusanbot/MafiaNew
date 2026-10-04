@@ -277,9 +277,16 @@ async def text_cancel_game(message: Message, state: FSMContext) -> None:
             return
         await GameRepository.cancel(session, game)
         from app.handlers.gameplay import delete_main_roster, release_global_lock
-        await release_global_lock(message.bot, session, game)
-        await delete_main_roster(message.bot, session, game)
-    await message.answer("❌ بازی توسط گرداننده لغو شد.")
+        try:
+            await release_global_lock(message.bot, session, game)
+        except Exception:
+            pass
+        try:
+            await delete_main_roster(message.bot, session, game)
+        except Exception:
+            pass
+        await GameRepository.purge(session, game.id)
+    await message.answer("❌ بازی لغو شد و اطلاعات بازی حذف شد.")
 
 
 
