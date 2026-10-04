@@ -1,20 +1,23 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 import os
 import aiohttp
+import html
+import json
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import func, select
 
-from app.db.models import Achievement, Group, GroupSettings, Role, User, UserAchievement, UserRoleStat
+from app.db.models import Achievement, Group, GroupSettings, Role, User, UserAchievement, UserRoleStat, UserScoreHistory
 from app.db.session import session_factory
 from app.handlers.keyboards import main_menu, ranking_menu, profile_menu, profile_tags_keyboard
 from app.utils.custom_emoji import custom_emoji_html
 from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
-from app.services.rich_message import edit_rich_message
+from app.services.rich_message import edit_rich_message, send_rich_message
 
 router = Router(name="profile")
 
@@ -56,6 +59,147 @@ async def _achievements_rich_html(session, user: User) -> str:
         f'<h2>🏅 دستاوردها</h2><p>تعداد کسب‌شده: <b>{earned}</b></p>{table}'
         '<tg-button-row align="center"><tg-button type="callback_data" data="menu:root">🏠 منوی اصلی</tg-button></tg-button-row>'
     )
+
+
+_PROFILE_COMMANDS = {"پروفایل", "profile", "/profile", "رتبه", "rank", "/rank", "ranking", "/ranking", "آمار", "stats", "/stats", "statistics", "/statistics"}
+
+def _command_kind(text: str) -> str | None:
+    value = " ".join((text or "").strip().lower().split())
+    if value in {"پروفایل", "profile", "/profile"}: return "profile"
+    if value in {"رتبه", "rank", "/rank", "ranking", "/ranking"}: return "rank"
+    if value in {"آمار", "stats", "/stats", "statistics", "/statistics"}: return "stats"
+    return None
+
+async def _resolve_command_user(message: Message, session):
+    target = message.reply_to_message.from_user if message.reply_to_message and message.reply_to_message.from_user else message.from_user
+    if target is None: return None
+    return await sync_telegram_user(session, target.id, target.username, target.first_name or "", target.last_name)
+
+async def _user_position(session, user: User) -> int:
+    return int((await session.scalar(select(func.count(User.id)).where(
+        User.is_active.is_(True), User.games_played > 0, User.score > user.score
+    )) or 0) + 1)
+
+def _active_tag(user: User) -> str:
+    key = (user.active_tag_key or "").strip()
+    if not key: return "ندارد"
+    raw = (user.tags or "").strip()
+    if raw:
+        try:
+            data = json.loads(raw)
+            if isinstance(data, dict):
+                value = data.get(key)
+                if isinstance(value, dict):
+                    return f"{value.get('emoji', '')} {value.get('name') or value.get('name_fa') or key}".strip()
+                if isinstance(value, str): return value
+            if isinstance(data, list):
+                for item in data:
+                    if isinstance(item, dict) and str(item.get("key", "")) == key:
+                        return f"{item.get('emoji', '')} {item.get('name') or item.get('name_fa') or key}".strip()
+        except Exception:
+            pass
+        for part in raw.split(","):
+            if ":" in part:
+                k, value = part.split(":", 1)
+                if k.strip() == key: return value.strip()
+    return key
+
+async def _latest_achievement(session, user_id: int):
+    return await session.scalar(select(Achievement).join(UserAchievement, UserAchievement.achievement_id == Achievement.id)
+        .where(UserAchievement.user_id == user_id).order_by(UserAchievement.earned_at.desc()).limit(1))
+
+async def _rank_history(session, user: User):
+    now = datetime.now(timezone.utc)
+    latest = await session.scalar(select(UserScoreHistory).where(UserScoreHistory.user_id == user.id)
+        .order_by(UserScoreHistory.created_at.desc(), UserScoreHistory.id.desc()).limit(1))
+    month_old = await session.scalar(select(UserScoreHistory).where(
+        UserScoreHistory.user_id == user.id, UserScoreHistory.created_at <= now - timedelta(days=30)
+    ).order_by(UserScoreHistory.created_at.desc(), UserScoreHistory.id.desc()).limit(1))
+    return latest, month_old
+
+async def _profile_rich_html_detailed(session, user: User) -> str:
+    position = await _user_position(session, user)
+    rank, _, remaining = rank_progress(int(user.score))
+    win_rate = user.games_won / user.games_played * 100 if user.games_played else 0
+    achievement = await _latest_achievement(session, user)
+    latest, _ = await _rank_history(session, user)
+    name = html.escape(tg_name(user.display_name or user.first_name or "بازیکن"), quote=False)
+    tag = html.escape(_active_tag(user), quote=False)
+    last_achievement = f"{achievement.icon or '🏅'} {html.escape(achievement.name_fa)}" if achievement else "هنوز دستاوردی فعال نشده"
+    return (
+        f"<h2>👤 پروفایل {name}</h2><table bordered striped compact>"
+        "<tr><th>مورد</th><th>مقدار</th></tr>"
+        f"<tr><td>سطح</td><td>{html.escape(rank)}</td></tr><tr><td>رتبه</td><td>#{position}</td></tr>"
+        f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr><tr><td>بازی‌های انجام‌شده</td><td>{int(user.games_played)}</td></tr>"
+        f"<tr><td>برد</td><td>{int(user.games_won)} ({win_rate:.1f}٪)</td></tr><tr><td>تگ فعال</td><td>{tag}</td></tr>"
+        f"<tr><td>آخرین دستاورد فعال‌شده</td><td>{last_achievement}</td></tr>"
+        f"<tr><td>برد متوالی</td><td>{int(user.win_streak)} | بهترین: {int(user.best_win_streak)}</td></tr></table>"
+        f"<p>{('⏳ تا سطح بعد: ' + str(remaining) + ' امتیاز') if remaining else '👑 شما در بالاترین سطح هستید.'}</p>"
+        f"<p>آخرین تغییر امتیاز: <b>{('+' if latest and latest.score_delta >= 0 else '') + str(latest.score_delta) if latest else '—'}</b></p>"
+    )
+
+async def _rank_rich_html(session, user: User) -> str:
+    position = await _user_position(session, user)
+    latest, month_old = await _rank_history(session, user)
+    rank = rank_for_score(int(user.score))
+    last_delta = f"{'+' if latest and latest.score_delta >= 0 else ''}{latest.score_delta}" if latest else "—"
+    if month_old:
+        change = int(month_old.rank_position or position) - position
+        month_text = f"📈 +{change} رتبه" if change > 0 else (f"📉 {change} رتبه" if change < 0 else "➖ بدون تغییر")
+    else:
+        month_text = "⏳ هنوز سابقه ۳۰ روزه کافی ثبت نشده"
+    name = html.escape(tg_name(user.display_name or user.first_name or "بازیکن"), quote=False)
+    return (
+        f"<h2>🏆 رتبه {name}</h2><table bordered striped compact><tr><th>مورد</th><th>مقدار</th></tr>"
+        f"<tr><td>رتبه فعلی</td><td><b>#{position}</b></td></tr><tr><td>سطح</td><td>{html.escape(rank)}</td></tr>"
+        f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr><tr><td>آخرین امتیاز کسب‌شده</td><td><b>{last_delta}</b></td></tr>"
+        f"<tr><td>تغییر رتبه در ۳۰ روز</td><td>{month_text}</td></tr></table>"
+        "<p>ℹ️ تغییر رتبه از روی آخرین سابقه ثبت‌شده در بازی‌ها محاسبه می‌شود.</p>"
+    )
+
+async def _stats_rich_html(session, user: User) -> str:
+    games, wins = int(user.games_played), int(user.games_won)
+    win_rate = wins / games * 100 if games else 0
+    name = html.escape(tg_name(user.display_name or user.first_name or "بازیکن"), quote=False)
+    role_rows = list((await session.execute(select(UserRoleStat, Role).join(Role, Role.id == UserRoleStat.role_id)
+        .where(UserRoleStat.user_id == user.id).order_by(UserRoleStat.games.desc(), UserRoleStat.wins.desc()).limit(10))).all())
+    role_table = ""
+    if role_rows:
+        rows = "".join(f"<tr><td>{html.escape(role.name_fa)}</td><td>{int(stat.games)}</td><td>{int(stat.wins)}</td><td>{(stat.wins/stat.games*100):.0f}٪</td></tr>" for stat, role in role_rows)
+        role_table = "<h3>🎭 آمار نقش‌ها</h3><table bordered striped compact><tr><th>نقش</th><th>بازی</th><th>برد</th><th>برد٪</th></tr>" + rows + "</table>"
+    return (
+        f"<h2>📊 آمار کامل {name}</h2><table bordered striped compact><tr><th>شاخص</th><th>تعداد</th></tr>"
+        f"<tr><td>🎮 تعداد بازی</td><td>{games}</td></tr><tr><td>🏆 تعداد برد</td><td>{wins}</td></tr>"
+        f"<tr><td>📈 درصد برد</td><td>{win_rate:.1f}٪</td></tr><tr><td>🔵 برد شهروند</td><td>{int(user.citizen_wins)}</td></tr>"
+        f"<tr><td>🔴 برد مافیا</td><td>{int(user.mafia_wins)}</td></tr><tr><td>🟣 برد مستقل</td><td>{int(user.independent_wins)}</td></tr>"
+        f"<tr><td>⚔️ چالش‌های گرفته‌شده</td><td>{int(user.challenges)}</td></tr><tr><td>🔥 بیشترین برد پیاپی</td><td>{int(user.best_win_streak)}</td></tr>"
+        f"<tr><td>🎯 شات موفق</td><td>{int(user.kills)}</td></tr><tr><td>🩺 نجات موفق</td><td>{int(user.saves)}</td></tr>"
+        f"<tr><td>🔎 تحقیقات موفق</td><td>{int(user.investigation_hits)}</td></tr><tr><td>🎯 رأی درست علیه مافیا</td><td>{int(user.correct_votes)}</td></tr>"
+        f"<tr><td>🛡 بقا</td><td>{int(user.games_survived)}</td></tr><tr><td>🏅 دستاوردها</td><td>{int(user.achievements_count)}</td></tr></table>{role_table}"
+    )
+
+@router.message(F.text)
+async def text_profile_rank_stats(message: Message) -> None:
+    kind = _command_kind(message.text or "")
+    if not kind: return
+    if not message.from_user and not (message.reply_to_message and message.reply_to_message.from_user): return
+    async with session_factory() as session:
+        user = await _resolve_command_user(message, session)
+        if not user: return
+        await session.commit()
+        try:
+            content = await (_profile_rich_html_detailed(session, user) if kind == "profile" else _rank_rich_html(session, user) if kind == "rank" else _stats_rich_html(session, user))
+            await send_rich_message(message.bot, message.chat.id, content, reply_parameters={"message_id": message.message_id})
+        except Exception:
+            if kind == "profile":
+                text = f"👤 پروفایل {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nسطح: {rank_for_score(user.score)}\\nرتبه: #{await _user_position(session, user)}\\nامتیاز: {user.score}\\nبازی: {user.games_played}\\nبرد: {user.games_won}\\nتگ فعال: {_active_tag(user)}"
+            elif kind == "rank":
+                latest, month_old = await _rank_history(session, user); pos = await _user_position(session, user); change = "—" if not month_old else str(int(month_old.rank_position or pos) - pos)
+                text = f"🏆 رتبه {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nرتبه: #{pos}\\nامتیاز: {user.score}\\nآخرین امتیاز: {latest.score_delta if latest else '—'}\\nتغییر رتبه ۳۰ روزه: {change}"
+            else:
+                text = f"📊 آمار {tg_name(user.display_name or user.first_name or 'بازیکن')}\\nبازی: {user.games_played}\\nبرد: {user.games_won}\\nبرد٪: {(user.games_won/user.games_played*100 if user.games_played else 0):.1f}%\\nشهروند: {user.citizen_wins}\\nمافیا: {user.mafia_wins}\\nمستقل: {user.independent_wins}\\nچالش: {user.challenges}\\nبهترین برد پیاپی: {user.best_win_streak}"
+            await message.answer(text, reply_to_message_id=message.message_id)
+
 
 class ProfileEditState(StatesGroup):
     name = State()
