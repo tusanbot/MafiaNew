@@ -537,7 +537,7 @@ async def group_management_games(callback: CallbackQuery) -> None:
         else:
             await callback.message.edit_text(
                 "گروه موردنظر را برای مدیریت بازی انتخاب کنید:",
-                reply_markup=group_list_keyboard(groups, "games"),
+                reply_markup=group_list_keyboard(groups, "active", "menu:group_management"),
             )
     await callback.answer()
 
