@@ -256,6 +256,8 @@ class Achievement(Base):
     tag_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
     tag_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     tag_emoji: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    custom_emoji_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    tag_custom_emoji_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class UserAchievement(Base):
