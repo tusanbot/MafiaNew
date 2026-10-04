@@ -1386,7 +1386,13 @@ async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
         if not source or not destination:
             await callback.answer("بازیکن جایگزین یا بازیکن مقصد پیدا نشد.", show_alert=True)
             return
-        if not await GameRepository.replace_player(session, game, source, destination):
+        try:
+            replaced = await GameRepository.replace_player(session, game, source, destination)
+        except Exception:
+            await session.rollback()
+            await callback.answer("جایگزینی انجام نشد؛ وضعیت بازی تغییر نکرد.", show_alert=True)
+            return
+        if not replaced:
             await callback.answer("انجام جایگزینی ممکن نیست.", show_alert=True)
             return
         await callback.message.edit_text(
