@@ -1112,14 +1112,41 @@ async def challenge_place_handler(callback: CallbackQuery):
             except ValueError as exc:
                 await callback.bot.send_message(callback.from_user.id, f"⚠️ {exc}")
                 return
-            await _finish_turn_message(callback.bot, session, game, previous_turn) if previous_turn else None
+            # Selecting the placement must not finish/invalidate the main turn.
+            # The main turn remains the source of truth for an AFTER challenge;
+            # for BEFORE it is paused by select_challenge_placement and will be
+            # resumed only after the challenge turn finishes.
             await _delete_turn_challenge_messages(callback.bot, session, game, previous_turn) if previous_turn else None
             task = _challenge_tasks.pop(int(event_id), None)
             if task:
                 task.cancel()
-            turn_task = _turn_tasks.pop(game.game_key, None)
-            if turn_task:
-                turn_task.cancel()
+
+            if result["placement"] == "before":
+                # The main turn message must stay in history, but its controls
+                # must be disabled while the challenge turn is active.
+                if previous_turn:
+                    prev_event, prev_data = await _turn_message(session, game, previous_turn)
+                    if prev_event and prev_data:
+                        try:
+                            await callback.bot.edit_message_reply_markup(
+                                chat_id=int(prev_data["chat_id"]),
+                                message_id=int(prev_data["message_id"]),
+                                reply_markup=None,
+                            )
+                        except Exception:
+                            pass
+                turn_task = _turn_tasks.pop(game.game_key, None)
+                if turn_task:
+                    turn_task.cancel()
+            else:
+                # AFTER challenge: main turn continues until its Next action.
+                # Refresh the same message so accepted/rejected challenge
+                # requests disappear without resetting the turn timer.
+                if previous_turn:
+                    try:
+                        await _refresh_turn_message(callback.bot, session, game, previous_turn)
+                    except Exception:
+                        pass
 
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
