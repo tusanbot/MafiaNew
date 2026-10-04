@@ -488,6 +488,74 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
     await message.answer(response)
 
 
+@router.message(_exact("پنل", "مدیریت"))
+async def text_group_panel(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        user = await _user(session, message)
+        if not game or not await _is_host(session, game, user):
+            await message.answer("فقط گرداننده بازی می‌تواند پنل مدیریت را باز کند.")
+            return
+        from app.handlers.keyboards import active_game_menu
+        await message.answer("🎮 پنل مدیریت بازی", reply_markup=active_game_menu(game.group_id, f"gameadmin:active:{game.group_id}", game.game_key, game.status == "waiting"))
+
+@router.message(_exact("سکوت"))
+async def text_silence_short(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"} or not message.reply_to_message:
+        await message.answer("دستور «سکوت» باید روی پیام بازیکن ریپلای شود.")
+        return
+    message.text = "سکوت بازیکن"
+    await text_reply_management(message, state)
+
+@router.message(_exact("پایان بازی"))
+async def text_finish_game(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        user = await _user(session, message)
+        if not game or not await _is_host(session, game, user):
+            await message.answer("فقط گرداننده می‌تواند پایان بازی را اجرا کند.")
+            return
+        from app.handlers.keyboards import finish_game_keyboard
+        await message.answer("🏁 نتیجه نهایی بازی را انتخاب کن:", reply_markup=finish_game_keyboard(game.group_id))
+
+@router.message(_exact("فازشب", "فاز شب"))
+async def text_start_night(message: Message, state: FSMContext) -> None:
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
+        return
+    async with session_factory() as session:
+        game = await _active_game(session, message)
+        user = await _user(session, message)
+        if not game or not await _is_host(session, game, user):
+            await message.answer("فقط گرداننده می‌تواند فاز شب را شروع کند.")
+            return
+        turn = await __import__("app.services.gameplay", fromlist=["current_turn"]).current_turn(session, game.id)
+        if game.phase == "day" and (not turn or turn.get("status") != "finished"):
+            await message.answer("ابتدا نوبت‌های این دور را تمام کن.")
+            return
+        if game.phase not in {"day", "vote1_complete", "vote2_complete"}:
+            await message.answer("الان امکان شروع فاز شب وجود ندارد.")
+            return
+        game.phase = "night"
+        await session.commit()
+        from app.handlers.keyboards import continue_night_keyboard
+        settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == game.group_id))
+        await message.bot.send_message(
+            message.chat.id,
+            "🌙 فاز شب آغاز شد.",
+            reply_markup=continue_night_keyboard(
+                game.game_key,
+                settings.night_lock if settings else False,
+                settings.chat_lock if settings else False,
+            ),
+        )
+        from app.handlers.gameplay import _send_night_menus, _set_game_chat_lock
+        await _set_game_chat_lock(message.bot, session, game, bool(settings and settings.night_lock))
+        await _send_night_menus(message.bot, session, game)
+
 @router.message(_exact("جایگزین", "sub", "substitute"))
 async def text_substitute(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
