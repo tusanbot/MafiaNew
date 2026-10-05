@@ -10,6 +10,8 @@ class User(Base):
     username: Mapped[str | None] = mapped_column(String(255))
     first_name: Mapped[str] = mapped_column(String(255), default="")
     last_name: Mapped[str | None] = mapped_column(String(255))
+    # Recurring birthday stored as a calendar date. Only month/day are used for annual greetings.
+    birthday: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), default="")
     bio: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str] = mapped_column(Text, default="")
@@ -46,6 +48,17 @@ class User(Base):
     registered_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+class BirthdayAnnouncement(Base):
+    __tablename__ = "birthday_announcements"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", "birthday_key", name="uq_birthday_announcement"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    birthday_key: Mapped[str] = mapped_column(String(16), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 class UserScoreHistory(Base):
     __tablename__ = "user_score_history"
