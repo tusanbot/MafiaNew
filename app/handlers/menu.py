@@ -394,6 +394,73 @@ async def admin_panel_handler(callback: CallbackQuery) -> None:
         await callback.answer("دسترسی پنل مدیریت مجاز نیست.", show_alert=True)
         return
     action = callback.data.split(":", 1)[1]
+    if action == "birthday" or action.startswith("birthday:"):
+        async with session_factory() as session:
+            setting = await session.scalar(select(BirthdaySetting).where(BirthdaySetting.id == 1))
+            messages = list((await session.execute(
+                select(BirthdayMessageTemplate).order_by(BirthdayMessageTemplate.id)
+            )).scalars().all())
+            if action == "birthday":
+                await callback.message.edit_text(
+                    "🎂 مدیریت تبریک تولد\n\n"
+                    "هر روز ساعت ۹ صبح به وقت تهران، برای بازیکنان متولد همان روز تبریک ارسال می‌شود.\n"
+                    "ویدیو و متن‌ها از این بخش مدیریت می‌شوند.",
+                    reply_markup=birthday_admin_menu(setting.video_file_id if setting else None, len(messages)),
+                )
+            elif action == "birthday:video":
+                await state.set_state(BirthdayAdminState.video)
+                await callback.message.edit_text(
+                    "🎬 ویدیوی تبریک تولد را همینجا ارسال کن.\n\n"
+                    "ویدیوی جدید جایگزین ویدیوی قبلی می‌شود.\n"
+                    "برای لغو: /cancel"
+                )
+            elif action == "birthday:messages":
+                await callback.message.edit_text(
+                    "💬 پیام‌های تبریک ثبت‌شده:",
+                    reply_markup=birthday_message_list_keyboard(messages),
+                )
+            elif action == "birthday:add":
+                await state.set_state(BirthdayAdminState.message)
+                await callback.message.edit_text(
+                    "💬 افزودن پیام تبریک\n\n"
+                    "متن تبریک را ارسال کن. می‌توانی از متغیرهای زیر استفاده کنی:\n\n"
+                    "<code>{name}</code> → نام نمایشی\n"
+                    "<code>{first_name}</code> → نام کوچک\n"
+                    "<code>{username}</code> → یوزرنیم بدون @\n"
+                    "<code>{mention}</code> → منشن قابل کلیک\n"
+                    "<code>{user_id}</code> → آیدی عددی تلگرام\n"
+                    "<code>{birthday}</code> → تاریخ تولد\n\n"
+                    "مثال:\n"
+                    "🎂 تولدت مبارک {mention} عزیز!\n"
+                    "امیدواریم سال جدید زندگیت پر از اتفاق‌های خوب باشه. 🎉\n\n"
+                    "برای لغو: /cancel",
+                    parse_mode="HTML",
+                )
+            elif action.startswith("birthday:show:"):
+                message_id = int(action.split(":")[-1])
+                item = await session.get(BirthdayMessageTemplate, message_id)
+                if not item:
+                    await callback.answer("پیام پیدا نشد.", show_alert=True)
+                    return
+                await callback.message.edit_text(
+                    f"💬 پیام #{item.id}\n\n{item.text}",
+                    reply_markup=birthday_message_item_keyboard(item.id),
+                )
+            elif action.startswith("birthday:delete:"):
+                message_id = int(action.split(":")[-1])
+                item = await session.get(BirthdayMessageTemplate, message_id)
+                if item:
+                    await session.delete(item)
+                    await session.commit()
+                messages = list((await session.execute(
+                    select(BirthdayMessageTemplate).order_by(BirthdayMessageTemplate.id)
+                )).scalars().all())
+                await callback.message.edit_text(
+                    "🗑 پیام حذف شد.",
+                    reply_markup=birthday_message_list_keyboard(messages),
+                )
+        await callback.answer()
+        return
     async with session_factory() as session:
         if action == "dashboard":
             users = await session.scalar(select(func.count(User.id))) or 0
