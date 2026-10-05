@@ -1,7 +1,7 @@
 from aiogram import Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup, ForceReply
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from html import escape
 from datetime import datetime, timezone
@@ -4007,7 +4007,7 @@ async def tournament_add_start(callback: CallbackQuery,state:FSMContext):
     await state.update_data(action='add', group_id=gid, step='name')
     # Send a fresh prompt instead of editing the management menu. The user's
     # next message is therefore unambiguously the tournament draft input.
-    await callback.message.answer('➕ نام تورنمنت را بفرست.')
+    await callback.message.answer('➕ نام تورنمنت را بفرست.', reply_markup=ForceReply(selective=True))
     await callback.answer()
 
 @router.message(TournamentState.input)
@@ -4025,16 +4025,16 @@ async def tournament_input(message: Message,state:FSMContext):
     if value=='/cancel': await state.clear(); await message.answer('لغو شد.',reply_markup=tournament_admin_menu(int(data.get('group_id',0)))); return
     if data.get('action')=='add':
         step=data.get('step')
-        if step=='name': await state.update_data(name=value,step='emoji'); await message.answer('🎨 اموجی تورنمنت را بفرست.'); return
-        if step=='emoji': await state.update_data(emoji=value[:20],step='date'); await message.answer('📅 تاریخ شروع را بفرست (YYYY/MM/DD).'); return
+        if step=='name': await state.update_data(name=value,step='emoji'); await message.answer('🎨 اموجی تورنمنت را بفرست.', reply_markup=ForceReply(selective=True)); return
+        if step=='emoji': await state.update_data(emoji=value[:20],step='date'); await message.answer('📅 تاریخ شروع را بفرست (YYYY/MM/DD).', reply_markup=ForceReply(selective=True)); return
         if step=='date':
             dt=_tour_date(value)
             if not dt: await message.answer('تاریخ معتبر نیست.'); return
-            await state.update_data(start_at=dt.isoformat(),step='prizes'); await message.answer('🏅 امتیاز رتبه‌ها را هر رتبه در یک خط بفرست:\n300\n200\n100\n50'); return
+            await state.update_data(start_at=dt.isoformat(),step='prizes'); await message.answer('🏅 امتیاز رتبه‌ها را هر رتبه در یک خط بفرست:\n300\n200\n100\n50', reply_markup=ForceReply(selective=True)); return
         if step=='prizes':
             try: prizes=_tour_prizes(value)
             except ValueError: await message.answer('امتیازها باید عددهای مثبت باشند.'); return
-            await state.update_data(prizes='\n'.join(map(str,prizes)),step='description'); await message.answer('📝 توضیحات را بفرست؛ برای بدون توضیح -'); return
+            await state.update_data(prizes='\n'.join(map(str,prizes)),step='description'); await message.answer('📝 توضیحات را بفرست؛ برای بدون توضیح -', reply_markup=ForceReply(selective=True)); return
         if step=='description':
             async with session_factory() as session:
                 group=await _selected_group(session,message.bot,message.from_user.id,int(data['group_id']))
