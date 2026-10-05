@@ -152,6 +152,10 @@ class GroupSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     result_tab_last_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result_tab_cooldown_seconds: Mapped[int] = mapped_column(Integer, default=10)
+    # Lobby media: custom photo/video file_id, or group profile photo fallback.
+    lobby_media_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    lobby_media_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    lobby_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 class GameResultViewer(Base):
     __tablename__ = "game_result_viewers"
