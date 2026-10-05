@@ -10,7 +10,7 @@ from sqlalchemy import desc, func, select
 import json
 import re
 
-from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup, BirthdayMessageTemplate, BirthdaySetting
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
@@ -94,6 +94,11 @@ class TournamentState(StatesGroup):
 
 class GroupBirthdayState(StatesGroup):
     input = State()
+
+
+class BirthdayAdminState(StatesGroup):
+    video = State()
+    message = State()
 
 
 class ScenarioAdminState(StatesGroup):
