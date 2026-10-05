@@ -4734,10 +4734,13 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
             await callback.answer("سناریو پیدا نشد.", show_alert=True)
             return
         current_roles_text = await _scenario_roles_text(session, sid)
+    context = await state.get_data()
+    group_scenario_group_id = context.get("group_scenario_group_id")
     await state.clear()
     await state.set_state(ScenarioAdminState.name)
     await state.update_data(
         mode="edit",
+        group_scenario_group_id=group_scenario_group_id,
         edit_id=sid,
         current_name=scenario.name_fa,
         current_description=scenario.description,
