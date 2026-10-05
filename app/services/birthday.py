@@ -137,7 +137,7 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
     text = _render_template(template, user)
     try:
         if settings and settings.enabled and settings.video_file_id:
-            await bot.send_video(group.telegram_id, settings.video_file_id, caption=text)
+            if len(text) <= 1024:\n                await bot.send_video(group.telegram_id, settings.video_file_id, caption=text, parse_mode="HTML")\n            else:\n                await bot.send_video(group.telegram_id, settings.video_file_id)\n                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         else:
             await bot.send_message(group.telegram_id, text)
         return True
