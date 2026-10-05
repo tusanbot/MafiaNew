@@ -50,15 +50,23 @@ async def _user(session, message: Message):
 
 
 async def _active_game(session, message: Message):
+    """Resolve the newest active game directly from the Telegram chat ID."""
     if message.chat.type not in {"group", "supergroup"}:
         return None
-    # Game.group_id references the internal groups.id, not Telegram chat_id.
-    # Resolve the registered group first; passing chat.id directly makes every
-    # text command behave as if there were no active game.
-    group = await GroupRepository.get_by_telegram_id(session, int(message.chat.id))
-    if not group:
-        return None
-    return await GameRepository.get_active(session, group.id)
+
+    # Game.group_id is the internal groups.id, while Telegram gives us the
+    # external chat_id. Join through Group here so the voice command does not
+    # depend on a separately resolved Group object or accidentally compare
+    # the two different ID namespaces.
+    return await session.scalar(
+        select(Game)
+        .join(Group, Group.id == Game.group_id)
+        .where(
+            Group.telegram_id == int(message.chat.id),
+            Game.status.in_(("waiting", "running")),
+        )
+        .order_by(Game.id.desc())
+    )
 
 
 async def _is_host(session, game, user) -> bool:
@@ -87,8 +95,8 @@ async def text_transcribe_voice(message: Message, state: FSMContext) -> None:
         game = await _active_game(session, message)
         user = await _user(session, message)
 
-        if not game or game.status != "running":
-            await message.answer("🎮 بازی فعالی وجود ندارد.")
+        if not game:
+            await message.answer("🎮 در این گروه بازی فعالی پیدا نشد.")
             return
 
         if not await _is_host(session, game, user):
