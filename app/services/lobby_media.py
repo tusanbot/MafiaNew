@@ -13,11 +13,18 @@ async def resolve_lobby_media(session, bot, group: Group):
         return None
     if settings is not None and settings.lobby_media_file_id and settings.lobby_media_type in {"photo", "video"}:
         return settings.lobby_media_type, settings.lobby_media_file_id
+    settings = settings or await _settings(session, group)
+    cached_profile_id = getattr(settings, "lobby_profile_file_id", None) if settings else None
+    if cached_profile_id:
+        return "photo", cached_profile_id
     try:
         chat = await bot.get_chat(group.telegram_id)
         photo = getattr(chat, "photo", None)
         file_id = getattr(photo, "big_file_id", None) if photo else None
         if file_id:
+            if settings is not None:
+                settings.lobby_profile_file_id = file_id
+                await session.commit()
             return "photo", file_id
     except Exception:
         pass
