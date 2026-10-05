@@ -8,7 +8,7 @@ from aiogram import Bot
 from aiogram.types import Message
 from sqlalchemy import select
 
-from app.db.models import BirthdayAnnouncement, Game, GamePlayer, Group, User
+from app.db.models import BirthdayAnnouncement, BirthdayMessageTemplate, BirthdaySetting, Game, GamePlayer, Group, User
 from app.db.session import session_factory
 from app.utils.text import tg_mention
 
@@ -86,6 +86,35 @@ def is_birthday_today(value, now: datetime | None = None) -> bool:
     return int(value.month) == int(now.month) and int(value.day) == int(now.day)
 
 
+async def _birthday_content():
+    async with session_factory() as session:
+        settings = await session.scalar(select(BirthdaySetting).where(BirthdaySetting.id == 1))
+        templates = list((await session.execute(
+            select(BirthdayMessageTemplate).where(BirthdayMessageTemplate.enabled.is_(True)).order_by(BirthdayMessageTemplate.id)
+        )).scalars().all())
+        return settings, templates
+
+
+def _render_template(template: str, user: User) -> str:
+    name = user.display_name or user.first_name or "بازیکن"
+    mention = tg_mention(user.telegram_id, name)
+    values = {
+        "name": name,
+        "first_name": user.first_name or name,
+        "username": (user.username or "").lstrip("@"),
+        "mention": mention,
+        "user_id": str(user.telegram_id),
+        "birthday": birthday_label(user.birthday),
+    }
+    class SafeDict(dict):
+        def __missing__(self, key):
+            return "{" + key + "}"
+    try:
+        return str(template or "").format_map(SafeDict(values))
+    except Exception:
+        return str(template or "")
+
+
 async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthday_key: str) -> bool:
     async with session_factory() as session:
         existing = await session.scalar(select(BirthdayAnnouncement.id).where(
@@ -102,18 +131,18 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
         ))
         await session.commit()
 
-    name = tg_mention(user.telegram_id, user.display_name or user.first_name or "بازیکن")
-    text = random.choice(BIRTHDAY_MESSAGES).format(name=name)
+    settings, templates = await _birthday_content()
+    fallback = "🎂 تولدت مبارک {mention} عزیز! 🎉"
+    template = random.choice(templates).text if templates else fallback
+    text = _render_template(template, user)
     try:
-        photos = await bot.get_user_profile_photos(user.telegram_id, limit=1)
-        if photos.total_count and photos.photos:
-            await bot.send_photo(group.telegram_id, photos.photos[0][-1].file_id, caption=text)
+        if settings and settings.enabled and settings.video_file_id:
+            await bot.send_video(group.telegram_id, settings.video_file_id, caption=text)
         else:
             await bot.send_message(group.telegram_id, text)
         return True
     except Exception:
         logger.exception("Birthday announcement failed for group=%s user=%s", group.telegram_id, user.telegram_id)
-        # Do not permanently suppress a birthday if Telegram send failed.
         async with session_factory() as session:
             row = await session.scalar(select(BirthdayAnnouncement).where(
                 BirthdayAnnouncement.group_id == group.id,
@@ -126,39 +155,47 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
         return False
 
 
+async def process_birthday_announcements(bot: Bot, now: datetime | None = None) -> None:
+    now = now or datetime.now(TEHRAN)
+    birthday_key = now.strftime("%Y-%m-%d")
+    async with session_factory() as session:
+        users = list((await session.execute(
+            select(User).where(User.birthday.is_not(None), User.is_active.is_(True))
+        )).scalars().all())
+        for user in users:
+            if not is_birthday_today(user.birthday, now):
+                continue
+            groups = list((await session.execute(
+                select(Group).join(Game, Game.group_id == Group.id)
+                .join(GamePlayer, GamePlayer.game_id == Game.id)
+                .where(
+                    GamePlayer.user_id == user.id,
+                    Group.is_active.is_(True),
+                ).distinct()
+            )).scalars().all())
+            for group in groups:
+                try:
+                    member = await bot.get_chat_member(group.telegram_id, user.telegram_id)
+                    if getattr(member, "status", None) in {"left", "kicked"}:
+                        continue
+                except Exception:
+                    continue
+                await send_birthday_announcement(bot, group, user, birthday_key)
+
+
 async def run_birthday_announcements(bot: Bot) -> None:
-    """Run forever; safe to start once per bot process."""
+    """Send birthday greetings once per day at 09:00 Asia/Tehran."""
     while True:
         try:
             now = datetime.now(TEHRAN)
-            birthday_key = now.strftime("%Y-%m-%d")
-            async with session_factory() as session:
-                users = list((await session.execute(
-                    select(User).where(User.birthday.is_not(None), User.is_active.is_(True))
-                )).scalars().all())
-                for user in users:
-                    if not is_birthday_today(user.birthday, now):
-                        continue
-                    groups = list((await session.execute(
-                        select(Group).join(Game, Game.group_id == Group.id)
-                        .join(GamePlayer, GamePlayer.game_id == Game.id)
-                        .where(
-                            GamePlayer.user_id == user.id,
-                            Group.is_active.is_(True),
-                        ).distinct()
-                    )).scalars().all())
-                    for group in groups:
-                        try:
-                            member = await bot.get_chat_member(group.telegram_id, user.telegram_id)
-                            if getattr(member, "status", None) in {"left", "kicked"}:
-                                continue
-                        except Exception:
-                            # Membership lookup can fail for privacy/API reasons; avoid spamming unknown chats.
-                            continue
-                        await send_birthday_announcement(bot, group, user, birthday_key)
+            target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+            if target <= now:
+                from datetime import timedelta
+                target += timedelta(days=1)
+            await asyncio.sleep(max(1, (target - now).total_seconds()))
+            await process_birthday_announcements(bot, datetime.now(TEHRAN))
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Birthday scheduler iteration failed")
-        # Ten minutes is enough granularity and keeps database/API load low.
-        await asyncio.sleep(600)
+            logger.exception("Birthday scheduler failed; retrying on the next scheduled run.")
+
