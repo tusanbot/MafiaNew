@@ -673,6 +673,64 @@ async def group_management_locks(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data.startswith("groupmgmt:scenario_select:"))
+async def group_scenario_select(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    try:
+        group_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
+            return
+        scenarios = list((await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().all())
+        if not scenarios:
+            await callback.message.edit_text("❌ هیچ سناریوی فعالی برای این گروه وجود ندارد.", reply_markup=group_management_menu())
+        else:
+            await callback.message.edit_text(
+                "🎭 <b>انتخاب سناریوی پیش‌فرض گروه</b>\n\nسناریوی موردنظر را انتخاب کن:",
+                reply_markup=group_default_scenario_keyboard(group.id, scenarios),
+                parse_mode="HTML",
+            )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("groupmgmt:scenario_list:"))
+async def group_scenario_list(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    try:
+        group_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
+            return
+        rows = list((await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().all())
+        if not rows:
+            text = "📚 هیچ سناریوی فعالی ثبت نشده است."
+        else:
+            text = "📚 <b>سناریوهای فعال گروه</b>\n\n" + "\n".join(
+                f"🎭 <b>{escape(s.name_fa)}</b> — {s.max_players} بازیکن" for s in rows
+            )
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(text="🎭 انتخاب سناریوی پیش‌فرض", callback_data=f"groupmgmt:scenario_select:{group.id}"))
+        _back(builder, f"groupmgmt:select:scenario:{group.id}")
+        await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:select:"))
 async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
