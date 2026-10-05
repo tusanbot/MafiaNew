@@ -3961,7 +3961,10 @@ async def _tour_users(session, names, bot=None, group=None):
     Numeric Telegram IDs are also resolved directly through Telegram when the
     user is not yet present in the local users table.
     """
-    users=list((await session.execute(select(User).where(User.is_active.is_(True)))).scalars().all())
+    # Tournament resolution must not be limited to globally active users.
+    # A Telegram account can be inactive locally while still being a valid member
+    # of the selected tournament group.
+    users=list((await session.execute(select(User))).scalars().all())
     result=[]
     seen=set()
 
