@@ -925,6 +925,23 @@ async def _ensure_invitation_setting(session, group_id: int) -> GroupInvitationS
     return setting
 
 
+def _render_invitation_message(template: str, user: User) -> str:
+    username = str(user.username or "").strip().lstrip("@")
+    display_name = str(user.display_name or user.first_name or "").strip()
+    first_name = str(user.first_name or display_name or "").strip()
+    values = {
+        "{name}": display_name,
+        "{first_name}": first_name,
+        "{username}": ("@" + username) if username else display_name,
+        "{mention}": ("@" + username) if username else display_name,
+        "{user_id}": str(user.telegram_id),
+    }
+    rendered = str(template or "")
+    for placeholder, value in values.items():
+        rendered = rendered.replace(placeholder, value)
+    return rendered
+
+
 async def _invitation_recipients(session, group_id: int):
     excluded = set((await session.execute(
         select(GroupInvitationException.user_id).where(GroupInvitationException.group_id == group_id)
@@ -1015,7 +1032,7 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
             await state.clear()
             await state.update_data(group_id=group.id, mode="create")
             await state.set_state(GroupInvitationState.message)
-            await callback.message.edit_text("✍️ <b>ایجاد پیام دعوت</b>\n\nمتن پیام دعوت را ارسال کن.\n\nبرای لغو /cancel", parse_mode="HTML")
+            await callback.message.edit_text("✍️ <b>ایجاد پیام دعوت</b>\n\nمتن پیام دعوت را ارسال کن.\n\nمتغیرها: {name} نام بازیکن، {first_name} نام کوچک، {username} یوزرنیم، {mention} یوزرنیم یا نام، {user_id} آیدی عددی\nمثال: سلام {name} 👋\n\nبرای لغو /cancel", parse_mode="HTML")
             await session.commit()
             await callback.answer()
             return
@@ -1032,7 +1049,7 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
             sent = failed = 0
             for user in recipients:
                 try:
-                    await callback.bot.send_message(user.telegram_id, text_value)
+                    await callback.bot.send_message(user.telegram_id, _render_invitation_message(text_value, user))
                     sent += 1
                 except Exception:
                     failed += 1
