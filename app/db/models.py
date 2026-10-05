@@ -158,6 +158,25 @@ class GroupSettings(Base):
     lobby_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     lobby_profile_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+class GroupInvitationSetting(Base):
+    __tablename__ = "group_invitation_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), unique=True, index=True)
+    default_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class GroupInvitationException(Base):
+    __tablename__ = "group_invitation_exceptions"
+    __table_args__ = (
+        UniqueConstraint("group_id", "user_id", name="uq_group_invitation_exception"),
+    )
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class GameResultViewer(Base):
     __tablename__ = "game_result_viewers"
     __table_args__ = (UniqueConstraint("game_id", "user_id", name="uq_game_result_viewer"),)
