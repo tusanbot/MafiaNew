@@ -355,6 +355,14 @@ def group_invitation_exception_menu(group_id: int, count: int) -> InlineKeyboard
     _back(builder, f"invitation:menu:{group_id}")
     return builder.as_markup()
 
+def group_invitation_exception_list_menu(group_id: int, users) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user in users:
+        name = getattr(user, "display_name", None) or getattr(user, "first_name", None) or str(getattr(user, "telegram_id", ""))
+        builder.row(InlineKeyboardButton(text=f"🚫 {name[:45]}", callback_data=f"invitation:exception_remove:{group_id}:{user.id}"))
+    builder.row(InlineKeyboardButton(text="➕ ایجاد استثنا", callback_data=f"invitation:exception_add:{group_id}"))
+    _back(builder, f"invitation:exceptions:{group_id}")
+    return builder.as_markup()
 def invitation_exception_remove_keyboard(group_id: int, user_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="🗑 حذف از استثنا", callback_data=f"invitation:exception_remove:{group_id}:{user_id}"))
