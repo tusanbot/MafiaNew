@@ -999,7 +999,8 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
                 await callback.answer("متن پیام پیدا نشد.", show_alert=True)
                 return
             enabled = action == "button_yes"
-            if mode == "default":
+            if mode in {"default", "edit"}:
+                setting.default_message = text_value
                 setting.invite_button_enabled = enabled
                 setting.invite_button_text = "🎮 ورود به بازی"
                 await session.commit()
@@ -1009,7 +1010,7 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
                 f"📨 <b>پیش‌نمایش پیام دعوت</b>\n\n{escape(text_value)}\n\n"
                 + ("🔗 دکمه لینک دعوت هم اضافه می‌شود." if enabled else "بدون دکمه ارسال می‌شود.")
                 + "\n\nدر صورت تأیید، پیام برای کاربران فعال ربات ارسال می‌شود.",
-                reply_markup=invitation_confirm_keyboard(group.id, "default" if mode == "default" else "custom"),
+                reply_markup=invitation_confirm_keyboard(group.id, "default" if mode in {"default", "edit"} else "custom"),
                 parse_mode="HTML",
             )
             await callback.answer()
