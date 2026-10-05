@@ -1,4 +1,4 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CopyTextButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from app.utils.text import tg_plain_name
 from app.utils.custom_emoji import DEFAULT_EMOJIS, normalize_emoji_map
@@ -76,6 +76,7 @@ def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMar
     builder.row(InlineKeyboardButton(text="🏆 تورنمنت‌ها", callback_data="groupmgmt:tournaments"))
     builder.row(InlineKeyboardButton(text="🎂 ثبت تاریخ تولد بازیکن", callback_data="groupmgmt:birthday"))
     builder.row(InlineKeyboardButton(text="🎬 ویدیوی لابی", callback_data="groupmgmt:lobby_media"))
+    builder.row(InlineKeyboardButton(text="📨 دعوت به بازی", callback_data="groupmgmt:invitation"))
     _back(builder, back_callback)
     return builder.as_markup()
 
@@ -326,6 +327,44 @@ def group_lobby_media_menu(group_id: int, settings) -> InlineKeyboardMarkup:
     _back(builder, "menu:group_management")
     return builder.as_markup()
 
+def group_invitation_menu(group_id: int, has_default: bool, exception_count: int = 0) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📤 ارسال پیام", callback_data=f"invitation:send:{group_id}"))
+    builder.row(InlineKeyboardButton(text="✏️ ویرایش پیام پیش‌فرض" if has_default else "➕ ایجاد پیام پیش‌فرض", callback_data=f"invitation:edit:{group_id}"))
+    builder.row(InlineKeyboardButton(text="👁 نمایش پیام پیش‌فرض", callback_data=f"invitation:show:{group_id}"))
+    builder.row(InlineKeyboardButton(text=f"🚫 استثناها ({exception_count})", callback_data=f"invitation:exceptions:{group_id}"))
+    _back(builder, "menu:group_management")
+    return builder.as_markup()
+
+def group_invitation_send_menu(group_id: int, has_default: bool) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📌 پیام پیش‌فرض", callback_data=f"invitation:preview_default:{group_id}") if has_default else InlineKeyboardButton(text="📌 پیام پیش‌فرض (ثبت نشده)", callback_data=f"invitation:missing_default:{group_id}"))
+    builder.row(InlineKeyboardButton(text="✍️ ایجاد پیام", callback_data=f"invitation:create:{group_id}"))
+    _back(builder, f"invitation:menu:{group_id}")
+    return builder.as_markup()
+
+def invitation_confirm_keyboard(group_id: int, mode: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="✅ تأیید و ارسال", callback_data=f"invitation:confirm:{mode}:{group_id}"), InlineKeyboardButton(text="❌ لغو", callback_data=f"invitation:menu:{group_id}"))
+    return builder.as_markup()
+
+def group_invitation_exception_menu(group_id: int, count: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text=f"👥 بازیکنان مستثنی ({count})", callback_data=f"invitation:exception_list:{group_id}"))
+    builder.row(InlineKeyboardButton(text="➕ ایجاد استثنا", callback_data=f"invitation:exception_add:{group_id}"))
+    _back(builder, f"invitation:menu:{group_id}")
+    return builder.as_markup()
+
+def invitation_exception_remove_keyboard(group_id: int, user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🗑 حذف از استثنا", callback_data=f"invitation:exception_remove:{group_id}:{user_id}"))
+    _back(builder, f"invitation:exception_list:{group_id}")
+    return builder.as_markup()
+
+def invitation_copy_keyboard(value: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="📋 کپی متن", copy_text=CopyTextButton(text=value[:256])))
+    return builder.as_markup()
 def group_game_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="تاریخچه بازی‌ها", callback_data=f"groupgame:history:{group_id}"))
