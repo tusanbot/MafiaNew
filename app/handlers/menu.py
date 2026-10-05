@@ -33,6 +33,7 @@ from app.handlers.keyboards import (
     group_invitation_menu,
     group_invitation_send_menu,
     invitation_confirm_keyboard,
+    invitation_button_choice_keyboard,
     group_invitation_exception_menu,
     group_invitation_exception_list_menu,
     invitation_copy_keyboard,
@@ -990,6 +991,29 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
             await session.commit()
             await _show_invitation_menu(callback, group.id)
             return
+        if action in {"button_yes", "button_no"}:
+            mode = parts[2] if len(parts) > 2 else "default"
+            data = await state.get_data()
+            text_value = setting.default_message if mode == "default" else data.get("message")
+            if not text_value:
+                await callback.answer("متن پیام پیدا نشد.", show_alert=True)
+                return
+            enabled = action == "button_yes"
+            if mode == "default":
+                setting.invite_button_enabled = enabled
+                setting.invite_button_text = "🎮 ورود به بازی"
+                await session.commit()
+            else:
+                await state.update_data(invite_button_enabled=enabled)
+            await callback.message.edit_text(
+                f"📨 <b>پیش‌نمایش پیام دعوت</b>\n\n{escape(text_value)}\n\n"
+                + ("🔗 دکمه لینک دعوت هم اضافه می‌شود." if enabled else "بدون دکمه ارسال می‌شود.")
+                + "\n\nدر صورت تأیید، پیام برای کاربران فعال ربات ارسال می‌شود.",
+                reply_markup=invitation_confirm_keyboard(group.id, "default" if mode == "default" else "custom"),
+                parse_mode="HTML",
+            )
+            await callback.answer()
+            return
         if action == "send":
             await session.commit()
             await callback.message.edit_text("📤 <b>ارسال پیام دعوت</b>\n\nروش ارسال را انتخاب کن:", reply_markup=group_invitation_send_menu(group.id, bool(setting.default_message)), parse_mode="HTML")
@@ -1045,11 +1069,20 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
             if not text_value:
                 await callback.answer("متن پیام پیدا نشد.", show_alert=True)
                 return
+            invite_button_enabled = setting.invite_button_enabled if mode == "default" else bool(data.get("invite_button_enabled"))
+            invite_link = None
+            if invite_button_enabled:
+                try:
+                    invite = await callback.bot.create_chat_invite_link(group.telegram_id, name="دعوت به بازی")
+                    invite_link = invite.invite_link
+                except Exception:
+                    await callback.answer("❌ ربات نتوانست لینک دعوت گروه را ایجاد کند. دسترسی ساخت لینک دعوت را بررسی کن.", show_alert=True)
+                    return
             recipients = await _invitation_recipients(session, group.id)
             sent = failed = 0
             for user in recipients:
                 try:
-                    await callback.bot.send_message(user.telegram_id, _render_invitation_message(text_value, user))
+                    await callback.bot.send_message(user.telegram_id, _render_invitation_message(text_value, user), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=setting.invite_button_text or "🎮 ورود به بازی", url=invite_link)]]) if invite_link else None)
                     sent += 1
                 except Exception:
                     failed += 1
@@ -1128,7 +1161,7 @@ async def group_invitation_message_save(message: Message, state: FSMContext) -> 
             await message.answer("✅ پیام پیش‌فرض ذخیره شد.", reply_markup=group_invitation_menu(group.id, True, int(count)))
             return
         await state.update_data(message=raw)
-        await message.answer(f"📨 <b>پیش‌نمایش پیام دعوت</b>\n\n{escape(raw)}\n\nدر صورت تأیید برای کاربران فعال ربات ارسال می‌شود.", reply_markup=invitation_confirm_keyboard(group.id, "custom"), parse_mode="HTML")
+        await message.answer("🔗 آیا می‌خواهی زیر پیام یک دکمه با لینک دعوت به گروه هم قرار بگیرد؟", reply_markup=invitation_button_choice_keyboard(group.id, mode))
 
 
 async def _resolve_invitation_user(message: Message, group: Group):
