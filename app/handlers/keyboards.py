@@ -789,6 +789,7 @@ def scenario_management_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data="scenario_admin:edit"))
     builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data="scenario_admin:delete"))
     builder.row(InlineKeyboardButton(text="🎭 نقش‌ها و توضیحات", callback_data="scenario_admin:roles"))
+    builder.row(InlineKeyboardButton(text="📚 آموزش سناریو", callback_data="scenario_admin:training"))
     _back(builder)
     return builder.as_markup()
 
@@ -1526,5 +1527,6 @@ def scenario_role_description_list_keyboard(roles, scenario_id: int) -> InlineKe
                 callback_data=f"scenario_admin:role_desc:{scenario_id}:{role.id}",
             )
         )
+    builder.row(InlineKeyboardButton(text="📝 ثبت توضیحات یکجا", callback_data=f"scenario_admin:role_desc_batch:{scenario_id}"))
     builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
