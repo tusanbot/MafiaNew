@@ -156,6 +156,7 @@ class GroupSettings(Base):
     lobby_media_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     lobby_media_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     lobby_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    lobby_profile_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
 class GameResultViewer(Base):
     __tablename__ = "game_result_viewers"
