@@ -131,7 +131,7 @@ async def _profile_rich_html_detailed(session, user: User) -> str:
         f"<h2>👤 پروفایل {name}</h2><table bordered striped compact>"
         "<tr><th>مورد</th><th>مقدار</th></tr>"
         f"<tr><td>سطح</td><td>{html.escape(rank)}</td></tr><tr><td>رتبه</td><td>#{position}</td></tr>"
-        f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr><tr><td>بازی‌های انجام‌شده</td><td>{int(user.games_played)}</td></tr>"
+        f"<tr><td>امتیاز</td><td><b>{int(user.score)}</b></td></tr><tr><td>🎂 تاریخ تولد</td><td>{birthday_label(user.birthday)}</td></tr><tr><td>بازی‌های انجام‌شده</td><td>{int(user.games_played)}</td></tr>"
         f"<tr><td>برد</td><td>{int(user.games_won)} ({win_rate:.1f}٪)</td></tr><tr><td>تگ فعال</td><td>{tag}</td></tr>"
         f"<tr><td>آخرین دستاورد فعال‌شده</td><td>{last_achievement}</td></tr>"
         f"<tr><td>برد متوالی</td><td>{int(user.win_streak)} | بهترین: {int(user.best_win_streak)}</td></tr></table>"
