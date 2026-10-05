@@ -257,7 +257,7 @@ def group_default_scenario_keyboard(group_id: int, scenarios) -> InlineKeyboardM
             callback_data=f"groupdefaults:setscenario:{group_id}:{scenario.id}",
         ))
     builder.row(InlineKeyboardButton(text="🧹 بدون سناریوی پیش‌فرض", callback_data=f"groupdefaults:setscenario:{group_id}:0"))
-    _back(builder, "groupmgmt:defaults")
+    _back(builder, f"groupmgmt:select:scenario:{group_id}")
     return builder.as_markup()
 
 
