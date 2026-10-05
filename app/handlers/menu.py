@@ -29,6 +29,7 @@ from app.handlers.keyboards import (
     group_game_emoji_menu,
     group_achievement_emoji_menu,
     group_tag_emoji_menu,
+    group_lobby_media_menu,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
     main_menu,
@@ -94,6 +95,10 @@ class TournamentState(StatesGroup):
 
 class GroupBirthdayState(StatesGroup):
     input = State()
+
+
+class GroupLobbyMediaState(StatesGroup):
+    media = State()
 
 
 class BirthdayAdminState(StatesGroup):
@@ -577,7 +582,7 @@ async def _ensure_group_settings(session, group: Group) -> GroupSettings:
     return settings
 
 
-@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday"})
+@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday", "groupmgmt:lobby_media"})
 async def group_management_settings_entry(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
@@ -592,6 +597,7 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
                 "players": "گروه را برای تنظیمات بازیکنان انتخاب کنید:",
                 "notifications": "گروه را برای تنظیمات اعلان‌ها انتخاب کنید:",
                 "birthday": "گروه را برای ثبت تاریخ تولد انتخاب کنید:",
+                "lobby_media": "گروه را برای تنظیم رسانه لابی انتخاب کنید:",
             }
             await callback.message.edit_text(titles[purpose], reply_markup=group_list_keyboard(groups, purpose))
     await callback.answer()
@@ -718,6 +724,16 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 "برای انصراف /cancel را بفرست.",
                 parse_mode="HTML",
             )
+        elif purpose == "lobby_media":
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
+            await callback.message.edit_text(
+                f"🎬 <b>رسانه لابی «{group.title or group.telegram_id}»</b>\\n\\n"
+                "اگر رسانه سفارشی ثبت نشود، عکس پروفایل گروه به‌صورت خودکار استفاده می‌شود.\\n"
+                "با خاموش‌کردن گزینه، لابی بدون عکس/ویدیو ارسال می‌شود.",
+                reply_markup=group_lobby_media_menu(group.id, settings),
+                parse_mode="HTML",
+            )
         elif purpose == "tags":
             from app.services.stats import ensure_achievements
             await ensure_achievements(session)
@@ -797,6 +813,109 @@ async def group_birthday_save(message: Message, state: FSMContext) -> None:
         f"✅ تاریخ تولد {tg_mention(tg_id, user.display_name or user.first_name)} ثبت شد: {birthday_label(birthday)}",
         reply_markup=group_management_menu(),
         parse_mode="HTML",
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("group_lobby_media:"))
+async def group_lobby_media_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 3:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    action, group_id_raw = parts[1], parts[2]
+    try:
+        group_id = int(group_id_raw)
+    except ValueError:
+        await callback.answer("گروه نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت گروه تأیید نشد.", show_alert=True)
+            return
+        settings = await _ensure_group_settings(session, group)
+        if action == "noop":
+            await callback.answer("برای تغییر منبع، عکس یا ویدیو جدید ثبت کن.", show_alert=True)
+            return
+        if action == "toggle":
+            settings.lobby_media_enabled = not bool(settings.lobby_media_enabled)
+            await session.commit()
+        elif action == "clear":
+            settings.lobby_media_file_id = None
+            settings.lobby_media_type = None
+            await session.commit()
+        elif action == "set":
+            await state.clear()
+            await state.update_data(group_id=group.id)
+            await state.set_state(GroupLobbyMediaState.media)
+            await callback.message.edit_text(
+                f"🎬 رسانه لابی «{group.title or group.telegram_id}»\\n\\n"
+                "یک <b>عکس یا ویدیو</b> همینجا ارسال کن. فقط <code>file_id</code> تلگرام ذخیره می‌شود و فایل دوباره آپلود نخواهد شد.\\n\\n"
+                "برای حذف رسانه سفارشی، /clear را بفرست.\\n"
+                "برای لغو، /cancel را بفرست.",
+                parse_mode="HTML",
+            )
+            await callback.answer()
+            return
+        await callback.message.edit_text(
+            f"🎬 <b>رسانه لابی «{group.title or group.telegram_id}»</b>\\n\\n"
+            "رسانه سفارشی: " + ("ویدیو" if settings.lobby_media_type == "video" else "عکس" if settings.lobby_media_type == "photo" else "ثبت نشده") + "\\n"
+            f"وضعیت: {'فعال' if settings.lobby_media_enabled else 'غیرفعال'}\\n\\n"
+            "اگر رسانه سفارشی نداشته باشی، در حالت فعال عکس پروفایل گروه استفاده می‌شود.",
+            reply_markup=group_lobby_media_menu(group.id, settings),
+            parse_mode="HTML",
+        )
+    await callback.answer("تنظیمات لابی به‌روزرسانی شد.")
+
+
+@router.message(GroupLobbyMediaState.media)
+async def group_lobby_media_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    data = await state.get_data()
+    group_id = int(data.get("group_id", 0) or 0)
+    raw = (message.text or "").strip().lower()
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("ثبت رسانه لابی لغو شد.")
+        return
+    if raw == "/clear":
+        async with session_factory() as session:
+            group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+            if not group:
+                await state.clear(); await message.answer("دسترسی گروه تأیید نشد."); return
+            settings = await _ensure_group_settings(session, group)
+            settings.lobby_media_file_id = None
+            settings.lobby_media_type = None
+            await session.commit()
+        await state.clear()
+        await message.answer("🧹 رسانه سفارشی حذف شد؛ از این به بعد عکس پروفایل گروه استفاده می‌شود.", reply_markup=group_management_menu())
+        return
+    media_type = None
+    file_id = None
+    if message.video:
+        media_type, file_id = "video", message.video.file_id
+    elif message.photo:
+        media_type, file_id = "photo", message.photo[-1].file_id
+    if not file_id:
+        await message.answer("❌ فقط عکس یا ویدیو بفرست. فایل روی سرور ذخیره نمی‌شود و فقط file_id تلگرام نگه‌داری می‌شود.")
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        if not group:
+            await state.clear(); await message.answer("دسترسی گروه تأیید نشد."); return
+        settings = await _ensure_group_settings(session, group)
+        settings.lobby_media_file_id = file_id
+        settings.lobby_media_type = media_type
+        settings.lobby_media_enabled = True
+        await session.commit()
+    await state.clear()
+    await message.answer(
+        f"✅ {'ویدیو' if media_type == 'video' else 'عکس'} لابی ذخیره شد.\\n\\n"
+        "از این به بعد لابی با همان file_id ارسال و هنگام ورود بازیکنان فقط caption/دکمه‌ها ویرایش می‌شود.",
+        reply_markup=group_management_menu(),
     )
 
 
