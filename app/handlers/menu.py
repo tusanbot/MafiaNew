@@ -3598,8 +3598,8 @@ async def scenario_form_min(message: Message, state: FSMContext) -> None:
 async def scenario_form_turn_time(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     data = await state.get_data()
-    if value == "-" and data.get("edit_id"):
-        value = str(data.get("current_turn_seconds", 120))
+    if value in {"", "-"}:
+        value = str(data.get("current_turn_seconds", 120) if data.get("edit_id") else 120)
     seconds = _parse_duration(value)
     if seconds is None or not 15 <= seconds <= 600:
         await message.answer("زمان نوبت باید بین ۱۵ ثانیه تا ۱۰ دقیقه باشد. مثال: 02:00")
@@ -3612,8 +3612,8 @@ async def scenario_form_turn_time(message: Message, state: FSMContext) -> None:
 async def scenario_form_challenge_time(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     data = await state.get_data()
-    if value == "-" and data.get("edit_id"):
-        value = str(data.get("current_challenge_seconds", 60))
+    if value in {"", "-"}:
+        value = str(data.get("current_challenge_seconds", 60) if data.get("edit_id") else 60)
     seconds = _parse_duration(value)
     if seconds is None or not 15 <= seconds <= 600:
         await message.answer("زمان چالش باید بین ۱۵ ثانیه تا ۱۰ دقیقه باشد. مثال: 01:00")
@@ -3626,15 +3626,30 @@ async def scenario_form_challenge_time(message: Message, state: FSMContext) -> N
 async def scenario_form_extra_challenge_time(message: Message, state: FSMContext) -> None:
     value = (message.text or "").strip()
     data = await state.get_data()
-    if value == "-" and data.get("edit_id"):
-        value = str(data.get("current_extra_challenge_seconds", 60))
+    if value in {"", "-"}:
+        value = str(data.get("current_extra_challenge_seconds", 60) if data.get("edit_id") else 60)
     seconds = _parse_duration(value)
     if seconds is None or not 15 <= seconds <= 600:
         await message.answer("زمان چالش اضافه باید بین ۱۵ ثانیه تا ۱۰ دقیقه باشد. مثال: 01:00")
         return
     await state.update_data(extra_challenge_seconds=seconds)
-    await state.set_state(ScenarioAdminState.challenge)
-    await message.answer("تنظیم چالش را انتخاب کنید:", reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))))
+    await state.set_state(ScenarioAdminState.confirm)
+    data = await state.get_data()
+    roles_text = data.get("current_roles_text", "")
+    role_count = len(data.get("role_ids", []))
+    challenge_label = {"limited": "محدود (۱ چالش)", "free": "آزاد", "off": "بدون چالش"}.get(data.get("challenge_mode"), "محدود")
+    await message.answer(
+        f"📋 <b>خلاصه سناریو</b>\n\n"
+        f"🎭 نام: {data.get('name', '—')}\n"
+        f"📝 توضیحات: {data.get('description') or '—'}\n"
+        f"👥 تعداد نفرات: {role_count}\n"
+        f"🤏 چالش: {challenge_label}\n"
+        f"⏱ نوبت: {_format_duration(int(data.get('turn_seconds', 120)))}\n"
+        f"⏱ زمان چالش: {_format_duration(int(data.get('challenge_seconds', 60)))}\n"
+        f"➕ چالش اضافه: {_format_duration(int(data.get('extra_challenge_seconds', 60)))}\n\n"
+        "اگر همه‌چیز درست است تأیید کن.",
+        reply_markup=scenario_confirm_keyboard("edit" if data.get("edit_id") else "create"),
+    )
 
 @router.message(ScenarioAdminState.max_players)
 async def scenario_form_max(message: Message, state: FSMContext) -> None:
@@ -3743,7 +3758,9 @@ async def scenario_form_vote_rules(message: Message, state: FSMContext) -> None:
             elif key in {"تساوی", "tie"}:
                 rules["vote2_tie_policy"] = "random" if value in {"قرعه", "random"} else "no_elimination"
     await state.update_data(voting_rules=rules)
-    await state.set_state(ScenarioAdminState.roles)
+    await state.set_state(ScenarioAdminState.turn_time)
+    await message.answer("⏱ زمان هر نوبت را وارد کن؛ مثال 02:00 یا 120. پیش‌فرض: 02:00")
+    return
     current = data.get("current_roles_text", "")
     prompt = (
         "🎭 نقش‌ها و سایدها را هر کدام در یک سطر وارد کنید.\n\n"
