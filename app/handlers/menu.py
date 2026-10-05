@@ -3956,12 +3956,61 @@ def _tour_prizes(raw):
     return out
 
 async def _tour_users(session, names):
+    """Resolve tournament player names/usernames/Telegram IDs robustly.
+
+    Manual tournament input is intentionally forgiving: names may be sent one
+    per line or as comma/Arabic-comma/semicolon separated values, and an
+    optional ranking/number prefix is ignored.
+    """
     users=list((await session.execute(select(User).where(User.is_active.is_(True)))).scalars().all())
     result=[]
-    for name in names:
-        n=name.strip()
-        matches=[u for u in users if n in {u.display_name.strip(),u.name_base.strip(),u.first_name.strip(),(u.username or '').strip()}]
-        if len(matches)==1 and matches[0] not in result: result.append(matches[0])
+    seen=set()
+
+    for raw in names:
+        n=str(raw or '').strip()
+        if not n:
+            continue
+        # Accept inputs such as "1. Ali", "1) Ali", "1 Ali" and @username.
+        n=re.sub(r'^\\s*\\d+\\s*[.)-]?\\s+', '', n).strip()
+        n=n.lstrip('@').strip()
+        if not n:
+            continue
+
+        # Telegram numeric user id is the most reliable identifier.
+        matches=[]
+        if n.isdigit():
+            uid=int(n)
+            matches=[u for u in users if int(u.telegram_id or 0)==uid]
+        else:
+            key=n.casefold()
+            exact=[]
+            for u in users:
+                values={
+                    str(u.display_name or '').strip(),
+                    str(u.name_base or '').strip(),
+                    str(u.first_name or '').strip(),
+                    str(u.username or '').strip().lstrip('@'),
+                }
+                if any(v and v.casefold()==key for v in values):
+                    exact.append(u)
+            matches=exact
+            if len(matches)!=1:
+                partial=[]
+                for u in users:
+                    values=[
+                        str(u.display_name or '').strip(),
+                        str(u.name_base or '').strip(),
+                        str(u.first_name or '').strip(),
+                        str(u.username or '').strip().lstrip('@'),
+                    ]
+                    if any(key and key in v.casefold() for v in values if v):
+                        partial.append(u)
+                if len(partial)==1:
+                    matches=partial
+
+        if len(matches)==1 and matches[0].id not in seen:
+            result.append(matches[0])
+            seen.add(matches[0].id)
     return result
 
 async def _tour_allowed(session, bot, user_id, tid):
@@ -4112,8 +4161,17 @@ async def tournament_input(message: Message,state:FSMContext):
             except: await message.answer('تعداد گروه باید عدد مثبت باشد.'); return
             await state.update_data(group_count=count); await message.answer('منبع قرعه‌کشی را انتخاب کن:',reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text='👥 بازیکنان ثبت‌شده',callback_data=f'tournament:draw_registered:{tid}'),InlineKeyboardButton(text='✍️ ورود دستی اسامی',callback_data=f'tournament:draw_manual:{tid}')]])); return
         if data.get('action')=='draw_manual':
-            users=await _tour_users(session,value.splitlines()); count=int(data['group_count'])
-            if len(users)<count: await message.answer('تعداد بازیکنان کافی نیست.'); return
+            # Accept both one-name-per-line and comma/semicolon separated input.
+            entries=[x.strip() for x in re.split(r'[\\n,،;؛]+', value) if x.strip()]
+            users=await _tour_users(session,entries)
+            count=int(data['group_count'])
+            if len(users)<count:
+                await message.answer(
+                    f'❌ برای {count} گروه حداقل {count} بازیکن لازم است؛ '
+                    f'از اسامی ارسالی فقط {len(users)} بازیکن قابل شناسایی بود.\\n'
+                    'اسم/یوزرنیم بازیکنان ثبت‌شده را بفرست یا آیدی عددی تلگرام آن‌ها را وارد کن.'
+                )
+                return
             import random; random.shuffle(users)
             old=list((await session.execute(select(TournamentGroup).where(TournamentGroup.tournament_id==tid))).scalars().all())
             for g in old: await session.delete(g)
