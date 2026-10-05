@@ -51,19 +51,6 @@ class GroupLockMiddleware(BaseMiddleware):
         if message.chat.type not in ("group", "supergroup") or not message.from_user:
             return await handler(event, data)
 
-        # FSM-driven admin forms must receive their input even while a game is
-        # running. Otherwise chat/night/turn locks can delete the form input
-        # before the FSM handler sees it. Tournament creation/editing is one
-        # such flow and its fields are intentionally free-form text.
-        fsm_state = data.get("state")
-        if fsm_state is not None:
-            try:
-                current_state = await fsm_state.get_state()
-            except Exception:
-                current_state = None
-            if current_state and current_state.startswith("TournamentState:"):
-                return await handler(event, data)
-
         # Explicit slash commands are handled by their own authorization checks.
         if message.text and message.text.lstrip().startswith("/"):
             return await handler(event, data)
