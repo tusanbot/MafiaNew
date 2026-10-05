@@ -3956,45 +3956,69 @@ def _tour_prizes(raw):
     return out
 
 async def _tour_users(session, names, bot=None, group=None):
-    """Resolve tournament players, scoped to the selected tournament group.
+    """Resolve tournament players robustly within the selected Telegram group."""
+    def _normalize_digits(value: str) -> str:
+        return str(value or "").translate(str.maketrans(
+            "۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩",
+            "01234567890123456789",
+        ))
 
-    Numeric Telegram IDs are also resolved directly through Telegram when the
-    user is not yet present in the local users table.
-    """
-    # Tournament resolution must not be limited to globally active users.
-    # A Telegram account can be inactive locally while still being a valid member
-    # of the selected tournament group.
+    def _clean(value: str) -> str:
+        value = _normalize_digits(str(value or "").strip())
+        value = re.sub(r"^\s*\d+\s*[.)-]?\s+", "", value).strip()
+        return value.lstrip("@").strip()
+
     users=list((await session.execute(select(User))).scalars().all())
     result=[]
     seen=set()
+    unresolved=[]
+
+    async def _add_telegram_user(tg_user):
+        if not tg_user:
+            return None
+        existing=next((u for u in users if int(u.telegram_id or 0)==int(tg_user.id)), None)
+        if existing:
+            return existing
+        synced=await sync_telegram_user(
+            session,
+            tg_user.id,
+            tg_user.username,
+            tg_user.first_name or "",
+            tg_user.last_name,
+        )
+        users.append(synced)
+        return synced
+
+    async def _group_member_by_username(username):
+        if not bot or not group or not username:
+            return None
+        # Telegram Bot API has no direct "find member by username" method.
+        # When the account is not locally synced, resolve it from the group
+        # member list if Telegram exposes the member in the group.
+        try:
+            admins=await bot.get_chat_administrators(group.telegram_id)
+            for admin in admins:
+                if (admin.user.username or "").casefold()==username.casefold():
+                    return admin.user
+        except Exception:
+            pass
+        return None
 
     for raw in names:
-        n=str(raw or '').strip()
-        if not n:
-            continue
-        n=re.sub(r'^\\s*\\d+\\s*[.)-]?\\s+', '', n).strip()
-        n=n.lstrip('@').strip()
+        n=_clean(raw)
         if not n:
             continue
 
         matches=[]
-        if n.isdigit():
-            uid=int(n)
+        uid_text=_normalize_digits(n)
+        if uid_text.isdigit():
+            uid=int(uid_text)
             matches=[u for u in users if int(u.telegram_id or 0)==uid]
-            # Resolve an unsynced user against the selected tournament group only.
-            if not matches and bot is not None and group is not None:
+            if not matches and bot and group:
                 try:
                     member=await bot.get_chat_member(group.telegram_id, uid)
-                    tg_user=member.user
-                    synced=await sync_telegram_user(
-                        session,
-                        tg_user.id,
-                        tg_user.username,
-                        tg_user.first_name or '',
-                        tg_user.last_name,
-                    )
-                    users.append(synced)
-                    matches=[synced]
+                    synced=await _add_telegram_user(member.user)
+                    matches=[synced] if synced else []
                 except Exception:
                     matches=[]
         else:
@@ -4002,22 +4026,32 @@ async def _tour_users(session, names, bot=None, group=None):
             exact=[]
             for u in users:
                 values={
-                    str(u.display_name or '').strip(),
-                    str(u.name_base or '').strip(),
-                    str(u.first_name or '').strip(),
-                    str(u.username or '').strip().lstrip('@'),
+                    str(u.display_name or "").strip(),
+                    str(u.name_base or "").strip(),
+                    str(u.first_name or "").strip(),
+                    str(u.username or "").strip().lstrip("@"),
+                    str(u.last_name or "").strip(),
                 }
                 if any(v and v.casefold()==key for v in values):
                     exact.append(u)
             matches=exact
-            if len(matches)!=1:
+
+            # If username is not locally synced, try Telegram group admins.
+            if not matches:
+                tg_user=await _group_member_by_username(n)
+                if tg_user:
+                    synced=await _add_telegram_user(tg_user)
+                    matches=[synced] if synced else []
+
+            if not matches:
                 partial=[]
                 for u in users:
                     values=[
-                        str(u.display_name or '').strip(),
-                        str(u.name_base or '').strip(),
-                        str(u.first_name or '').strip(),
-                        str(u.username or '').strip().lstrip('@'),
+                        str(u.display_name or "").strip(),
+                        str(u.name_base or "").strip(),
+                        str(u.first_name or "").strip(),
+                        str(u.username or "").strip().lstrip("@"),
+                        str(u.last_name or "").strip(),
                     ]
                     if any(key and key in v.casefold() for v in values if v):
                         partial.append(u)
@@ -4027,7 +4061,10 @@ async def _tour_users(session, names, bot=None, group=None):
         if len(matches)==1 and matches[0].id not in seen:
             result.append(matches[0])
             seen.add(matches[0].id)
-    return result
+        elif not matches:
+            unresolved.append(str(raw).strip())
+
+    return result, unresolved
 
 async def _tour_allowed(session, bot, user_id, tid):
     t=await session.get(Tournament,tid)
@@ -4146,7 +4183,7 @@ async def tournament_input(message: Message,state:FSMContext):
                 g.name=value
             else:
                 users=await _tour_users(session,[value])
-                if not users: await message.answer('بازیکن پیدا نشد.'); return
+                if not users: await message.answer(f'بازیکن پیدا نشد: {unresolved[0] if unresolved else value}'); return
                 tp=await session.scalar(select(TournamentPlayer).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==users[0].id))
                 if not tp: await message.answer('این بازیکن در تورنمنت ثبت نشده.'); return
                 tp.group_no=g.group_no if data['action']=='group_add' else None
@@ -4186,13 +4223,14 @@ async def tournament_input(message: Message,state:FSMContext):
                 await message.answer('تورنمنت پیدا نشد.')
                 return
             group=await session.get(Group,t.group_id)
-            users=await _tour_users(session,entries,bot=message.bot,group=group)
+            users,unresolved=await _tour_users(session,entries,bot=message.bot,group=group)
             count=int(data['group_count'])
             if len(users)<count:
                 await message.answer(
                     f'❌ برای {count} گروه حداقل {count} بازیکن لازم است؛ '
                     f'از اسامی ارسالی فقط {len(users)} بازیکن قابل شناسایی بود.\\n'
-                    'اسم/یوزرنیم بازیکنان ثبت‌شده را بفرست یا آیدی عددی تلگرام آن‌ها را وارد کن.'
+                    f'❓ پیدا نشد: {", ".join(unresolved[:10]) if unresolved else "—"}\\n'
+                    'اسم/یوزرنیم بازیکنان را هر کدام در یک خط، یا با ویرگول/؛ جدا کن.'
                 )
                 return
             import random; random.shuffle(users)
