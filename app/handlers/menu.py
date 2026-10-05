@@ -593,7 +593,7 @@ async def _ensure_group_settings(session, group: Group) -> GroupSettings:
     return settings
 
 
-@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday", "groupmgmt:lobby_media", "groupmgmt:invitation"})
+@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday", "groupmgmt:lobby_media", "groupmgmt:invitation", "groupmgmt:scenario"})
 async def group_management_settings_entry(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
@@ -610,6 +610,7 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
                 "birthday": "گروه را برای ثبت تاریخ تولد انتخاب کنید:",
                 "lobby_media": "گروه را برای تنظیم رسانه لابی انتخاب کنید:",
                 "invitation": "گروه را برای مدیریت دعوت به بازی انتخاب کنید:",
+                "scenario": "گروه را برای مدیریت سناریو انتخاب کنید:",
             }
             await callback.message.edit_text(titles[purpose], reply_markup=group_list_keyboard(groups, purpose))
     await callback.answer()
@@ -736,6 +737,26 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 "برای انصراف /cancel را بفرست.",
                 parse_mode="HTML",
             )
+        elif purpose == "scenario":
+            scenarios = list((await session.execute(
+                select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+            )).scalars().all())
+            settings = await _ensure_group_settings(session, group)
+            current = await session.get(Scenario, settings.default_scenario_id) if settings.default_scenario_id else None
+            lines = [
+                f"🎭 <b>مدیریت سناریو «{escape(group.title or str(group.telegram_id))}»</b>",
+                "",
+                f"📌 سناریوی پیش‌فرض: <b>{escape(current.name_fa) if current else 'انتخاب نشده'}</b>",
+                "",
+                "از این بخش می‌توانی سناریوی پیش‌فرض گروه را انتخاب کنی. فقط سناریوهای فعال نمایش داده می‌شوند."
+            ]
+            await session.commit()
+            builder = InlineKeyboardBuilder()
+            builder.row(InlineKeyboardButton(text="🎭 انتخاب سناریوی پیش‌فرض", callback_data=f"groupmgmt:scenario_select:{group.id}"))
+            if scenarios:
+                builder.row(InlineKeyboardButton(text=f"📚 نمایش سناریوهای فعال ({len(scenarios)})", callback_data=f"groupmgmt:scenario_list:{group.id}"))
+            _back(builder, "menu:group_management")
+            await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup(), parse_mode="HTML")
         elif purpose == "invitation":
             setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group.id))
             count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
