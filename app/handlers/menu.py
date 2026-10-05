@@ -4740,3 +4740,68 @@ async def tournament_edit_start(callback: CallbackQuery,state:FSMContext):
     if not t: await callback.answer('دسترسی ندارید.',show_alert=True); return
     await state.clear(); await state.update_data(action='edit',tid=tid,step='name'); await state.set_state(TournamentState.input)
     await callback.message.edit_text(f'✏️ نام جدید تورنمنت را بفرست.\nفعلی: {t.name}\nبرای حفظ نام: -'); await callback.answer()
+
+@router.message(BirthdayAdminState.video)
+async def admin_birthday_video_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user or message.from_user.id not in get_settings().admin_id_set:
+        return
+    if (message.text or "").strip() == "/cancel":
+        await state.clear()
+        await message.answer("❌ تغییر ویدیوی تبریک لغو شد.", reply_markup=admin_panel_menu())
+        return
+    if not message.video:
+        await message.answer("❌ لطفاً خودِ ویدیو را ارسال کن، نه فایل یا متن. برای لغو /cancel را بفرست.")
+        return
+    async with session_factory() as session:
+        setting = await session.scalar(select(BirthdaySetting).where(BirthdaySetting.id == 1))
+        if not setting:
+            setting = BirthdaySetting(id=1)
+            session.add(setting)
+        setting.video_file_id = message.video.file_id
+        setting.enabled = True
+        await session.commit()
+        messages = list((await session.execute(
+            select(BirthdayMessageTemplate).order_by(BirthdayMessageTemplate.id)
+        )).scalars().all())
+    await state.clear()
+    await message.answer(
+        "✅ ویدیوی تبریک تولد ذخیره شد.\nاز این به بعد ویدیوی جدید در تبریک‌های روزانه استفاده می‌شود.",
+        reply_markup=birthday_admin_menu(message.video.file_id, len(messages)),
+    )
+
+
+@router.message(BirthdayAdminState.message)
+async def admin_birthday_message_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user or message.from_user.id not in get_settings().admin_id_set:
+        return
+    raw = (message.text or "").strip()
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("❌ افزودن پیام تبریک لغو شد.", reply_markup=admin_panel_menu())
+        return
+    if not raw:
+        await message.answer("❌ متن پیام خالی است. متن تبریک را ارسال کن.")
+        return
+    allowed = {"name", "first_name", "username", "mention", "user_id", "birthday"}
+    import re
+    unknown = sorted(set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)) - allowed)
+    if unknown:
+        await message.answer(
+            "❌ این متغیرها شناخته‌شده نیستند: "
+            + ", ".join("{" + item + "}" for item in unknown)
+            + "\nاز متغیرهای راهنما استفاده کن."
+        )
+        return
+    async with session_factory() as session:
+        item = BirthdayMessageTemplate(text=raw, enabled=True)
+        session.add(item)
+        await session.commit()
+        messages = list((await session.execute(
+            select(BirthdayMessageTemplate).order_by(BirthdayMessageTemplate.id)
+        )).scalars().all())
+        setting = await session.scalar(select(BirthdaySetting).where(BirthdaySetting.id == 1))
+    await state.clear()
+    await message.answer(
+        "✅ پیام تبریک جدید اضافه شد.",
+        reply_markup=birthday_admin_menu(setting.video_file_id if setting else None, len(messages)),
+    )
