@@ -228,6 +228,27 @@ def group_voting_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def group_scenario_management_menu(group_id: int, scenarios) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ ایجاد سناریو", callback_data="scenario_admin:create"),
+        InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data="scenario_admin:edit"),
+    )
+    builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data="scenario_admin:delete"))
+    builder.row(InlineKeyboardButton(text="🎭 نقش‌ها و توضیحات", callback_data="scenario_admin:roles"))
+    builder.row(InlineKeyboardButton(
+        text="🎯 انتخاب سناریوی پیش‌فرض گروه",
+        callback_data=f"groupmgmt:scenario_select:{group_id}",
+    ))
+    if scenarios:
+        builder.row(InlineKeyboardButton(
+            text=f"📚 سناریوهای فعال ({len(scenarios)})",
+            callback_data=f"groupmgmt:scenario_list:{group_id}",
+        ))
+    _back(builder, f"groupmgmt:select:scenario:{group_id}")
+    return builder.as_markup()
+
+
 def group_default_scenario_keyboard(group_id: int, scenarios) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
