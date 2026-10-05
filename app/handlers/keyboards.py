@@ -75,6 +75,7 @@ def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMar
     )
     builder.row(InlineKeyboardButton(text="🏆 تورنمنت‌ها", callback_data="groupmgmt:tournaments"))
     builder.row(InlineKeyboardButton(text="🎂 ثبت تاریخ تولد بازیکن", callback_data="groupmgmt:birthday"))
+    builder.row(InlineKeyboardButton(text="🎬 ویدیوی لابی", callback_data="groupmgmt:lobby_media"))
     _back(builder, back_callback)
     return builder.as_markup()
 
@@ -297,6 +298,33 @@ def group_list_keyboard(groups, purpose: str = "games", back_callback: str = "me
     _back(builder, back_callback)
     return builder.as_markup()
 
+
+def group_lobby_media_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    enabled = bool(getattr(settings, "lobby_media_enabled", True))
+    media_type = getattr(settings, "lobby_media_type", None)
+    has_custom = bool(getattr(settings, "lobby_media_file_id", None) and media_type)
+    status = "فعال" if enabled else "غیرفعال"
+    source = "ویدیوی سفارشی" if media_type == "video" else ("عکس سفارشی" if media_type == "photo" else "عکس پروفایل گروه")
+    builder.row(InlineKeyboardButton(
+        text=f"🎬 رسانه لابی: {status}",
+        callback_data=f"group_lobby_media:toggle:{group_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"📌 منبع فعلی: {source}",
+        callback_data=f"group_lobby_media:noop:{group_id}",
+    ))
+    builder.row(InlineKeyboardButton(
+        text="📤 ثبت/تغییر عکس یا ویدیو",
+        callback_data=f"group_lobby_media:set:{group_id}",
+    ))
+    if has_custom:
+        builder.row(InlineKeyboardButton(
+            text="🧹 حذف رسانه سفارشی",
+            callback_data=f"group_lobby_media:clear:{group_id}",
+        ))
+    _back(builder, "menu:group_management")
+    return builder.as_markup()
 
 def group_game_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
