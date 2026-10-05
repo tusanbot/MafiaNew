@@ -10,6 +10,7 @@ from app.handlers import register_handlers
 from app.health import app as health_app
 from app.logging import configure_logging
 from app.services.rich_message import install_rich_message_transport
+from app.services.birthday import run_birthday_announcements
 
 async def _register_bot_commands(bot: Bot) -> None:
     """Publish the command menu Telegram clients use for slash-command suggestions."""
@@ -47,9 +48,15 @@ async def run_bot() -> None:
         logging.getLogger(__name__).exception("Failed to publish Telegram command menu; polling will continue.")
     dispatcher = Dispatcher()
     register_handlers(dispatcher)
+    birthday_task = asyncio.create_task(run_birthday_announcements(bot))
     try:
         await dispatcher.start_polling(bot)
     finally:
+        birthday_task.cancel()
+        try:
+            await birthday_task
+        except asyncio.CancelledError:
+            pass
         await bot.session.close()
 
 async def run_http() -> None:
