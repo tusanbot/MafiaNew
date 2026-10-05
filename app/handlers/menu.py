@@ -4012,8 +4012,16 @@ async def tournament_add_start(callback: CallbackQuery,state:FSMContext):
 
 @router.message(TournamentState.input)
 async def tournament_input(message: Message,state:FSMContext):
-    if message.chat.type!='private' or not message.from_user: return
-    value=(message.text or '').strip(); data=await state.get_data()
+    if not message.from_user or not message.text:
+        return
+
+    value=message.text.strip()
+    data=await state.get_data()
+    action=data.get('action')
+    if not action:
+        await state.clear()
+        return
+
     if value=='/cancel': await state.clear(); await message.answer('لغو شد.',reply_markup=tournament_admin_menu(int(data.get('group_id',0)))); return
     if data.get('action')=='add':
         step=data.get('step')
