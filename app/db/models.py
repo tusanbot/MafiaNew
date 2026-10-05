@@ -163,6 +163,8 @@ class GroupInvitationSetting(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     group_id: Mapped[int] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), unique=True, index=True)
     default_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    invite_button_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    invite_button_text: Mapped[str] = mapped_column(String(100), default="🎮 ورود به بازی")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
