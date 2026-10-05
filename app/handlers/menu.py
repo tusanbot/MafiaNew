@@ -726,7 +726,7 @@ async def group_scenario_list(callback: CallbackQuery) -> None:
             )
         builder = InlineKeyboardBuilder()
         builder.row(InlineKeyboardButton(text="🎭 انتخاب سناریوی پیش‌فرض", callback_data=f"groupmgmt:scenario_select:{group.id}"))
-        _back(builder, f"groupmgmt:select:scenario:{group.id}")
+        builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data=f"groupmgmt:select:scenario:{group.id}"))
         await callback.message.edit_text(text, reply_markup=builder.as_markup(), parse_mode="HTML")
     await callback.answer()
 
@@ -813,7 +813,7 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
             builder.row(InlineKeyboardButton(text="🎭 انتخاب سناریوی پیش‌فرض", callback_data=f"groupmgmt:scenario_select:{group.id}"))
             if scenarios:
                 builder.row(InlineKeyboardButton(text=f"📚 نمایش سناریوهای فعال ({len(scenarios)})", callback_data=f"groupmgmt:scenario_list:{group.id}"))
-            _back(builder, "menu:group_management")
+            builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="menu:group_management"))
             await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup(), parse_mode="HTML")
         elif purpose == "invitation":
             setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group.id))
