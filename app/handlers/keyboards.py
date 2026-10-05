@@ -1293,8 +1293,44 @@ def admin_panel_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="👥 گروه‌ها", callback_data="admin:groups"))
     builder.row(InlineKeyboardButton(text="🎭 سناریوها", callback_data="admin:scenarios"))
     builder.row(InlineKeyboardButton(text="🎮 بازی‌های اخیر", callback_data="admin:games"))
+    builder.row(InlineKeyboardButton(text="🎂 مدیریت تبریک تولد", callback_data="admin:birthday"))
     builder.row(InlineKeyboardButton(text="⚙️ تنظیمات ربات", callback_data="admin:settings"))
     _back(builder, "menu:root")
+    return builder.as_markup()
+
+
+def birthday_admin_menu(video_file_id: str | None, message_count: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"🎬 ویدیوی تبریک: {'تنظیم شده' if video_file_id else 'تنظیم نشده'}",
+        callback_data="admin:birthday:video",
+    ))
+    builder.row(InlineKeyboardButton(
+        text=f"💬 پیام‌های تبریک ({message_count})",
+        callback_data="admin:birthday:messages",
+    ))
+    builder.row(InlineKeyboardButton(text="➕ افزودن پیام تبریک", callback_data="admin:birthday:add"))
+    _back(builder, "menu:admin")
+    return builder.as_markup()
+
+
+def birthday_message_list_keyboard(messages) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for item in messages:
+        preview = (item.text or "").replace("\n", " ")[:48]
+        builder.row(InlineKeyboardButton(
+            text=f"💬 {item.id}: {preview}",
+            callback_data=f"admin:birthday:show:{item.id}",
+        ))
+    builder.row(InlineKeyboardButton(text="➕ افزودن پیام", callback_data="admin:birthday:add"))
+    _back(builder, "admin:birthday")
+    return builder.as_markup()
+
+
+def birthday_message_item_keyboard(message_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🗑 حذف پیام", callback_data=f"admin:birthday:delete:{message_id}"))
+    _back(builder, "admin:birthday:messages")
     return builder.as_markup()
 
 
