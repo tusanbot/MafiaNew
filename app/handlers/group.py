@@ -10,6 +10,7 @@ from app.repositories.groups import GroupRepository
 from app.repositories.users import UserRepository
 from app.services.game import create_game, render_lobby
 from app.handlers.keyboards import lobby_keyboard
+from app.services.lobby_media import send_lobby_message
 
 router = Router(name="group")
 
@@ -83,7 +84,10 @@ async def new_game_handler(message: Message) -> None:
         game = await create_game(session, group, scenario, user)
         await GameRepository.join(session, game, user)
         text, can_start = await render_lobby(session, game)
-        await message.answer(text, reply_markup=lobby_keyboard(game.game_key, can_start))
+        try:
+            await send_lobby_message(message.bot, session, group, text, lobby_keyboard(game.game_key, can_start))
+        except Exception:
+            await message.answer(text, reply_markup=lobby_keyboard(game.game_key, can_start))
 
 
 @router.message(lambda m: bool(m.text) and m.text.strip().lstrip("/") == "جایگزین")
