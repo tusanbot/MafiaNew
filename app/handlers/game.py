@@ -14,6 +14,7 @@ from app.services.roles import assign_roles
 from app.services.gameplay import choose_leader, start_round
 from app.handlers.keyboards import group_management_menu, lobby_keyboard_v2, leader_settings_keyboard, leader_choice_keyboard, leader_players_keyboard
 from app.utils.text import tg_name, tg_plain_name
+from app.services.lobby_media import edit_lobby_message
 
 router = Router(name="game")
 
@@ -37,22 +38,27 @@ async def _render(callback: CallbackQuery, session, game, user_id: int):
     substitutes = await GameRepository.substitutes(session, game.id)
     host = await session.get(User, game.host_user_id) if game.host_user_id else None
     text, full = await render_lobby(session, game)
-    await callback.message.edit_text(
-        text,
-        parse_mode="HTML",
-        reply_markup=lobby_keyboard_v2(
-            game.game_key,
-            scenario,
-            players,
-            reserves,
-            substitutes=substitutes,
-            is_host=bool(host and host.id == user_id),
-            can_deal=full,
-            reserve_enabled=game.reserve_enabled,
-            training_url=scenario.training_url,
-            telegram_training_url=scenario.telegram_training_url,
-        ),
+    group = await session.get(Group, game.group_id)
+    markup = lobby_keyboard_v2(
+        game.game_key,
+        scenario,
+        players,
+        reserves,
+        substitutes=substitutes,
+        is_host=bool(host and host.id == user_id),
+        can_deal=full,
+        reserve_enabled=game.reserve_enabled,
+        training_url=scenario.training_url,
+        telegram_training_url=scenario.telegram_training_url,
     )
+    if group and callback.message.chat.id == group.telegram_id:
+        await edit_lobby_message(
+            callback.bot, session, group, callback.message.message_id, text, markup
+        )
+    else:
+        await callback.message.edit_text(
+            text, parse_mode="HTML", reply_markup=markup
+        )
 
 
 @router.callback_query(lambda c: c.data and c.data.startswith("groupadmin:lobby:"))
