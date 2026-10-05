@@ -46,6 +46,33 @@ def parse_birthday(value: str):
     return None
 
 
+async def get_telegram_profile_birthday(bot: Bot, telegram_id: int):
+    """Read a visible Telegram profile birthday through Bot API getChat."""
+    try:
+        chat = await bot.get_chat(telegram_id)
+        birthdate = getattr(chat, "birthdate", None)
+        if not birthdate:
+            return None
+        day = int(getattr(birthdate, "day", 0) or 0)
+        month = int(getattr(birthdate, "month", 0) or 0)
+        year = int(getattr(birthdate, "year", 2000) or 2000)
+        if not 1 <= month <= 12 or not 1 <= day <= 31:
+            return None
+        return datetime(year, month, day)
+    except Exception:
+        return None
+
+
+async def get_effective_birthday(bot: Bot, user: User):
+    """Prefer the bot profile value, then a visible Telegram profile birthday."""
+    if user.birthday:
+        return user.birthday, "ربات"
+    birthday = await get_telegram_profile_birthday(bot, user.telegram_id)
+    if birthday:
+        return birthday, "پروفایل تلگرام"
+    return None, None
+
+
 def birthday_label(value) -> str:
     if not value:
         return "ثبت نشده"
