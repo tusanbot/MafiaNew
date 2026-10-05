@@ -851,18 +851,18 @@ async def group_lobby_media_handler(callback: CallbackQuery, state: FSMContext) 
             await state.update_data(group_id=group.id)
             await state.set_state(GroupLobbyMediaState.media)
             await callback.message.edit_text(
-                f"🎬 رسانه لابی «{group.title or group.telegram_id}»\\n\\n"
-                "یک <b>عکس یا ویدیو</b> همینجا ارسال کن. فقط <code>file_id</code> تلگرام ذخیره می‌شود و فایل دوباره آپلود نخواهد شد.\\n\\n"
-                "برای حذف رسانه سفارشی، /clear را بفرست.\\n"
+                f"🎬 رسانه لابی «{group.title or group.telegram_id}»\n\n"
+                "یک <b>عکس یا ویدیو</b> همینجا ارسال کن. فقط <code>file_id</code> تلگرام ذخیره می‌شود و فایل دوباره آپلود نخواهد شد.\n\n"
+                "برای حذف رسانه سفارشی، /clear را بفرست.\n"
                 "برای لغو، /cancel را بفرست.",
                 parse_mode="HTML",
             )
             await callback.answer()
             return
         await callback.message.edit_text(
-            f"🎬 <b>رسانه لابی «{group.title or group.telegram_id}»</b>\\n\\n"
-            "رسانه سفارشی: " + ("ویدیو" if settings.lobby_media_type == "video" else "عکس" if settings.lobby_media_type == "photo" else "ثبت نشده") + "\\n"
-            f"وضعیت: {'فعال' if settings.lobby_media_enabled else 'غیرفعال'}\\n\\n"
+            f"🎬 <b>رسانه لابی «{group.title or group.telegram_id}»</b>\n\n"
+            "رسانه سفارشی: " + ("ویدیو" if settings.lobby_media_type == "video" else "عکس" if settings.lobby_media_type == "photo" else "ثبت نشده") + "\n"
+            f"وضعیت: {'فعال' if settings.lobby_media_enabled else 'غیرفعال'}\n\n"
             "اگر رسانه سفارشی نداشته باشی، در حالت فعال عکس پروفایل گروه استفاده می‌شود.",
             reply_markup=group_lobby_media_menu(group.id, settings),
             parse_mode="HTML",
@@ -913,7 +913,7 @@ async def group_lobby_media_save(message: Message, state: FSMContext) -> None:
         await session.commit()
     await state.clear()
     await message.answer(
-        f"✅ {'ویدیو' if media_type == 'video' else 'عکس'} لابی ذخیره شد.\\n\\n"
+        f"✅ {'ویدیو' if media_type == 'video' else 'عکس'} لابی ذخیره شد.\n\n"
         "از این به بعد لابی با همان file_id ارسال و هنگام ورود بازیکنان فقط caption/دکمه‌ها ویرایش می‌شود.",
         reply_markup=group_management_menu(),
     )
