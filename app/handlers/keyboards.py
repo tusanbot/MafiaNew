@@ -344,6 +344,13 @@ def group_invitation_send_menu(group_id: int, has_default: bool) -> InlineKeyboa
     _back(builder, f"invitation:menu:{group_id}")
     return builder.as_markup()
 
+def invitation_button_choice_keyboard(group_id: int, mode: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔗 بله، دکمه لینک دعوت اضافه شود", callback_data=f"invitation:button_yes:{mode}:{group_id}"))
+    builder.row(InlineKeyboardButton(text="بدون دکمه", callback_data=f"invitation:button_no:{mode}:{group_id}"))
+    return builder.as_markup()
+
+
 def invitation_confirm_keyboard(group_id: int, mode: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="✅ تأیید و ارسال", callback_data=f"invitation:confirm:{mode}:{group_id}"), InlineKeyboardButton(text="❌ لغو", callback_data=f"invitation:menu:{group_id}"))
