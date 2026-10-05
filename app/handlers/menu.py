@@ -138,6 +138,10 @@ class RoleDescriptionState(StatesGroup):
     input = State()
 
 
+class ScenarioTrainingState(StatesGroup):
+    input = State()
+
+
 async def _is_group_admin(bot, group: Group, user_id: int) -> bool:
     try:
         member = await bot.get_chat_member(group.telegram_id, user_id)
@@ -4511,13 +4515,19 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
 
     async with session_factory() as session:
         role_rows = list((await session.execute(select(Role))).scalars().all())
-        role_map = {(r.name_fa.strip(), r.team): r for r in role_rows}
+        role_map = {(r.name_fa.strip().casefold(), r.team): r for r in role_rows}
         resolved = []
         for role_name, team in role_lines:
-            role = role_map.get((role_name, team))
+            role = role_map.get((role_name.casefold(), team))
             if not role:
-                await message.answer(f"نقش «{role_name}» با ساید «{team}» در فهرست نقش‌ها پیدا نشد.")
-                return
+                role = Role(
+                    key="custom_role_" + uuid4().hex[:16],
+                    name_fa=role_name,
+                    team=team,
+                    description="",
+                )
+                session.add(role)
+                await session.flush()
             resolved.append(role)
     await state.update_data(role_ids=[r.id for r in resolved])
     await state.set_state(ScenarioAdminState.challenge)
@@ -4570,6 +4580,7 @@ async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> N
                 voting_rules=json.dumps(data.get("voting_rules", {}), ensure_ascii=False),
                 challenge_mode=data.get("challenge_mode", "limited"),
                 challenge_limit=1 if data.get("challenge_mode") == "limited" else None,
+                training_url=data.get("training_url"),
             )
             session.add(scenario)
             await session.flush()
@@ -4584,6 +4595,8 @@ async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> N
         scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
         scenario.vote_defense_threshold = int(data.get("vote_defense_threshold", 2))
         scenario.voting_rules = json.dumps(data.get("voting_rules", {}), ensure_ascii=False)
+        if data.get("training_url") is not None:
+            scenario.training_url = data.get("training_url")
         for pos, role in enumerate(roles):
             session.add(ScenarioRole(scenario_id=scenario.id, role_id=role.id, count=1, position=pos))
         await session.commit()
@@ -4606,6 +4619,84 @@ async def scenario_form_back_to_roles(callback: CallbackQuery, state: FSMContext
     await state.set_state(ScenarioAdminState.roles)
     await callback.message.edit_text("🎭 نقش‌ها و سایدها را دوباره ارسال کن.")
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data == "scenario_admin:training")
+async def scenario_training_manage_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        scenarios = list((await session.execute(
+            select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().all())
+    await callback.message.edit_text(
+        "📚 سناریویی را انتخاب کن تا لینک آموزش آن را ثبت یا ویرایش کنیم:",
+        reply_markup=scenario_admin_list_keyboard(scenarios, "training_select"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:training_select:"))
+async def scenario_training_select(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+    if not scenario:
+        await callback.answer("سناریو پیدا نشد.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(scenario_id=sid)
+    await state.set_state(ScenarioTrainingState.input)
+    current = scenario.training_url or "ثبت نشده"
+    await callback.message.edit_text(
+        f"📚 آموزش سناریوی «{escape(scenario.name_fa)}»\n\n"
+        f"لینک فعلی: {escape(current)}\n\n"
+        "لینک آموزش را ارسال کن. باید با http:// یا https:// شروع شود.\n"
+        "برای حذف لینک: -\nبرای لغو: /cancel",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(ScenarioTrainingState.input)
+async def scenario_training_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    if message.from_user.id not in get_settings().admin_id_set:
+        return
+    raw = (message.text or "").strip()
+    data = await state.get_data()
+    sid = int(data.get("scenario_id", 0) or 0)
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("❌ ثبت لینک آموزش لغو شد.", reply_markup=scenario_management_menu())
+        return
+    if raw == "-":
+        url = None
+    elif re.match(r"^https?://\S+$", raw, re.IGNORECASE):
+        url = raw
+    else:
+        await message.answer("❌ لینک معتبر نیست. لینک باید با http:// یا https:// شروع شود.")
+        return
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+        if not scenario or scenario.key == "classic":
+            await state.clear()
+            await message.answer("❌ سناریو پیدا نشد.", reply_markup=scenario_management_menu())
+            return
+        scenario.training_url = url
+        await session.commit()
+        name = scenario.name_fa
+    await state.clear()
+    await message.answer(
+        f"✅ لینک آموزش سناریوی «{escape(name)}» {'حذف شد' if not url else 'ذخیره شد'}.",
+        reply_markup=scenario_management_menu(),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(lambda c: c.data == "scenario_admin:roles")
@@ -4641,8 +4732,41 @@ async def scenario_role_list(callback: CallbackQuery, state: FSMContext) -> None
         roles = [role for _, role in rows]
     await callback.message.edit_text(
         f"🎭 نقش‌های سناریوی «{scenario.name_fa}»\n\n"
-        "روی هر نقش بزن و توضیحاتش را با فرمت «نام نقش / توضیحات نقش» ثبت کن.",
+        "برای ثبت چند توضیح همزمان، از «📝 ثبت توضیحات یکجا» استفاده کن. فرمت هر سطر: نقش/توضیحات",
         reply_markup=scenario_role_description_list_keyboard(roles, sid),
+    )
+    await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:role_desc_batch:"))
+async def scenario_role_description_batch_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+        rows = list((await session.execute(
+            select(ScenarioRole, Role)
+            .join(Role, Role.id == ScenarioRole.role_id)
+            .where(ScenarioRole.scenario_id == sid)
+            .order_by(ScenarioRole.position, Role.name_fa)
+        )).all()) if scenario else []
+    if not scenario:
+        await callback.answer("سناریو پیدا نشد.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(scenario_id=sid)
+    await state.set_state(RoleDescriptionState.input)
+    names = "\n".join(f"• {escape(role.name_fa)}" for _, role in rows)
+    await callback.message.edit_text(
+        f"📝 توضیحات نقش‌های «{escape(scenario.name_fa)}»\n\n"
+        "هر نقش را در یک سطر بفرست:\n"
+        "<code>نقش/توضیحات</code>\n\n"
+        "می‌توانی چند سطر را همزمان ارسال کنی.\n\n"
+        f"نقش‌های این سناریو:\n{names}\n\n"
+        "برای لغو: /cancel",
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -4673,54 +4797,55 @@ async def scenario_role_description_start(callback: CallbackQuery, state: FSMCon
 
 @router.message(RoleDescriptionState.input)
 async def scenario_role_description_save(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    group_id = data.get("group_scenario_group_id")
-    allowed = bool(message.chat.type == "private" and message.from_user and message.from_user.id in get_settings().admin_id_set)
-    if not allowed and group_id:
-        async with session_factory() as _auth_session:
-            _group = await _auth_session.get(Group, int(group_id))
-            allowed = bool(_group and message.from_user and await _is_group_admin(message.bot, _group, message.from_user.id))
-    if not allowed:
+    if message.chat.type != "private" or not message.from_user:
         return
+    if message.from_user.id not in get_settings().admin_id_set:
         return
     raw = (message.text or "").strip()
     if raw == "/cancel":
         await state.clear()
         await message.answer("لغو شد.", reply_markup=scenario_management_menu())
         return
-    if "/" not in raw:
-        await message.answer("فرمت صحیح: نام نقش / توضیحات نقش")
-        return
-    name, description = [x.strip() for x in raw.split("/", 1)]
     data = await state.get_data()
+    sid = int(data.get("scenario_id", 0) or 0)
+    lines = [line.strip() for line in raw.splitlines() if line.strip()]
+    if not lines or any("/" not in line for line in lines):
+        await message.answer(
+            "فرمت صحیح هر سطر: نقش/توضیحات\n"
+            "مثال:\nدکتر/هر شب یک نفر را نجات می‌دهد\nپدرخوانده/رهبر تیم مافیا"
+        )
+        return
     async with session_factory() as session:
-        role = await session.get(Role, int(data.get("role_id", 0)))
-        scenario = await session.get(Scenario, int(data.get("scenario_id", 0)))
-        if not role or not scenario:
+        scenario = await session.get(Scenario, sid)
+        if not scenario:
             await state.clear()
-            await message.answer("سناریو یا نقش پیدا نشد.", reply_markup=scenario_management_menu())
+            await message.answer("سناریو پیدا نشد.", reply_markup=scenario_management_menu())
             return
-        if name and name != role.name_fa:
-            await message.answer(f"نام نقش با نقش انتخاب‌شده یکی نیست. باید «{role.name_fa}» باشد.")
-            return
-        if not description:
-            await message.answer("توضیحات نقش نمی‌تواند خالی باشد.")
-            return
-        role.description = description
-        await session.commit()
         rows = list((await session.execute(
             select(ScenarioRole, Role)
             .join(Role, Role.id == ScenarioRole.role_id)
-            .where(ScenarioRole.scenario_id == scenario.id)
-            .order_by(ScenarioRole.position, Role.name_fa)
+            .where(ScenarioRole.scenario_id == sid)
         )).all())
-        roles = [r for _, r in rows]
+        role_map = {role.name_fa.strip().casefold(): role for _, role in rows}
+        for line in lines:
+            name, description = [part.strip() for part in line.split("/", 1)]
+            role = role_map.get(name.casefold())
+            if not role:
+                await message.answer(f"❌ نقش «{name}» در این سناریو وجود ندارد.")
+                return
+            if not description:
+                await message.answer(f"❌ توضیحات «{name}» خالی است.")
+                return
+            role.description = description
+        await session.commit()
+        roles = [role for _, role in sorted(rows, key=lambda item: (item[0].position, item[1].name_fa))]
+        scenario_name = scenario.name_fa
     await state.clear()
     await message.answer(
-        f"✅ توضیحات «{role.name_fa}» ذخیره شد.",
-        reply_markup=scenario_role_description_list_keyboard(roles, scenario.id),
+        f"✅ توضیحات نقش‌های «{escape(scenario_name)}» ذخیره شد.",
+        reply_markup=scenario_role_description_list_keyboard(roles, sid),
+        parse_mode="HTML",
     )
-
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:edit:"))
 async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
@@ -4750,6 +4875,7 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
         current_roles_text=current_roles_text,
         current_voting_rules=getattr(scenario, "voting_rules", "{}"),
         current_vote_rule_input="50",
+        training_url=getattr(scenario, "training_url", None),
         max_players=scenario.max_players,
         min_players=scenario.min_players,
         challenge_mode=scenario.challenge_mode,
