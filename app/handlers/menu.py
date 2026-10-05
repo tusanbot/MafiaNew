@@ -43,6 +43,8 @@ from app.handlers.keyboards import (
     scenario_role_keyboard,
     scenario_challenge_keyboard,
     scenario_delete_confirm_keyboard,
+    scenario_confirm_keyboard,
+    scenario_role_description_list_keyboard,
     notification_settings_menu,
     general_bot_settings_menu,
     finish_game_confirm_keyboard,
@@ -101,6 +103,11 @@ class ScenarioAdminState(StatesGroup):
     vote_threshold = State()
     vote_rules = State()
     roles = State()
+    confirm = State()
+
+
+class RoleDescriptionState(StatesGroup):
+    input = State()
 
 
 async def _is_group_admin(bot, group: Group, user_id: int) -> bool:
@@ -3571,8 +3578,15 @@ async def scenario_form_description(message: Message, state: FSMContext) -> None
     if value == "-" and data.get("edit_id"):
         value = data.get("current_description", "")
     await state.update_data(description=value)
-    await state.set_state(ScenarioAdminState.turn_time)
-    await message.answer("زمان هر نوبت را وارد کنید (مثلاً 02:00 یا 120). پیش‌فرض: 02:00")
+    await state.set_state(ScenarioAdminState.roles)
+    current = data.get("current_roles_text", "")
+    await message.answer(
+        "🎭 حالا نقش‌ها و سایدها را وارد کن؛ هر نقش در یک خط.\n\n"
+        "مثال:\nدکتر واتسون شهروند\nپدرخوانده مافیا\nنوستراداموس مستقل\n\n"
+        "کلمه آخر هر خط ساید است و بقیه نام نقش.\n"
+        + ("\nترکیب فعلی:\n" + current if current else "")
+        + ("\n\nبرای بدون تغییر، - بفرست." if data.get("edit_id") else "")
+    )
 
 @router.message(ScenarioAdminState.min_players)
 async def scenario_form_min(message: Message, state: FSMContext) -> None:
@@ -3772,25 +3786,39 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
                 await message.answer(f"نقش «{role_name}» با ساید «{team}» در فهرست نقش‌ها پیدا نشد.")
                 return
             resolved.append(role)
+    await state.update_data(role_ids=[r.id for r in resolved])
+    await state.set_state(ScenarioAdminState.challenge)
+    await message.answer(
+        "⚙️ قوانین سناریو را تنظیم کن. اول وضعیت چالش را انتخاب کن:",
+        reply_markup=scenario_challenge_keyboard(data.get("mode", "create"), bool(data.get("edit_id"))),
+    )
 
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":confirm" in c.data)
+async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    data = await state.get_data()
+    role_ids = [int(x) for x in data.get("role_ids", [])]
+    if not role_ids:
+        await callback.answer("حداقل یک نقش لازم است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        roles = []
+        for rid in role_ids:
+            role = await session.get(Role, rid)
+            if role:
+                roles.append(role)
+        if not roles:
+            await callback.answer("نقش‌ها پیدا نشدند.", show_alert=True)
+            return
         edit_id = data.get("edit_id")
         if edit_id:
             scenario = await session.get(Scenario, int(edit_id))
             if not scenario:
-                await state.clear()
-                await message.answer("سناریو پیدا نشد.", reply_markup=scenario_management_menu())
+                await callback.answer("سناریو پیدا نشد.", show_alert=True)
                 return
-            scenario.name_fa = data["name"]
-            scenario.description = data.get("description", "")
-            scenario.min_players = len(resolved)
-            scenario.max_players = len(resolved)
-            scenario.turn_seconds = int(data.get("turn_seconds", 120))
-            scenario.challenge_seconds = int(data.get("challenge_seconds", 60))
-            scenario.extra_challenge_seconds = int(data.get("extra_challenge_seconds", 60))
-            scenario.challenge_mode = data.get("challenge_mode", "limited")
-            scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
-            scenario.vote_defense_threshold = int(data.get("vote_defense_threshold", 2))
-            scenario.voting_rules = json.dumps(data.get("voting_rules", {}), ensure_ascii=False)
             old = list((await session.execute(select(ScenarioRole).where(ScenarioRole.scenario_id == scenario.id))).scalars().all())
             for row in old:
                 await session.delete(row)
@@ -3799,8 +3827,8 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
                 key="custom_" + uuid4().hex[:12],
                 name_fa=data["name"],
                 description=data.get("description", ""),
-                min_players=len(resolved),
-                max_players=len(resolved),
+                min_players=len(roles),
+                max_players=len(roles),
                 enabled=True,
                 turn_seconds=int(data.get("turn_seconds", 120)),
                 challenge_seconds=int(data.get("challenge_seconds", 60)),
@@ -3812,19 +3840,40 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
             )
             session.add(scenario)
             await session.flush()
-
-        for pos, role in enumerate(resolved):
+        scenario.name_fa = data["name"]
+        scenario.description = data.get("description", "")
+        scenario.min_players = len(roles)
+        scenario.max_players = len(roles)
+        scenario.turn_seconds = int(data.get("turn_seconds", 120))
+        scenario.challenge_seconds = int(data.get("challenge_seconds", 60))
+        scenario.extra_challenge_seconds = int(data.get("extra_challenge_seconds", 60))
+        scenario.challenge_mode = data.get("challenge_mode", "limited")
+        scenario.challenge_limit = 1 if scenario.challenge_mode == "limited" else None
+        scenario.vote_defense_threshold = int(data.get("vote_defense_threshold", 2))
+        scenario.voting_rules = json.dumps(data.get("voting_rules", {}), ensure_ascii=False)
+        for pos, role in enumerate(roles):
             session.add(ScenarioRole(scenario_id=scenario.id, role_id=role.id, count=1, position=pos))
         await session.commit()
-
+        count = len(roles)
     await state.clear()
-    await message.answer(
-        f"✅ سناریو ذخیره شد.\nتعداد بازیکنان: {len(resolved)}\n"
-        f"زمان نوبت: {_format_duration(int(data.get('turn_seconds', 120)))}\n"
-        f"زمان چالش: {_format_duration(int(data.get('challenge_seconds', 60)))}\n"
-        f"زمان چالش اضافه: {_format_duration(int(data.get('extra_challenge_seconds', 60)))}",
+    await callback.message.edit_text(
+        f"✅ سناریو «{data['name']}» ذخیره شد.\n\n👥 تعداد نفرات: {count}\n"
+        f"🤏 چالش: {data.get('challenge_mode', 'limited')}\n"
+        f"⏱ نوبت: {_format_duration(int(data.get('turn_seconds', 120)))}",
         reply_markup=scenario_management_menu(),
     )
+    await callback.answer("سناریو ذخیره شد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":back" in c.data)
+async def scenario_form_back_to_roles(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    await state.set_state(ScenarioAdminState.roles)
+    await callback.message.edit_text("🎭 نقش‌ها و سایدها را دوباره ارسال کن.")
+    await callback.answer()
+
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:edit:"))
 async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
