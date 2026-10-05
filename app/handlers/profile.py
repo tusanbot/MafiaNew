@@ -18,6 +18,7 @@ from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
 from app.services.rich_message import edit_rich_message, send_rich_message
+from app.services.birthday import parse_birthday, birthday_label
 
 router = Router(name="profile")
 
@@ -205,6 +206,10 @@ class ProfileEditState(StatesGroup):
     name = State()
     tags = State()
 
+
+class BirthdayState(StatesGroup):
+    input = State()
+
 async def _profile_text(session, user: User) -> str:
     position = (await session.scalar(select(func.count(User.id)).where(User.is_active.is_(True), User.score > user.score)) or 0) + 1
     rank, next_rank_score, rank_remaining = rank_progress(user.score)
@@ -233,7 +238,8 @@ async def _profile_text(session, user: User) -> str:
         f"نام: {tg_name(user.display_name or user.first_name or 'بازیکن')}\n"
         f"رتبه: {rank}  •  جایگاه: #{position}\n"
         f"📊 {rank_hint}\n"
-        f"امتیاز: {user.score}\n\n"
+        f"امتیاز: {user.score}\n"
+        f"🎂 تاریخ تولد: {birthday_label(user.birthday)}\n\n"
         f"🎮 بازی‌ها: {user.games_played}\n"
         f"🏆 بردها: {user.games_won}\n"
         f"📈 نرخ برد: {win_rate:.1f}%\n"
@@ -550,6 +556,61 @@ async def profile_rank(callback: CallbackQuery) -> None:
         except Exception:
             await callback.message.edit_text(text, reply_markup=profile_menu())
     await callback.answer()
+
+@router.callback_query(lambda c: c.data == "profile:birthday")
+async def profile_birthday_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    async with session_factory() as session:
+        user = await sync_telegram_user(
+            session, callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name
+        )
+        current = birthday_label(user.birthday)
+    await state.clear()
+    await state.set_state(BirthdayState.input)
+    await callback.message.edit_text(
+        "🎂 تاریخ تولدت رو بفرست.\n\n"
+        "فرمت پیشنهادی: <code>YYYY/MM/DD</code>\n"
+        "یا فقط ماه و روز: <code>MM/DD</code>\n\n"
+        f"تاریخ فعلی: {current}\nبرای حذف تاریخ: <code>حذف</code>\nبرای انصراف: /cancel",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
+@router.message(BirthdayState.input)
+async def profile_birthday_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("ثبت تاریخ تولد لغو شد.", reply_markup=profile_menu())
+        return
+    async with session_factory() as session:
+        user = await sync_telegram_user(
+            session, message.from_user.id, message.from_user.username,
+            message.from_user.first_name or "", message.from_user.last_name
+        )
+        if raw in {"حذف", "delete", "clear"}:
+            user.birthday = None
+        else:
+            birthday = parse_birthday(raw)
+            if not birthday:
+                await message.answer("❌ تاریخ معتبر نیست. مثال: 1379/07/13 یا 2000/10/05 یا 10/05")
+                return
+            user.birthday = birthday
+        await session.commit()
+        label = birthday_label(user.birthday)
+    await state.clear()
+    await message.answer(
+        "✅ تاریخ تولد ذخیره شد." if user.birthday else "🧹 تاریخ تولد حذف شد.",
+        reply_markup=profile_menu(),
+    )
+    if user.birthday:
+        await message.answer(f"🎂 تاریخ ثبت‌شده: {label}")
+
 
 @router.callback_query(lambda c: c.data == "profile:name")
 async def profile_name_start(callback: CallbackQuery, state: FSMContext) -> None:
