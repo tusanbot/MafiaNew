@@ -836,6 +836,258 @@ async def group_birthday_save(message: Message, state: FSMContext) -> None:
     )
 
 
+async def _ensure_invitation_setting(session, group_id: int) -> GroupInvitationSetting:
+    setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group_id))
+    if setting is None:
+        setting = GroupInvitationSetting(group_id=group_id)
+        session.add(setting)
+        await session.flush()
+    return setting
+
+
+async def _invitation_recipients(session, group_id: int):
+    excluded = set((await session.execute(
+        select(GroupInvitationException.user_id).where(GroupInvitationException.group_id == group_id)
+    )).scalars().all())
+    users = list((await session.execute(
+        select(User).join(GamePlayer, GamePlayer.user_id == User.id).join(Game, Game.id == GamePlayer.game_id)
+        .where(Game.group_id == group_id, User.is_active.is_(True)).distinct()
+    )).scalars().all())
+    return [u for u in users if u.id not in excluded]
+
+
+async def _show_invitation_menu(callback: CallbackQuery, group_id: int) -> None:
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت گروه تأیید نشد.", show_alert=True)
+            return
+        setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group.id))
+        count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+        await callback.message.edit_text(
+            f"📨 <b>دعوت به بازی «{escape(group.title or str(group.telegram_id))}»</b>\n\n"
+            "پیام دعوت را مدیریت یا برای کاربران فعال ربات ارسال کن.",
+            reply_markup=group_invitation_menu(group.id, bool(setting and setting.default_message), int(count)),
+            parse_mode="HTML",
+        )
+
+
+@router.callback_query(lambda c: c.data.startswith("invitation:"))
+async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    action = parts[1] if len(parts) > 1 else ""
+    try:
+        group_id = int(parts[-1]) if action != "exception_remove" else int(parts[2])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت گروه تأیید نشد.", show_alert=True)
+            return
+        setting = await _ensure_invitation_setting(session, group.id)
+        if action == "menu":
+            await session.commit()
+            await _show_invitation_menu(callback, group.id)
+            return
+        if action == "send":
+            await session.commit()
+            await callback.message.edit_text("📤 <b>ارسال پیام دعوت</b>\n\nروش ارسال را انتخاب کن:", reply_markup=group_invitation_send_menu(group.id, bool(setting.default_message)), parse_mode="HTML")
+            await callback.answer()
+            return
+        if action == "missing_default":
+            await session.commit()
+            await callback.message.edit_text("❌ پیام پیش‌فرضی ثبت نشده است.\n\nمی‌توانی همین حالا یک پیام ایجاد کنی:", reply_markup=group_invitation_send_menu(group.id, False))
+            await callback.answer()
+            return
+        if action == "show":
+            if not setting.default_message:
+                await callback.message.edit_text("❌ هنوز پیام پیش‌فرضی ثبت نشده است.", reply_markup=group_invitation_send_menu(group.id, False))
+            else:
+                await callback.message.edit_text(f"📌 <b>پیام پیش‌فرض دعوت</b>\n\n{escape(setting.default_message)}", reply_markup=invitation_copy_keyboard(setting.default_message), parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "edit":
+            await state.clear()
+            await state.update_data(group_id=group.id, mode="edit")
+            await state.set_state(GroupInvitationState.message)
+            current = setting.default_message
+            prompt = "متن جدید پیام پیش‌فرض را ارسال کن." if current else "پیام پیش‌فرضی وجود ندارد؛ متن پیام جدید را ارسال کن."
+            if current:
+                prompt += f"\n\n<b>پیام فعلی:</b>\n{escape(current)}"
+            await callback.message.edit_text(f"✏️ <b>ویرایش/ایجاد پیام پیش‌فرض</b>\n\n{prompt}\n\nبرای لغو /cancel", parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "preview_default":
+            if not setting.default_message:
+                await callback.message.edit_text("❌ پیام پیش‌فرضی وجود ندارد.", reply_markup=group_invitation_send_menu(group.id, False))
+            else:
+                await callback.message.edit_text(f"📨 <b>پیام آماده ارسال:</b>\n\n{escape(setting.default_message)}\n\nدر صورت تأیید برای کاربران فعال ربات ارسال می‌شود.", reply_markup=invitation_confirm_keyboard(group.id, "default"), parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "create":
+            await state.clear()
+            await state.update_data(group_id=group.id, mode="create")
+            await state.set_state(GroupInvitationState.message)
+            await callback.message.edit_text("✍️ <b>ایجاد پیام دعوت</b>\n\nمتن پیام دعوت را ارسال کن.\n\nبرای لغو /cancel", parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "confirm":
+            mode = parts[2] if len(parts) > 2 else "default"
+            text_value = setting.default_message if mode == "default" else None
+            data = await state.get_data()
+            if mode == "custom":
+                text_value = data.get("message")
+            if not text_value:
+                await callback.answer("متن پیام پیدا نشد.", show_alert=True)
+                return
+            recipients = await _invitation_recipients(session, group.id)
+            sent = failed = 0
+            for user in recipients:
+                try:
+                    await callback.bot.send_message(user.telegram_id, text_value)
+                    sent += 1
+                except Exception:
+                    failed += 1
+            excluded_count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+            await session.commit()
+            await state.clear()
+            await callback.message.edit_text(f"✅ <b>ارسال دعوت انجام شد.</b>\n\n📨 موفق: {sent}\n⚠️ ناموفق: {failed}\n🚫 مستثنی: {excluded_count}", reply_markup=group_invitation_menu(group.id, bool(setting.default_message), int(excluded_count)), parse_mode="HTML")
+            await callback.answer()
+            return
+        if action == "exceptions":
+            count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+            await callback.message.edit_text("🚫 <b>استثناهای دعوت به بازی</b>\n\nبازیکنان ثبت‌شده در این لیست پیام دعوت دریافت نمی‌کنند.", reply_markup=group_invitation_exception_menu(group.id, int(count)), parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "exception_list":
+            rows = list((await session.execute(select(User).join(GroupInvitationException, GroupInvitationException.user_id == User.id).where(GroupInvitationException.group_id == group.id).order_by(User.display_name))).scalars().all())
+            if not rows:
+                await callback.message.edit_text("🚫 <b>لیست استثناها خالی است.</b>", reply_markup=group_invitation_exception_menu(group.id, 0), parse_mode="HTML")
+            else:
+                text_value = "🚫 <b>بازیکنان مستثنی</b>\n\n" + "\n".join(f"• {escape(u.display_name or u.first_name or str(u.telegram_id))}" for u in rows)
+                await callback.message.edit_text(text_value, reply_markup=group_invitation_exception_menu(group.id, len(rows)), parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        if action == "exception_remove":
+            try:
+                user_id = int(parts[3])
+            except (ValueError, IndexError):
+                await callback.answer("کاربر نامعتبر است.", show_alert=True)
+                return
+            await session.execute(GroupInvitationException.__table__.delete().where(GroupInvitationException.group_id == group.id, GroupInvitationException.user_id == user_id))
+            await session.commit()
+            await callback.answer("از لیست استثنا حذف شد.")
+            await _show_invitation_menu(callback, group.id)
+            return
+        if action == "exception_add":
+            await state.clear()
+            await state.update_data(group_id=group.id)
+            await state.set_state(GroupInvitationState.exception)
+            await callback.message.edit_text("➕ <b>ایجاد استثنا</b>\n\nآیدی عددی، @username یا فوروارد پیام کاربر را ارسال کن.\n\nبرای لغو /cancel", parse_mode="HTML")
+            await session.commit()
+            await callback.answer()
+            return
+        await session.commit()
+        await callback.answer()
+
+
+@router.message(GroupInvitationState.message)
+async def group_invitation_message_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    if not raw:
+        await message.answer("❌ متن پیام خالی است.")
+        return
+    if raw.casefold() == "/cancel":
+        await state.clear()
+        await message.answer("عملیات دعوت لغو شد.")
+        return
+    data = await state.get_data()
+    group_id = int(data.get("group_id", 0) or 0)
+    mode = data.get("mode", "create")
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        if not group:
+            await state.clear()
+            await message.answer("❌ دسترسی مدیریت گروه تأیید نشد.")
+            return
+        setting = await _ensure_invitation_setting(session, group.id)
+        if mode == "edit":
+            setting.default_message = raw
+            await session.commit()
+            await state.clear()
+            count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+            await message.answer("✅ پیام پیش‌فرض ذخیره شد.", reply_markup=group_invitation_menu(group.id, True, int(count)))
+            return
+        await state.update_data(message=raw)
+        await message.answer(f"📨 <b>پیش‌نمایش پیام دعوت</b>\n\n{escape(raw)}\n\nدر صورت تأیید برای کاربران فعال ربات ارسال می‌شود.", reply_markup=invitation_confirm_keyboard(group.id, "custom"), parse_mode="HTML")
+
+
+async def _resolve_invitation_user(message: Message, group: Group):
+    raw = (message.text or "").strip()
+    async with session_factory() as session:
+        if raw:
+            normalized = raw.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
+            if normalized.isdigit():
+                user = await session.scalar(select(User).where(User.telegram_id == int(normalized)))
+                if user:
+                    return user
+                try:
+                    member = await message.bot.get_chat_member(group.telegram_id, int(normalized))
+                    return await sync_telegram_user(session, member.user.id, member.user.username, member.user.first_name or "", member.user.last_name)
+                except Exception:
+                    return None
+            return await session.scalar(select(User).where(func.lower(User.username) == raw.lstrip("@").casefold()))
+        origin = getattr(message, "forward_origin", None)
+        forwarded_user = getattr(origin, "sender_user", None) if origin else None
+        if forwarded_user is None:
+            forwarded_user = getattr(message, "forward_from", None) or getattr(message, "forward_from_user", None)
+        if forwarded_user is None:
+            return None
+        return await sync_telegram_user(session, forwarded_user.id, forwarded_user.username, forwarded_user.first_name or "", forwarded_user.last_name)
+
+
+@router.message(GroupInvitationState.exception)
+async def group_invitation_exception_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    data = await state.get_data()
+    group_id = int(data.get("group_id", 0) or 0)
+    if (message.text or "").strip().casefold() == "/cancel":
+        await state.clear()
+        await message.answer("ایجاد استثنا لغو شد.")
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        if not group:
+            await state.clear()
+            await message.answer("❌ دسترسی مدیریت گروه تأیید نشد.")
+            return
+        user = await _resolve_invitation_user(message, group)
+        if not user:
+            await message.answer("❌ کاربر پیدا نشد. آیدی عددی، @username یا فوروارد پیام کاربر را ارسال کن.")
+            return
+        exists = await session.scalar(select(GroupInvitationException).where(GroupInvitationException.group_id == group.id, GroupInvitationException.user_id == user.id))
+        if exists:
+            await message.answer("⚠️ این کاربر قبلاً مستثنی شده است.")
+            return
+        session.add(GroupInvitationException(group_id=group.id, user_id=user.id))
+        await session.commit()
+        await state.clear()
+        count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+        await message.answer(f"✅ {escape(user.display_name or user.first_name or str(user.telegram_id))} به استثناها اضافه شد.", reply_markup=group_invitation_exception_menu(group.id, int(count)), parse_mode="HTML")
+
 @router.callback_query(lambda c: c.data.startswith("group_lobby_media:"))
 async def group_lobby_media_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
