@@ -387,7 +387,7 @@ async def menu_admin(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("admin:"))
-async def admin_panel_handler(callback: CallbackQuery) -> None:
+async def admin_panel_handler(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
     if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
