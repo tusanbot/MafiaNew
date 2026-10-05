@@ -62,6 +62,7 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import create_game, get_game_number, set_game_number, release_game_number
 from app.services.profile import sync_telegram_user
+from app.services.birthday import parse_birthday, birthday_label
 from app.services.gameplay import current_round, _event
 from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
@@ -88,6 +89,10 @@ class CustomEmojiState(StatesGroup):
     emoji = State()
 
 class TournamentState(StatesGroup):
+    input = State()
+
+
+class GroupBirthdayState(StatesGroup):
     input = State()
 
 
@@ -500,7 +505,7 @@ async def _ensure_group_settings(session, group: Group) -> GroupSettings:
     return settings
 
 
-@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications"})
+@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday"})
 async def group_management_settings_entry(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
@@ -514,6 +519,7 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
                 "defaults": "گروه را برای تنظیمات پایه انتخاب کنید:",
                 "players": "گروه را برای تنظیمات بازیکنان انتخاب کنید:",
                 "notifications": "گروه را برای تنظیمات اعلان‌ها انتخاب کنید:",
+                "birthday": "گروه را برای ثبت تاریخ تولد انتخاب کنید:",
             }
             await callback.message.edit_text(titles[purpose], reply_markup=group_list_keyboard(groups, purpose))
     await callback.answer()
@@ -577,7 +583,7 @@ async def group_management_locks(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:select:"))
-async def select_group(callback: CallbackQuery) -> None:
+async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
@@ -628,6 +634,18 @@ async def select_group(callback: CallbackQuery) -> None:
             )
         elif purpose == "tournaments":
             await callback.message.edit_text("🏆 مدیریت تورنمنت‌ها", reply_markup=tournament_admin_menu(group.id))
+        elif purpose == "birthday":
+            await state.clear()
+            await state.update_data(group_id=group.id)
+            await state.set_state(GroupBirthdayState.input)
+            await callback.message.edit_text(
+                f"🎂 ثبت تاریخ تولد در «{group.title or group.telegram_id}»\n\n"
+                "فرمت: <code>آیدی عددی/تاریخ تولد</code>\n"
+                "مثال: <code>123456789/2000/10/05</code>\n"
+                "یا فقط ماه و روز: <code>123456789/10/05</code>\n\n"
+                "برای انصراف /cancel را بفرست.",
+                parse_mode="HTML",
+            )
         elif purpose == "tags":
             from app.services.stats import ensure_achievements
             await ensure_achievements(session)
@@ -659,6 +677,56 @@ async def select_group(callback: CallbackQuery) -> None:
                 reply_markup=group_game_menu(group.id),
             )
     await callback.answer()
+
+
+@router.message(GroupBirthdayState.input)
+async def group_birthday_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("ثبت تاریخ تولد لغو شد.", reply_markup=group_management_menu())
+        return
+    if "/" not in raw:
+        await message.answer("❌ فرمت صحیح: آیدی عددی/تاریخ تولد")
+        return
+    telegram_id_text, date_text = raw.split("/", 1)
+    telegram_id_text = telegram_id_text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")).strip()
+    if not telegram_id_text.isdigit():
+        await message.answer("❌ آیدی عددی تلگرام معتبر نیست.")
+        return
+    birthday = parse_birthday(date_text)
+    if not birthday:
+        await message.answer("❌ تاریخ معتبر نیست. مثال: 2000/10/05 یا 10/05")
+        return
+    data = await state.get_data()
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, int(data.get("group_id", 0)))
+        if not group:
+            await state.clear()
+            await message.answer("❌ دسترسی مدیریت این گروه تأیید نشد.")
+            return
+        tg_id = int(telegram_id_text)
+        user = await session.scalar(select(User).where(User.telegram_id == tg_id))
+        if not user:
+            try:
+                member = await message.bot.get_chat_member(group.telegram_id, tg_id)
+                user = await sync_telegram_user(
+                    session, member.user.id, member.user.username,
+                    member.user.first_name or "", member.user.last_name
+                )
+            except Exception:
+                await message.answer("❌ کاربر با این آیدی در این گروه پیدا نشد یا ربات به اطلاعات او دسترسی ندارد.")
+                return
+        user.birthday = birthday
+        await session.commit()
+    await state.clear()
+    await message.answer(
+        f"✅ تاریخ تولد {tg_mention(tg_id, user.display_name or user.first_name)} ثبت شد: {birthday_label(birthday)}",
+        reply_markup=group_management_menu(),
+        parse_mode="HTML",
+    )
 
 
 @router.callback_query(lambda c: c.data.startswith("groupdefaults:"))
