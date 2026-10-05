@@ -76,6 +76,7 @@ def group_management_menu(back_callback: str = "menu:root") -> InlineKeyboardMar
     builder.row(InlineKeyboardButton(text="🏆 تورنمنت‌ها", callback_data="groupmgmt:tournaments"))
     builder.row(InlineKeyboardButton(text="🎂 ثبت تاریخ تولد بازیکن", callback_data="groupmgmt:birthday"))
     builder.row(InlineKeyboardButton(text="🎬 ویدیوی لابی", callback_data="groupmgmt:lobby_media"))
+    builder.row(InlineKeyboardButton(text="🎭 مدیریت سناریو", callback_data="groupmgmt:scenario"))
     builder.row(InlineKeyboardButton(text="📨 دعوت به بازی", callback_data="groupmgmt:invitation"))
     _back(builder, back_callback)
     return builder.as_markup()
