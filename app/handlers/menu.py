@@ -676,7 +676,7 @@ async def group_management_locks(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:scenario_select:"))
-async def group_scenario_select(callback: CallbackQuery) -> None:
+async def group_scenario_select(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
     try:
@@ -692,8 +692,12 @@ async def group_scenario_select(callback: CallbackQuery) -> None:
         scenarios = list((await session.execute(
             select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
         )).scalars().all())
+        await state.update_data(group_scenario_group_id=group.id)
         if not scenarios:
-            await callback.message.edit_text("❌ هیچ سناریوی فعالی برای این گروه وجود ندارد.", reply_markup=group_management_menu())
+            await callback.message.edit_text(
+                "❌ هیچ سناریوی فعالی برای این گروه وجود ندارد.",
+                reply_markup=group_scenario_management_menu(group.id, scenarios),
+            )
         else:
             await callback.message.edit_text(
                 "🎭 <b>انتخاب سناریوی پیش‌فرض گروه</b>\n\nسناریوی موردنظر را انتخاب کن:",
@@ -704,7 +708,7 @@ async def group_scenario_select(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:scenario_list:"))
-async def group_scenario_list(callback: CallbackQuery) -> None:
+async def group_scenario_list(callback: CallbackQuery, state: FSMContext) -> None:
     if not callback.message or not callback.from_user:
         return
     try:
@@ -720,6 +724,7 @@ async def group_scenario_list(callback: CallbackQuery) -> None:
         rows = list((await session.execute(
             select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
         )).scalars().all())
+        await state.update_data(group_scenario_group_id=group.id)
         if not rows:
             text = "📚 هیچ سناریوی فعالی ثبت نشده است."
         else:
@@ -811,6 +816,7 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 "از این بخش می‌توانی سناریوی پیش‌فرض گروه را انتخاب کنی. فقط سناریوهای فعال نمایش داده می‌شوند."
             ]
             await session.commit()
+            await state.update_data(group_scenario_group_id=group.id)
             await callback.message.edit_text(
                 "\n".join(lines),
                 reply_markup=group_scenario_management_menu(group.id, scenarios),
@@ -4174,8 +4180,22 @@ async def _scenario_roles_text(session, scenario_id: int) -> str:
             lines.append(f"{role.name_fa} {team_names.get(role.team, role.team)}")
     return "\n".join(lines)
 
-async def _scenario_admin_allowed(callback: CallbackQuery) -> bool:
-    return bool(callback.from_user and callback.message and callback.message.chat.type == "private" and callback.from_user.id in get_settings().admin_id_set)
+async def _scenario_admin_allowed(callback: CallbackQuery, state: FSMContext | None = None) -> bool:
+    if not callback.from_user or not callback.message or callback.message.chat.type != "private":
+        return False
+    if callback.from_user.id in get_settings().admin_id_set:
+        return True
+    if state is None:
+        return False
+    data = await state.get_data()
+    group_id = data.get("group_scenario_group_id")
+    if not group_id:
+        return False
+    async with session_factory() as session:
+        group = await session.get(Group, int(group_id))
+        if not group:
+            return False
+        return await _is_group_admin(callback.bot, group, callback.from_user.id)
 
 async def _scenario_form_roles(session, scenario_id: int) -> dict[int, int]:
     rows = (await session.execute(
@@ -4185,18 +4205,19 @@ async def _scenario_form_roles(session, scenario_id: int) -> dict[int, int]:
 
 @router.callback_query(lambda c: c.data == "scenario_admin:create")
 async def scenario_create_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
+    previous = await state.get_data()
     await state.clear()
     await state.set_state(ScenarioAdminState.name)
-    await state.update_data(mode="create")
+    await state.update_data(mode="create", group_scenario_group_id=previous.get("group_scenario_group_id"))
     await callback.message.edit_text("➕ ایجاد سناریو\n\nنام سناریو را ارسال کنید:")
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "scenario_admin:edit")
-async def scenario_edit_list(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_edit_list(callback: CallbackQuery, state: FSMContext -> None):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
@@ -4205,8 +4226,8 @@ async def scenario_edit_list(callback: CallbackQuery) -> None:
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "scenario_admin:delete")
-async def scenario_delete_list(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_delete_list(callback: CallbackQuery, state: FSMContext -> None):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
@@ -4216,14 +4237,35 @@ async def scenario_delete_list(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data == "scenario_admin:cancel")
 async def scenario_admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    group_id = data.get("group_scenario_group_id")
     await state.clear()
-    await callback.message.edit_text("🎭 مدیریت سناریوها", reply_markup=scenario_management_menu())
+    if group_id:
+        async with session_factory() as session:
+            group = await session.get(Group, int(group_id))
+            scenarios = list((await session.execute(
+                select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+            )).scalars().all())
+        await callback.message.edit_text(
+            "🎭 مدیریت سناریوی گروه",
+            reply_markup=group_scenario_management_menu(int(group_id), scenarios),
+        )
+    else:
+        await callback.message.edit_text("🎭 مدیریت سناریوها", reply_markup=scenario_management_menu())
     await callback.answer()
 
 
 @router.message(ScenarioAdminState.name)
 async def scenario_form_name(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or not message.from_user or message.from_user.id not in get_settings().admin_id_set:
+    data = await state.get_data()
+    group_id = data.get("group_scenario_group_id")
+    allowed = bool(message.chat.type == "private" and message.from_user and message.from_user.id in get_settings().admin_id_set)
+    if not allowed and group_id:
+        async with session_factory() as _auth_session:
+            _group = await _auth_session.get(Group, int(group_id))
+            allowed = bool(_group and message.from_user and await _is_group_admin(message.bot, _group, message.from_user.id))
+    if not allowed:
+        return
         return
     value = (message.text or "").strip()
     data = await state.get_data()
@@ -4632,7 +4674,15 @@ async def scenario_role_description_start(callback: CallbackQuery, state: FSMCon
 
 @router.message(RoleDescriptionState.input)
 async def scenario_role_description_save(message: Message, state: FSMContext) -> None:
-    if message.chat.type != "private" or not message.from_user or message.from_user.id not in get_settings().admin_id_set:
+    data = await state.get_data()
+    group_id = data.get("group_scenario_group_id")
+    allowed = bool(message.chat.type == "private" and message.from_user and message.from_user.id in get_settings().admin_id_set)
+    if not allowed and group_id:
+        async with session_factory() as _auth_session:
+            _group = await _auth_session.get(Group, int(group_id))
+            allowed = bool(_group and message.from_user and await _is_group_admin(message.bot, _group, message.from_user.id))
+    if not allowed:
+        return
         return
     raw = (message.text or "").strip()
     if raw == "/cancel":
