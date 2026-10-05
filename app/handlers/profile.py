@@ -18,7 +18,7 @@ from app.services.profile import sync_telegram_user
 from app.services.stats import achievement_progress, leaderboard, rank_for_score, rank_progress, user_achievements
 from app.utils.text import tg_name
 from app.services.rich_message import edit_rich_message, send_rich_message
-from app.services.birthday import parse_birthday, birthday_label
+from app.services.birthday import parse_birthday, birthday_label, get_telegram_profile_birthday
 
 router = Router(name="profile")
 
@@ -556,6 +556,28 @@ async def profile_rank(callback: CallbackQuery) -> None:
         except Exception:
             await callback.message.edit_text(text, reply_markup=profile_menu())
     await callback.answer()
+
+@router.callback_query(lambda c: c.data == "profile:birthday_import")
+async def profile_birthday_import(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    birthday = await get_telegram_profile_birthday(callback.bot, callback.from_user.id)
+    if not birthday:
+        await callback.answer("تاریخ تولد در پروفایل تلگرام قابل دسترسی نیست یا ثبت نشده است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        user = await sync_telegram_user(
+            session, callback.from_user.id, callback.from_user.username,
+            callback.from_user.first_name or "", callback.from_user.last_name
+        )
+        user.birthday = birthday
+        await session.commit()
+    await callback.message.edit_text(
+        f"✅ تاریخ تولد از پروفایل تلگرام دریافت و در پروفایل ربات ذخیره شد.\n🎂 {birthday_label(birthday)}",
+        reply_markup=profile_menu(),
+    )
+    await callback.answer("تاریخ تولد دریافت شد.")
+
 
 @router.callback_query(lambda c: c.data == "profile:birthday")
 async def profile_birthday_start(callback: CallbackQuery, state: FSMContext) -> None:
