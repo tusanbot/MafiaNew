@@ -4000,8 +4000,15 @@ async def tournament_add_start(callback: CallbackQuery,state:FSMContext):
     gid=int(callback.data.rsplit(':',1)[1])
     async with session_factory() as session:
         if not await _selected_group(session,callback.bot,callback.from_user.id,gid): await callback.answer('دسترسی ندارید.',show_alert=True); return
-    await state.clear(); await state.update_data(action='add',group_id=gid,step='name'); await state.set_state(TournamentState.input)
-    await callback.message.edit_text('➕ نام تورنمنت را بفرست.'); await callback.answer()
+    # Set the FSM state before writing draft data. This avoids a short window where
+    # the prompt is visible but the state storage has not yet been committed.
+    await state.clear()
+    await state.set_state(TournamentState.input)
+    await state.update_data(action='add', group_id=gid, step='name')
+    # Send a fresh prompt instead of editing the management menu. The user's
+    # next message is therefore unambiguously the tournament draft input.
+    await callback.message.answer('➕ نام تورنمنت را بفرست.')
+    await callback.answer()
 
 @router.message(TournamentState.input)
 async def tournament_input(message: Message,state:FSMContext):
