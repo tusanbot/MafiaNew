@@ -10,7 +10,7 @@ from sqlalchemy import desc, func, select
 import json
 import re
 
-from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup, BirthdayMessageTemplate, BirthdaySetting
+from app.db.models import Game, GameEvent, GamePlayer, GameResultViewer, Group, GroupSettings, GroupInvitationSetting, GroupInvitationException, Role, Scenario, ScenarioRole, User, Vote, Achievement, Tournament, TournamentPlayer, TournamentGroup, BirthdayMessageTemplate, BirthdaySetting
 from app.db.session import session_factory
 from app.handlers.keyboards import (
     active_game_menu,
@@ -30,6 +30,11 @@ from app.handlers.keyboards import (
     group_achievement_emoji_menu,
     group_tag_emoji_menu,
     group_lobby_media_menu,
+    group_invitation_menu,
+    group_invitation_send_menu,
+    invitation_confirm_keyboard,
+    group_invitation_exception_menu,
+    invitation_copy_keyboard,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
     main_menu,
@@ -99,6 +104,11 @@ class GroupBirthdayState(StatesGroup):
 
 class GroupLobbyMediaState(StatesGroup):
     media = State()
+
+
+class GroupInvitationState(StatesGroup):
+    message = State()
+    exception = State()
 
 
 class BirthdayAdminState(StatesGroup):
@@ -582,7 +592,7 @@ async def _ensure_group_settings(session, group: Group) -> GroupSettings:
     return settings
 
 
-@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday", "groupmgmt:lobby_media"})
+@router.callback_query(lambda c: c.data in {"groupmgmt:defaults", "groupmgmt:players", "groupmgmt:notifications", "groupmgmt:birthday", "groupmgmt:lobby_media", "groupmgmt:invitation"})
 async def group_management_settings_entry(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
@@ -598,6 +608,7 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
                 "notifications": "گروه را برای تنظیمات اعلان‌ها انتخاب کنید:",
                 "birthday": "گروه را برای ثبت تاریخ تولد انتخاب کنید:",
                 "lobby_media": "گروه را برای تنظیم رسانه لابی انتخاب کنید:",
+                "invitation": "گروه را برای مدیریت دعوت به بازی انتخاب کنید:",
             }
             await callback.message.edit_text(titles[purpose], reply_markup=group_list_keyboard(groups, purpose))
     await callback.answer()
