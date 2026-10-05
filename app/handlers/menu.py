@@ -735,6 +735,15 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 "برای انصراف /cancel را بفرست.",
                 parse_mode="HTML",
             )
+        elif purpose == "invitation":
+            setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group.id))
+            count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
+            await callback.message.edit_text(
+                f"📨 <b>دعوت به بازی «{escape(group.title or str(group.telegram_id))}»</b>\n\n"
+                "از این بخش می‌توانی پیام دعوت را برای کاربران فعال ربات در این گروه ارسال کنی.",
+                reply_markup=group_invitation_menu(group.id, bool(setting and setting.default_message), int(count)),
+                parse_mode="HTML",
+            )
         elif purpose == "lobby_media":
             settings = await _ensure_group_settings(session, group)
             await session.commit()
