@@ -34,6 +34,7 @@ from app.handlers.keyboards import (
     group_invitation_send_menu,
     invitation_confirm_keyboard,
     group_invitation_exception_menu,
+    group_invitation_exception_list_menu,
     invitation_copy_keyboard,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
@@ -974,7 +975,7 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
                 await callback.message.edit_text("🚫 <b>لیست استثناها خالی است.</b>", reply_markup=group_invitation_exception_menu(group.id, 0), parse_mode="HTML")
             else:
                 text_value = "🚫 <b>بازیکنان مستثنی</b>\n\n" + "\n".join(f"• {escape(u.display_name or u.first_name or str(u.telegram_id))}" for u in rows)
-                await callback.message.edit_text(text_value, reply_markup=group_invitation_exception_menu(group.id, len(rows)), parse_mode="HTML")
+                await callback.message.edit_text(text_value, reply_markup=group_invitation_exception_list_menu(group.id, rows), parse_mode="HTML")
             await session.commit()
             await callback.answer()
             return
