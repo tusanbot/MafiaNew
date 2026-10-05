@@ -3955,12 +3955,11 @@ def _tour_prizes(raw):
     if any(x < 0 for x in out): raise ValueError
     return out
 
-async def _tour_users(session, names):
-    """Resolve tournament player names/usernames/Telegram IDs robustly.
+async def _tour_users(session, names, bot=None, group=None):
+    """Resolve tournament players, scoped to the selected tournament group.
 
-    Manual tournament input is intentionally forgiving: names may be sent one
-    per line or as comma/Arabic-comma/semicolon separated values, and an
-    optional ranking/number prefix is ignored.
+    Numeric Telegram IDs are also resolved directly through Telegram when the
+    user is not yet present in the local users table.
     """
     users=list((await session.execute(select(User).where(User.is_active.is_(True)))).scalars().all())
     result=[]
@@ -3970,17 +3969,31 @@ async def _tour_users(session, names):
         n=str(raw or '').strip()
         if not n:
             continue
-        # Accept inputs such as "1. Ali", "1) Ali", "1 Ali" and @username.
         n=re.sub(r'^\\s*\\d+\\s*[.)-]?\\s+', '', n).strip()
         n=n.lstrip('@').strip()
         if not n:
             continue
 
-        # Telegram numeric user id is the most reliable identifier.
         matches=[]
         if n.isdigit():
             uid=int(n)
             matches=[u for u in users if int(u.telegram_id or 0)==uid]
+            # Resolve an unsynced user against the selected tournament group only.
+            if not matches and bot is not None and group is not None:
+                try:
+                    member=await bot.get_chat_member(group.telegram_id, uid)
+                    tg_user=member.user
+                    synced=await sync_telegram_user(
+                        session,
+                        tg_user.id,
+                        tg_user.username,
+                        tg_user.first_name or '',
+                        tg_user.last_name,
+                    )
+                    users.append(synced)
+                    matches=[synced]
+                except Exception:
+                    matches=[]
         else:
             key=n.casefold()
             exact=[]
@@ -4137,7 +4150,8 @@ async def tournament_input(message: Message,state:FSMContext):
             await session.commit(); await state.clear(); await message.answer('✅ تغییر ذخیره شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
         if not t: await state.clear(); await message.answer('تورنمنت پیدا نشد.'); return
         if data.get('action')=='add_player':
-            users=await _tour_users(session,[value])
+            group=await session.get(Group,t.group_id)
+            users=await _tour_users(session,[value],bot=message.bot,group=group)
             if not users: await message.answer('بازیکن پیدا نشد.'); return
             if not await session.scalar(select(TournamentPlayer.id).where(TournamentPlayer.tournament_id==tid,TournamentPlayer.user_id==users[0].id)): session.add(TournamentPlayer(tournament_id=tid,user_id=users[0].id))
             await session.commit(); await state.clear(); await message.answer('✅ بازیکن اضافه شد.',reply_markup=tournament_manage_menu(tid,t.group_id)); return
@@ -4163,7 +4177,13 @@ async def tournament_input(message: Message,state:FSMContext):
         if data.get('action')=='draw_manual':
             # Accept both one-name-per-line and comma/semicolon separated input.
             entries=[x.strip() for x in re.split(r'[\\n,،;؛]+', value) if x.strip()]
-            users=await _tour_users(session,entries)
+            t=await session.get(Tournament,int(data.get('tid',0)))
+            if not t:
+                await state.clear()
+                await message.answer('تورنمنت پیدا نشد.')
+                return
+            group=await session.get(Group,t.group_id)
+            users=await _tour_users(session,entries,bot=message.bot,group=group)
             count=int(data['group_count'])
             if len(users)<count:
                 await message.answer(
