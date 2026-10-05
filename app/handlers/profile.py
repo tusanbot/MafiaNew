@@ -178,7 +178,7 @@ async def _stats_rich_html(session, user: User) -> str:
         f"<tr><td>🛡 بقا</td><td>{int(user.games_survived)}</td></tr><tr><td>🏅 دستاوردها</td><td>{int(user.achievements_count)}</td></tr></table>{role_table}"
     )
 
-@router.message(F.text)
+@router.message(lambda m: _command_kind(m.text or "") is not None)
 async def text_profile_rank_stats(message: Message) -> None:
     kind = _command_kind(message.text or "")
     if not kind: return
