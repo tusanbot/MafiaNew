@@ -139,9 +139,10 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
         if settings and settings.enabled and settings.video_file_id:
             if len(text) <= 1024:
                 await bot.send_video(group.telegram_id, settings.video_file_id, caption=text, parse_mode="HTML")
-            else:\n                await bot.send_video(group.telegram_id, settings.video_file_id)\n                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
+            else:
+                await bot.send_video(group.telegram_id, settings.video_file_id)\n                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         else:
-            await bot.send_message(group.telegram_id, text)
+            await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         return True
     except Exception:
         logger.exception("Birthday announcement failed for group=%s user=%s", group.telegram_id, user.telegram_id)
