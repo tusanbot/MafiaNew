@@ -660,6 +660,7 @@ def profile_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="تگ‌ها", callback_data="profile:tags"),
     )
     builder.row(InlineKeyboardButton(text="🎂 تاریخ تولد", callback_data="profile:birthday"))
+    builder.row(InlineKeyboardButton(text="📥 دریافت از پروفایل تلگرام", callback_data="profile:birthday_import"))
     builder.row(InlineKeyboardButton(text="🏅 دستاوردها", callback_data="menu:achievements"))
     _back(builder)
     return builder.as_markup()
