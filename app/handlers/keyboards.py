@@ -681,6 +681,7 @@ def scenario_management_menu() -> InlineKeyboardMarkup:
     builder.row(InlineKeyboardButton(text="➕ ایجاد سناریو", callback_data="scenario_admin:create"))
     builder.row(InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data="scenario_admin:edit"))
     builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data="scenario_admin:delete"))
+    builder.row(InlineKeyboardButton(text="🎭 نقش‌ها و توضیحات", callback_data="scenario_admin:roles"))
     _back(builder)
     return builder.as_markup()
 
@@ -1361,3 +1362,26 @@ def round_next_menu_keyboard(game_key: str, game) -> InlineKeyboardMarkup:
     b.row(InlineKeyboardButton(text=f"🤖 نکست خودکار {'✅' if game.next_auto_enabled else '❌'}", callback_data=f"round:toggle_next_auto:{game_key}"))
     b.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data=f"round:back:{game_key}"))
     return b.as_markup()
+
+
+def scenario_confirm_keyboard(action: str = "create") -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ تأیید و ذخیره", callback_data=f"scenario_admin:{action}:confirm"),
+        InlineKeyboardButton(text="✏️ اصلاح اطلاعات", callback_data=f"scenario_admin:{action}:back"),
+    )
+    builder.row(InlineKeyboardButton(text="❌ لغو", callback_data="scenario_admin:cancel"))
+    return builder.as_markup()
+
+
+def scenario_role_description_list_keyboard(roles, scenario_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for role in roles:
+        builder.row(
+            InlineKeyboardButton(
+                text=f"🎭 {role.name_fa[:35]}",
+                callback_data=f"scenario_admin:role_desc:{scenario_id}:{role.id}",
+            )
+        )
+    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="scenario_admin:cancel"))
+    return builder.as_markup()
