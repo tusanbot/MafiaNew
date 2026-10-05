@@ -4216,7 +4216,7 @@ async def scenario_create_start(callback: CallbackQuery, state: FSMContext) -> N
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "scenario_admin:edit")
-async def scenario_edit_list(callback: CallbackQuery, state: FSMContext -> None):
+async def scenario_edit_list(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
@@ -4226,7 +4226,7 @@ async def scenario_edit_list(callback: CallbackQuery, state: FSMContext -> None)
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "scenario_admin:delete")
-async def scenario_delete_list(callback: CallbackQuery, state: FSMContext -> None):
+async def scenario_delete_list(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
@@ -4265,7 +4265,6 @@ async def scenario_form_name(message: Message, state: FSMContext) -> None:
             _group = await _auth_session.get(Group, int(group_id))
             allowed = bool(_group and message.from_user and await _is_group_admin(message.bot, _group, message.from_user.id))
     if not allowed:
-        return
         return
     value = (message.text or "").strip()
     data = await state.get_data()
@@ -4374,7 +4373,7 @@ async def scenario_form_max(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":challenge:" in c.data)
 async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     parts = callback.data.split(":")
@@ -4530,7 +4529,7 @@ async def scenario_form_roles_text(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":confirm" in c.data)
 async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     data = await state.get_data()
@@ -4601,7 +4600,7 @@ async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> N
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":back" in c.data)
 async def scenario_form_back_to_roles(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     await state.set_state(ScenarioAdminState.roles)
@@ -4610,8 +4609,8 @@ async def scenario_form_back_to_roles(callback: CallbackQuery, state: FSMContext
 
 
 @router.callback_query(lambda c: c.data == "scenario_admin:roles")
-async def scenario_roles_manage_start(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_roles_manage_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
@@ -4623,8 +4622,8 @@ async def scenario_roles_manage_start(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:role_list:"))
-async def scenario_role_list(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_role_list(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     sid = int(callback.data.rsplit(":", 1)[1])
@@ -4650,7 +4649,7 @@ async def scenario_role_list(callback: CallbackQuery) -> None:
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:role_desc:"))
 async def scenario_role_description_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     _, _, sid, rid = callback.data.split(":")
@@ -4725,7 +4724,7 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:edit:"))
 async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
-    if not await _scenario_admin_allowed(callback):
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     sid = int(callback.data.rsplit(":", 1)[1])
@@ -4757,8 +4756,8 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:delete:"))
-async def scenario_delete_confirm_start(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_delete_confirm_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     sid = int(callback.data.rsplit(":", 1)[1])
@@ -4774,8 +4773,8 @@ async def scenario_delete_confirm_start(callback: CallbackQuery) -> None:
     await callback.answer()
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:delete_confirm:"))
-async def scenario_delete_confirm(callback: CallbackQuery) -> None:
-    if not await _scenario_admin_allowed(callback):
+async def scenario_delete_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     sid = int(callback.data.rsplit(":", 1)[1])
