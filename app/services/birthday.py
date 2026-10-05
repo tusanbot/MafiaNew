@@ -140,7 +140,8 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
             if len(text) <= 1024:
                 await bot.send_video(group.telegram_id, settings.video_file_id, caption=text, parse_mode="HTML")
             else:
-                await bot.send_video(group.telegram_id, settings.video_file_id)\n                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
+                await bot.send_video(group.telegram_id, settings.video_file_id)
+                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         else:
             await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         return True
