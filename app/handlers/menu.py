@@ -62,7 +62,7 @@ from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
 from app.services.game import create_game, get_game_number, set_game_number, release_game_number
 from app.services.profile import sync_telegram_user
-from app.services.birthday import parse_birthday, birthday_label
+from app.services.birthday import parse_birthday, birthday_label, get_telegram_profile_birthday
 from app.services.gameplay import current_round, _event
 from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
@@ -640,7 +640,7 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
             await state.set_state(GroupBirthdayState.input)
             await callback.message.edit_text(
                 f"🎂 ثبت تاریخ تولد در «{group.title or group.telegram_id}»\n\n"
-                "فرمت: <code>آیدی عددی/تاریخ تولد</code>\n"
+                "فرمت: <code>آیدی عددی/تاریخ تولد</code> یا فقط <code>آیدی عددی</code> برای دریافت خودکار از پروفایل تلگرام\n"
                 "مثال: <code>123456789/2000/10/05</code>\n"
                 "یا فقط ماه و روز: <code>123456789/10/05</code>\n\n"
                 "برای انصراف /cancel را بفرست.",
@@ -688,18 +688,12 @@ async def group_birthday_save(message: Message, state: FSMContext) -> None:
         await state.clear()
         await message.answer("ثبت تاریخ تولد لغو شد.", reply_markup=group_management_menu())
         return
-    if "/" not in raw:
-        await message.answer("❌ فرمت صحیح: آیدی عددی/تاریخ تولد")
-        return
-    telegram_id_text, date_text = raw.split("/", 1)
+    telegram_id_text, date_text = (raw.split("/", 1) + [""])[:2] if "/" in raw else (raw, "")
     telegram_id_text = telegram_id_text.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789")).strip()
     if not telegram_id_text.isdigit():
         await message.answer("❌ آیدی عددی تلگرام معتبر نیست.")
         return
-    birthday = parse_birthday(date_text)
-    if not birthday:
-        await message.answer("❌ تاریخ معتبر نیست. مثال: 2000/10/05 یا 10/05")
-        return
+    birthday = parse_birthday(date_text) if date_text else None
     data = await state.get_data()
     async with session_factory() as session:
         group = await _selected_group(session, message.bot, message.from_user.id, int(data.get("group_id", 0)))
@@ -718,6 +712,11 @@ async def group_birthday_save(message: Message, state: FSMContext) -> None:
                 )
             except Exception:
                 await message.answer("❌ کاربر با این آیدی در این گروه پیدا نشد یا ربات به اطلاعات او دسترسی ندارد.")
+                return
+        if not birthday:
+            birthday = user.birthday or await get_telegram_profile_birthday(message.bot, tg_id)
+            if not birthday:
+                await message.answer("❌ تاریخ تولد این کاربر در پروفایل ربات ثبت نشده و از پروفایل تلگرام هم قابل دریافت نیست.")
                 return
         user.birthday = birthday
         await session.commit()
