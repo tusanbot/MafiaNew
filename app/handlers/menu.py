@@ -39,6 +39,7 @@ from app.handlers.keyboards import (
     invitation_copy_keyboard,
     group_voting_settings_menu,
     group_default_scenario_keyboard,
+    group_scenario_management_menu,
     main_menu,
     player_management_menu,
     player_target_management_keyboard,
@@ -810,12 +811,11 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 "از این بخش می‌توانی سناریوی پیش‌فرض گروه را انتخاب کنی. فقط سناریوهای فعال نمایش داده می‌شوند."
             ]
             await session.commit()
-            builder = InlineKeyboardBuilder()
-            builder.row(InlineKeyboardButton(text="🎭 انتخاب سناریوی پیش‌فرض", callback_data=f"groupmgmt:scenario_select:{group.id}"))
-            if scenarios:
-                builder.row(InlineKeyboardButton(text=f"📚 نمایش سناریوهای فعال ({len(scenarios)})", callback_data=f"groupmgmt:scenario_list:{group.id}"))
-            builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="menu:group_management"))
-            await callback.message.edit_text("\n".join(lines), reply_markup=builder.as_markup(), parse_mode="HTML")
+            await callback.message.edit_text(
+                "\n".join(lines),
+                reply_markup=group_scenario_management_menu(group.id, scenarios),
+                parse_mode="HTML",
+            )
         elif purpose == "invitation":
             setting = await session.scalar(select(GroupInvitationSetting).where(GroupInvitationSetting.group_id == group.id))
             count = await session.scalar(select(func.count()).select_from(GroupInvitationException).where(GroupInvitationException.group_id == group.id)) or 0
@@ -1071,19 +1071,33 @@ async def group_invitation_handler(callback: CallbackQuery, state: FSMContext) -
                 await callback.answer("متن پیام پیدا نشد.", show_alert=True)
                 return
             invite_button_enabled = setting.invite_button_enabled if mode == "default" else bool(data.get("invite_button_enabled"))
-            invite_link = None
-            if invite_button_enabled:
-                try:
-                    invite = await callback.bot.create_chat_invite_link(group.telegram_id, name="دعوت به بازی")
-                    invite_link = invite.invite_link
-                except Exception:
-                    await callback.answer("❌ ربات نتوانست لینک دعوت گروه را ایجاد کند. دسترسی ساخت لینک دعوت را بررسی کن.", show_alert=True)
-                    return
             recipients = await _invitation_recipients(session, group.id)
             sent = failed = 0
             for user in recipients:
                 try:
-                    await callback.bot.send_message(user.telegram_id, _render_invitation_message(text_value, user), reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=setting.invite_button_text or "🎮 ورود به بازی", url=invite_link)]]) if invite_link else None)
+                    invite_link = None
+                    if invite_button_enabled:
+                        invite = await callback.bot.create_chat_invite_link(
+                            group.telegram_id,
+                            name="دعوت یکبارمصرف به بازی",
+                            member_limit=1,
+                        )
+                        invite_link = invite.invite_link
+                    await callback.bot.send_message(
+                        user.telegram_id,
+                        _render_invitation_message(text_value, user),
+                        reply_markup=(
+                            InlineKeyboardMarkup(
+                                inline_keyboard=[[
+                                    InlineKeyboardButton(
+                                        text=setting.invite_button_text or "🎮 ورود به بازی",
+                                        url=invite_link,
+                                    )
+                                ]]
+                            )
+                            if invite_link else None
+                        ),
+                    )
                     sent += 1
                 except Exception:
                     failed += 1
