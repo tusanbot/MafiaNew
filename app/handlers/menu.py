@@ -4864,8 +4864,10 @@ async def scenario_role_description_start(callback: CallbackQuery, state: FSMCon
         scenario_id=int(sid),
         role_id=int(rid),
         sequence_mode=False,
+        batch_mode=False,
         sequence_role_ids=[],
         sequence_index=0,
+        pending_descriptions={},
     )
     await state.set_state(RoleDescriptionState.input)
     await callback.message.edit_text(
@@ -4927,7 +4929,7 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
             return
 
         await state.update_data(pending_descriptions=pending)
-        await state.clear()
+        await state.set_state(RoleDescriptionState.sequence)
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(
@@ -4944,6 +4946,52 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
         await message.answer(
             f"✅ توضیحات همه {len(role_ids)} نقش ثبت شد.\n\n"
             "اگر اطلاعات درست است «تأیید نهایی» را بزن.",
+            reply_markup=builder.as_markup(),
+        )
+        return
+
+    if data.get("batch_mode"):
+        role_lines = [line.strip() for line in raw.splitlines() if line.strip()]
+        if not role_lines:
+            await message.answer("حداقل یک سطر نقش/توضیح وارد کن.")
+            return
+        pending = {}
+        async with session_factory() as session:
+            scenario = await session.get(Scenario, sid)
+            rows = list((await session.execute(
+                select(ScenarioRole, Role)
+                .join(Role, Role.id == ScenarioRole.role_id)
+                .where(ScenarioRole.scenario_id == sid)
+                .order_by(ScenarioRole.position, ScenarioRole.id)
+            )).all()) if scenario else []
+            role_map = {role.name_fa.strip().casefold(): role for _, role in rows}
+            for line in role_lines:
+                if "/" not in line:
+                    await message.answer(f"❌ فرمت سطر نادرست است: {line}\nفرمت: نقش/توضیحات")
+                    return
+                name, description = line.split("/", 1)
+                role = role_map.get(name.strip().casefold())
+                if not role:
+                    await message.answer(f"❌ نقش «{name.strip()}» در این سناریو پیدا نشد.")
+                    return
+                description = description.strip()
+                if not description:
+                    await message.answer(f"❌ توضیحات «{role.name_fa}» خالی است.")
+                    return
+                pending[str(role.id)] = description
+        await state.update_data(pending_descriptions=pending)
+        await state.set_state(RoleDescriptionState.sequence)
+        builder = InlineKeyboardBuilder()
+        builder.row(InlineKeyboardButton(
+            text="✅ تأیید نهایی",
+            callback_data=f"scenario_admin:role_desc_sequence_confirm:{sid}",
+        ))
+        builder.row(InlineKeyboardButton(
+            text="🎭 بازگشت به فهرست نقش‌ها",
+            callback_data=f"scenario_admin:role_list:{sid}",
+        ))
+        await message.answer(
+            f"📋 {len(pending)} توضیح آماده ذخیره است. برای ثبت نهایی تأیید کن.",
             reply_markup=builder.as_markup(),
         )
         return
