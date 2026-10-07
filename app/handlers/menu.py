@@ -3382,7 +3382,7 @@ async def menu_scenarios(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     if callback.message.chat.type != "private" or callback.from_user.id not in get_settings().admin_id_set:
-        await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
+        await callback.answer("دسترسی مدیریت این سناریو برای شما مجاز نیست.", show_alert=True)
         return
     await callback.message.edit_text(
         "🎭 مدیریت سناریوها\n\nایجاد، ویرایش یا حذف سناریوهای ذخیره‌شده در دیتابیس.",
@@ -4228,6 +4228,14 @@ async def _scenario_admin_allowed(callback: CallbackQuery, state: FSMContext | N
             return False
         return await _is_group_admin(callback.bot, group, callback.from_user.id)
 
+async def _scenario_management_markup(session, group_id: int | None):
+    if group_id:
+        scenarios = list((await session.execute(
+            select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id)
+        )).scalars().all())
+        return group_scenario_management_menu(int(group_id), scenarios)
+    return scenario_management_menu()
+
 async def _scenario_form_roles(session, scenario_id: int) -> dict[int, int]:
     rows = (await session.execute(
         select(ScenarioRole).where(ScenarioRole.scenario_id == scenario_id).order_by(ScenarioRole.position, ScenarioRole.id)
@@ -4661,12 +4669,15 @@ async def scenario_form_confirm(callback: CallbackQuery, state: FSMContext) -> N
             session.add(ScenarioRole(scenario_id=scenario.id, role_id=role.id, count=1, position=pos))
         await session.commit()
         count = len(roles)
+    group_id = data.get("group_scenario_group_id")
     await state.clear()
+    async with session_factory() as session:
+        markup = await _scenario_management_markup(session, group_id)
     await callback.message.edit_text(
         f"✅ سناریو «{data['name']}» ذخیره شد.\n\n👥 تعداد نفرات: {count}\n"
         f"🤏 چالش: {data.get('challenge_mode', 'limited')}\n"
         f"⏱ نوبت: {_format_duration(int(data.get('turn_seconds', 120)))}",
-        reply_markup=scenario_management_menu(),
+        reply_markup=markup,
     )
     await callback.answer("سناریو ذخیره شد.")
 
