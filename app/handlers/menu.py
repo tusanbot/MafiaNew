@@ -4763,6 +4763,7 @@ async def scenario_role_list(callback: CallbackQuery, state: FSMContext) -> None
             .order_by(ScenarioRole.position, Role.name_fa)
         )).all())
         roles = [role for _, role in rows]
+    await state.clear()
     await callback.message.edit_text(
         f"🎭 نقش‌های سناریوی «{scenario.name_fa}»\n\n"
         "برای ثبت چند توضیح همزمان، از «📝 ثبت توضیحات یکجا» استفاده کن. فرمت هر سطر: نقش/توضیحات",
@@ -4933,7 +4934,7 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
         if next_role:
             await state.update_data(sequence_index=index + 1, pending_descriptions=pending)
             await message.answer(
-                f"✅ توضیحات «{escape(current_name)}» ذخیره شد.\n\n"
+                f"✅ توضیحات «{escape(current_name)}» آماده شد.\n\n"
                 f"نقش {index + 2} از {len(role_ids)}: <b>{escape(next_role.name_fa)}</b>\n\n"
                 "توضیحات را ارسال یا پیام توضیحات را Forward کن.",
                 parse_mode="HTML",
@@ -4956,7 +4957,7 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
             )
         )
         await message.answer(
-            f"✅ توضیحات همه {len(role_ids)} نقش ثبت شد.\n\n"
+            f"✅ توضیحات همه {len(role_ids)} نقش آماده شد.\n\n"
             "اگر اطلاعات درست است «تأیید نهایی» را بزن.",
             reply_markup=builder.as_markup(),
         )
