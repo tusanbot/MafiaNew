@@ -231,11 +231,12 @@ def group_voting_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
 def group_scenario_management_menu(group_id: int, scenarios) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="➕ ایجاد سناریو", callback_data="scenario_admin:create"),
-        InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data="scenario_admin:edit"),
+        InlineKeyboardButton(text="➕ ایجاد سناریو", callback_data=f"scenario_admin:create:{group_id}"),
+        InlineKeyboardButton(text="✏️ ویرایش سناریو", callback_data=f"scenario_admin:edit:{group_id}"),
     )
-    builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data="scenario_admin:delete"))
-    builder.row(InlineKeyboardButton(text="🎭 نقش‌ها و توضیحات", callback_data="scenario_admin:roles"))
+    builder.row(InlineKeyboardButton(text="🗑 حذف سناریو", callback_data=f"scenario_admin:delete:{group_id}"))
+    builder.row(InlineKeyboardButton(text="🎭 نقش‌ها و توضیحات", callback_data=f"scenario_admin:roles:{group_id}"))
+    builder.row(InlineKeyboardButton(text="📚 آموزش سناریو", callback_data=f"scenario_admin:training:{group_id}"))
     builder.row(InlineKeyboardButton(
         text="🎯 انتخاب سناریوی پیش‌فرض گروه",
         callback_data=f"groupmgmt:scenario_select:{group_id}",
@@ -793,17 +794,18 @@ def scenario_management_menu() -> InlineKeyboardMarkup:
     _back(builder)
     return builder.as_markup()
 
-def scenario_admin_list_keyboard(scenarios, action: str) -> InlineKeyboardMarkup:
+def scenario_admin_list_keyboard(scenarios, action: str, group_id: int | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    suffix = f":{int(group_id)}" if group_id else ""
     for scenario in scenarios:
         state = "فعال" if scenario.enabled else "غیرفعال"
         builder.button(
             text=f"🎭 {scenario.name_fa} — {state}",
-            callback_data=f"scenario_admin:{action}:{scenario.id}",
+            callback_data=f"scenario_admin:{action}:{scenario.id}{suffix}",
         )
     if scenarios:
         builder.adjust(3)
-    _back(builder, "menu:scenarios")
+    _back(builder, f"groupmgmt:scenario:{int(group_id)}" if group_id else "menu:scenarios")
     return builder.as_markup()
 
 def scenario_role_keyboard(roles, selected_ids: set[int] | dict[int, int] | None = None, action: str = "create") -> InlineKeyboardMarkup:
