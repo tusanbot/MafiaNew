@@ -136,6 +136,7 @@ class ScenarioAdminState(StatesGroup):
 
 class RoleDescriptionState(StatesGroup):
     input = State()
+    sequence = State()
 
 
 class ScenarioTrainingState(StatesGroup):
@@ -4312,7 +4313,7 @@ async def scenario_form_description(message: Message, state: FSMContext) -> None
 async def scenario_form_min(message: Message, state: FSMContext) -> None:
     # Kept as a compatibility state; new forms derive player count from roles.
     await state.set_state(ScenarioAdminState.turn_time)
-    await message.answer("زمان هر نوبت را وارد کنید (مثلاً 02:00 یا 120 ثانیه). پیش‌فرض: 02:00")
+    await message.answer("زمان هر نوبت را فقط به‌صورت تعداد ثانیه وارد کنید. مثال: 120\nپیش‌فرض: 120")
 
 @router.message(ScenarioAdminState.turn_time)
 async def scenario_form_turn_time(message: Message, state: FSMContext) -> None:
@@ -4326,7 +4327,7 @@ async def scenario_form_turn_time(message: Message, state: FSMContext) -> None:
         return
     await state.update_data(turn_seconds=seconds)
     await state.set_state(ScenarioAdminState.challenge_time)
-    await message.answer("زمان چالش را وارد کنید. پیش‌فرض: 01:00")
+    await message.answer("زمان چالش را فقط به‌صورت تعداد ثانیه وارد کنید. مثال: 60\nپیش‌فرض: 60")
 
 @router.message(ScenarioAdminState.challenge_time)
 async def scenario_form_challenge_time(message: Message, state: FSMContext) -> None:
@@ -4340,7 +4341,7 @@ async def scenario_form_challenge_time(message: Message, state: FSMContext) -> N
         return
     await state.update_data(challenge_seconds=seconds)
     await state.set_state(ScenarioAdminState.extra_challenge_time)
-    await message.answer("زمان چالش اضافه را وارد کنید. پیش‌فرض: 01:00")
+    await message.answer("زمان چالش اضافه را فقط به‌صورت تعداد ثانیه وارد کنید. مثال: 60\nپیش‌فرض: 60")
 
 @router.message(ScenarioAdminState.extra_challenge_time)
 async def scenario_form_extra_challenge_time(message: Message, state: FSMContext) -> None:
@@ -4381,16 +4382,48 @@ async def scenario_form_challenge(callback: CallbackQuery, state: FSMContext) ->
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     parts = callback.data.split(":")
-    mode = parts[1]
-    value = parts[3]
+    if len(parts) < 4:
+        await callback.answer("انتخاب چالش نامعتبر است.", show_alert=True)
+        return
+    action, value = parts[1], parts[3]
     data = await state.get_data()
     if value == "unchanged":
         value = data.get("challenge_mode", "limited")
-    await state.update_data(challenge_mode=value, challenge_limit=(1 if value == "limited" else None))
+    await state.update_data(
+        challenge_mode=value,
+        challenge_limit=(1 if value == "limited" else None),
+    )
+    current = await state.get_data()
+    await callback.message.edit_text(
+        "⚙️ <b>حالت چالش</b>\n\n"
+        "حالت موردنظر را انتخاب کن؛ با انتخاب هر گزینه فقط حالت عوض می‌شود.\n"
+        "بعد از انتخاب، روی «ادامه» بزن.",
+        reply_markup=scenario_challenge_keyboard(
+            action,
+            bool(data.get("edit_id")),
+            selected=current.get("challenge_mode", "limited"),
+        ),
+        parse_mode="HTML",
+    )
+    await callback.answer("حالت چالش تغییر کرد.")
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:") and ":challenge_next" in c.data)
+async def scenario_form_challenge_next(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    data = await state.get_data()
     await state.set_state(ScenarioAdminState.vote_threshold)
-    await callback.message.edit_text("قانون حدنصاب رای اول را وارد کنید:\n50 = حداقل ۵۰٪\n50+1 = در تعداد فرد، ۵۰٪ + ۱\n50-1 = در تعداد فرد، ۵۰٪ − ۱\nعدد = حدنصاب ثابت\nپیش‌فرض: 50")
+    await callback.message.edit_text(
+        "قانون حدنصاب رای اول را وارد کنید:\n"
+        "50 = حداقل ۵۰٪\n"
+        "50+1 = در تعداد فرد، ۵۰٪ + ۱\n"
+        "50-1 = در تعداد فرد، ۵۰٪ − ۱\n"
+        "عدد = حدنصاب ثابت\n"
+        "پیش‌فرض: 50"
+    )
     await callback.answer()
-    return
 
 @router.message(ScenarioAdminState.vote_threshold)
 async def scenario_form_vote_threshold(message: Message, state: FSMContext) -> None:
@@ -4479,7 +4512,7 @@ async def scenario_form_vote_rules(message: Message, state: FSMContext) -> None:
                 rules["vote2_tie_policy"] = "random" if value in {"قرعه", "random"} else "no_elimination"
     await state.update_data(voting_rules=rules)
     await state.set_state(ScenarioAdminState.turn_time)
-    await message.answer("⏱ زمان هر نوبت را وارد کن؛ مثال 02:00 یا 120. پیش‌فرض: 02:00")
+    await message.answer("⏱ زمان هر نوبت را فقط به‌صورت تعداد ثانیه وارد کن. مثال: 120\nپیش‌فرض: 120")
     return
     current = data.get("current_roles_text", "")
     prompt = (
