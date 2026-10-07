@@ -4275,10 +4275,10 @@ async def scenario_delete_list(callback: CallbackQuery, state: FSMContext) -> No
     await callback.message.edit_text("🗑 سناریوی موردنظر را برای حذف انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "delete", await _scenario_context_group_id(callback, state)))
     await callback.answer()
 
-@router.callback_query(lambda c: c.data == "scenario_admin:cancel")
+@router.callback_query(lambda c: c.data == "scenario_admin:cancel" or c.data.startswith("scenario_admin:cancel:"))
 async def scenario_admin_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    group_id = data.get("group_scenario_group_id")
+    group_id = data.get("group_scenario_group_id") or await _scenario_context_group_id(callback, None)
     await state.clear()
     if group_id:
         async with session_factory() as session:
