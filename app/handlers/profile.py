@@ -593,8 +593,8 @@ async def profile_birthday_start(callback: CallbackQuery, state: FSMContext) -> 
     await state.set_state(BirthdayState.input)
     await callback.message.edit_text(
         "🎂 تاریخ تولدت رو بفرست.\n\n"
-        "فرمت پیشنهادی: <code>YYYY/MM/DD</code>\n"
-        "یا فقط ماه و روز: <code>MM/DD</code>\n\n"
+        "فرمت کامل: <code>YYYY/MM/DD</code>\n"
+        "یا فقط روز و ماه: <code>DD/MM</code> (مثلاً <code>5/10</code> یعنی ۵ اکتبر)\n\n"
         f"تاریخ فعلی: {current}\nبرای حذف تاریخ: <code>حذف</code>\nبرای انصراف: /cancel",
         parse_mode="HTML",
     )
