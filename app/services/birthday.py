@@ -32,15 +32,19 @@ def _normalize_digits(value: str) -> str:
 
 
 def parse_birthday(value: str):
-    """Parse YYYY/MM/DD, YYYY-MM-DD, MM/DD or MM-DD."""
+    """Parse YYYY/MM/DD or a Persian-style DD/MM recurring birthday."""
     raw = _normalize_digits(value.strip()).replace(" ", "")
-    for fmt in ("%Y/%m/%d", "%Y-%m-%d", "%m/%d", "%m-%d"):
+    for fmt in ("%Y/%m/%d", "%Y-%m-%d"):
         try:
-            dt = datetime.strptime(raw, fmt)
-            # Year 2000 is a neutral leap-safe storage year for recurring dates.
-            if fmt in ("%m/%d", "%m-%d"):
-                dt = dt.replace(year=2000)
-            return dt
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+
+    # For a recurring birthday without a year, use day/month because this is
+    # the natural format used by Persian users (e.g. 5/10 = 5 October).
+    for fmt in ("%d/%m", "%d-%m"):
+        try:
+            return datetime.strptime(raw, fmt).replace(year=2000)
         except ValueError:
             continue
     return None
@@ -76,6 +80,10 @@ async def get_effective_birthday(bot: Bot, user: User):
 def birthday_label(value) -> str:
     if not value:
         return "ثبت نشده"
+    # Year 2000 is the internal sentinel for a recurring birthday entered
+    # without a year; do not expose that implementation detail to the user.
+    if int(value.year) == 2000:
+        return value.strftime("%d/%m")
     return value.strftime("%Y/%m/%d")
 
 
@@ -188,7 +196,13 @@ async def process_birthday_announcements(bot: Bot, now: datetime | None = None) 
 
 
 async def run_birthday_announcements(bot: Bot) -> None:
-    """Send birthday greetings once per day at 09:00 Asia/Tehran."""
+    """Send birthday greetings at 09:00 Asia/Tehran and recover after restarts."""
+    # Run once immediately so a restart after 09:00 does not skip today's
+    # birthdays. BirthdayAnnouncement's unique key prevents duplicates.
+    try:
+        await process_birthday_announcements(bot, datetime.now(TEHRAN))
+    except Exception:
+        logger.exception("Initial birthday announcement pass failed.")
     while True:
         try:
             now = datetime.now(TEHRAN)
