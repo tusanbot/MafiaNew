@@ -4185,15 +4185,41 @@ async def _scenario_roles_text(session, scenario_id: int) -> str:
             lines.append(f"{role.name_fa} {team_names.get(role.team, role.team)}")
     return "\n".join(lines)
 
+async def _scenario_context_group_id(callback: CallbackQuery, state: FSMContext | None = None) -> int | None:
+    """Resolve the group context carried by scenario-management callbacks/FSM."""
+    if state is not None:
+        data = await state.get_data()
+        value = data.get("group_scenario_group_id")
+        if value:
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                pass
+    data = str(callback.data or "")
+    parts = data.split(":")
+    if len(parts) >= 3 and parts[0] == "scenario_admin":
+        action = parts[1]
+        # Top-level group-scoped entries carry the group id directly.
+        if action in {"create", "edit", "delete", "roles", "training", "cancel"} and len(parts) == 3:
+            try:
+                return int(parts[2])
+            except (TypeError, ValueError):
+                pass
+        # Selection/confirmation callbacks carry scenario id then group id.
+        if action in {"edit", "delete", "delete_confirm", "role_list", "training_select"} and len(parts) >= 4:
+            try:
+                return int(parts[-1])
+            except (TypeError, ValueError):
+                pass
+    return None
+
+
 async def _scenario_admin_allowed(callback: CallbackQuery, state: FSMContext | None = None) -> bool:
     if not callback.from_user or not callback.message or callback.message.chat.type != "private":
         return False
     if callback.from_user.id in get_settings().admin_id_set:
         return True
-    if state is None:
-        return False
-    data = await state.get_data()
-    group_id = data.get("group_scenario_group_id")
+    group_id = await _scenario_context_group_id(callback, state)
     if not group_id:
         return False
     async with session_factory() as session:
@@ -4208,36 +4234,37 @@ async def _scenario_form_roles(session, scenario_id: int) -> dict[int, int]:
     )).scalars().all()
     return {row.role_id: row.count for row in rows}
 
-@router.callback_query(lambda c: c.data == "scenario_admin:create")
+@router.callback_query(lambda c: c.data == "scenario_admin:create" or c.data.startswith("scenario_admin:create:"))
 async def scenario_create_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
+    group_id = await _scenario_context_group_id(callback, state)
     previous = await state.get_data()
     await state.clear()
     await state.set_state(ScenarioAdminState.name)
-    await state.update_data(mode="create", group_scenario_group_id=previous.get("group_scenario_group_id"))
+    await state.update_data(mode="create", group_scenario_group_id=group_id or previous.get("group_scenario_group_id"))
     await callback.message.edit_text("➕ ایجاد سناریو\n\nنام سناریو را ارسال کنید:")
     await callback.answer()
 
-@router.callback_query(lambda c: c.data == "scenario_admin:edit")
+@router.callback_query(lambda c: c.data == "scenario_admin:edit" or c.data.startswith("scenario_admin:edit:"))
 async def scenario_edit_list(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
         scenarios = list((await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all())
-    await callback.message.edit_text("✏️ سناریوی موردنظر را انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "edit"))
+    await callback.message.edit_text("✏️ سناریوی موردنظر را انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "edit", await _scenario_context_group_id(callback, state)))
     await callback.answer()
 
-@router.callback_query(lambda c: c.data == "scenario_admin:delete")
+@router.callback_query(lambda c: c.data == "scenario_admin:delete" or c.data.startswith("scenario_admin:delete:"))
 async def scenario_delete_list(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
         return
     async with session_factory() as session:
         scenarios = list((await session.execute(select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id))).scalars().all())
-    await callback.message.edit_text("🗑 سناریوی موردنظر را برای حذف انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "delete"))
+    await callback.message.edit_text("🗑 سناریوی موردنظر را برای حذف انتخاب کنید:", reply_markup=scenario_admin_list_keyboard(scenarios, "delete", await _scenario_context_group_id(callback, state)))
     await callback.answer()
 
 @router.callback_query(lambda c: c.data == "scenario_admin:cancel")
@@ -4654,7 +4681,7 @@ async def scenario_form_back_to_roles(callback: CallbackQuery, state: FSMContext
     await callback.answer()
 
 
-@router.callback_query(lambda c: c.data == "scenario_admin:training")
+@router.callback_query(lambda c: c.data == "scenario_admin:training" or c.data.startswith("scenario_admin:training:"))
 async def scenario_training_manage_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
@@ -4732,7 +4759,7 @@ async def scenario_training_save(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(lambda c: c.data == "scenario_admin:roles")
+@router.callback_query(lambda c: c.data == "scenario_admin:roles" or c.data.startswith("scenario_admin:roles:"))
 async def scenario_roles_manage_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی فقط برای مدیر ربات است.", show_alert=True)
@@ -4741,7 +4768,7 @@ async def scenario_roles_manage_start(callback: CallbackQuery, state: FSMContext
         scenarios = list((await session.execute(
             select(Scenario).where(Scenario.key != "classic").order_by(Scenario.id)
         )).scalars().all())
-    await callback.message.edit_text("🎭 سناریویی را انتخاب کن تا نقش‌ها و توضیحاتش را مدیریت کنیم:", reply_markup=scenario_admin_list_keyboard(scenarios, "role_list"))
+    await callback.message.edit_text("🎭 سناریویی را انتخاب کن تا نقش‌ها و توضیحاتش را مدیریت کنیم:", reply_markup=scenario_admin_list_keyboard(scenarios, "role_list", await _scenario_context_group_id(callback, state)))
     await callback.answer()
 
 
