@@ -4789,7 +4789,7 @@ async def scenario_role_description_batch_start(callback: CallbackQuery, state: 
         await callback.answer("سناریو پیدا نشد.", show_alert=True)
         return
     await state.clear()
-    await state.update_data(scenario_id=sid)
+    await state.update_data(scenario_id=sid, batch_mode=True, sequence_mode=False, sequence_role_ids=[], sequence_index=0, pending_descriptions={})
     await state.set_state(RoleDescriptionState.input)
     names = "\n".join(f"• {escape(role.name_fa)}" for _, role in rows)
     await callback.message.edit_text(
@@ -4832,6 +4832,8 @@ async def scenario_role_description_sequence_start(callback: CallbackQuery, stat
         sequence_role_ids=role_ids,
         sequence_index=0,
         sequence_mode=True,
+        batch_mode=False,
+        pending_descriptions={},
     )
     await state.set_state(RoleDescriptionState.input)
     first_role = next(role for _row, role in rows if role.id == role_ids[0])
@@ -4908,14 +4910,14 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
                 await state.clear()
                 await message.answer("سناریو یا نقش پیدا نشد.", reply_markup=scenario_management_menu())
                 return
-            role.description = raw
-            await session.commit()
             current_name = role.name_fa
+            pending = dict(data.get("pending_descriptions") or {})
+            pending[str(role_id)] = raw
             next_role = None
             if index + 1 < len(role_ids):
                 next_role = await session.get(Role, role_ids[index + 1])
         if next_role:
-            await state.update_data(sequence_index=index + 1)
+            await state.update_data(sequence_index=index + 1, pending_descriptions=pending)
             await message.answer(
                 f"✅ توضیحات «{escape(current_name)}» ذخیره شد.\n\n"
                 f"نقش {index + 2} از {len(role_ids)}: <b>{escape(next_role.name_fa)}</b>\n\n"
@@ -4924,6 +4926,7 @@ async def scenario_role_description_save(message: Message, state: FSMContext) ->
             )
             return
 
+        await state.update_data(pending_descriptions=pending)
         await state.clear()
         builder = InlineKeyboardBuilder()
         builder.row(
@@ -4981,21 +4984,34 @@ async def scenario_role_description_sequence_confirm(callback: CallbackQuery, st
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
     sid = int(callback.data.rsplit(":", 1)[1])
+    data = await state.get_data()
+    pending = {
+        int(role_id): str(description)
+        for role_id, description in (data.get("pending_descriptions") or {}).items()
+    }
+    if not pending:
+        await callback.answer("توضیح جدیدی برای ذخیره وجود ندارد.", show_alert=True)
+        return
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
+        if not scenario:
+            await callback.answer("سناریو پیدا نشد.", show_alert=True)
+            return
+        for role_id, description in pending.items():
+            role = await session.get(Role, role_id)
+            if role:
+                role.description = description
+        await session.commit()
         rows = list((await session.execute(
             select(ScenarioRole, Role)
             .join(Role, Role.id == ScenarioRole.role_id)
             .where(ScenarioRole.scenario_id == sid)
             .order_by(ScenarioRole.position, Role.name_fa)
-        )).all()) if scenario else []
+        )).all())
     await state.clear()
-    if not scenario:
-        await callback.answer("سناریو پیدا نشد.", show_alert=True)
-        return
     await callback.message.edit_text(
         f"🎭 <b>توضیحات نقش‌های «{escape(scenario.name_fa)}»</b>\n\n"
-        "ثبت توضیحات با موفقیت تأیید شد.",
+        f"✅ توضیحات {len(pending)} نقش ذخیره شد.",
         reply_markup=scenario_role_description_list_keyboard(
             [role for _scenario_role, role in rows], sid
         ),
