@@ -4788,8 +4788,18 @@ async def scenario_role_description_batch_start(callback: CallbackQuery, state: 
     if not scenario:
         await callback.answer("سناریو پیدا نشد.", show_alert=True)
         return
+    previous = await state.get_data()
+    group_scenario_group_id = previous.get("group_scenario_group_id")
     await state.clear()
-    await state.update_data(scenario_id=sid, batch_mode=True, sequence_mode=False, sequence_role_ids=[], sequence_index=0, pending_descriptions={})
+    await state.update_data(
+        scenario_id=sid,
+        group_scenario_group_id=group_scenario_group_id,
+        batch_mode=True,
+        sequence_mode=False,
+        sequence_role_ids=[],
+        sequence_index=0,
+        pending_descriptions={},
+    )
     await state.set_state(RoleDescriptionState.input)
     names = "\n".join(f"• {escape(role.name_fa)}" for _, role in rows)
     await callback.message.edit_text(
@@ -4827,8 +4837,10 @@ async def scenario_role_description_sequence_start(callback: CallbackQuery, stat
         if role.id not in seen:
             role_ids.append(role.id)
             seen.add(role.id)
+    previous = await state.get_data()
     await state.update_data(
         scenario_id=sid,
+        group_scenario_group_id=previous.get("group_scenario_group_id"),
         sequence_role_ids=role_ids,
         sequence_index=0,
         sequence_mode=True,
