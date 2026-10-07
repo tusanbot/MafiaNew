@@ -1552,16 +1552,17 @@ def scenario_confirm_keyboard(action: str = "create") -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def scenario_role_description_list_keyboard(roles, scenario_id: int) -> InlineKeyboardMarkup:
+def scenario_role_description_list_keyboard(roles, scenario_id: int, group_id: int | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    suffix = f":{int(group_id)}" if group_id else ""
     for role in roles:
         builder.row(
             InlineKeyboardButton(
                 text=f"🎭 {role.name_fa[:35]}",
-                callback_data=f"scenario_admin:role_desc:{scenario_id}:{role.id}",
+                callback_data=f"scenario_admin:role_desc:{scenario_id}:{role.id}{suffix}",
             )
         )
-    builder.row(InlineKeyboardButton(text="📝 ثبت توضیحات یکجا", callback_data=f"scenario_admin:role_desc_batch:{scenario_id}"))
-    builder.row(InlineKeyboardButton(text="📨 ثبت ترتیبی / فوروارد", callback_data=f"scenario_admin:role_desc_sequence:{scenario_id}"))
-    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="scenario_admin:cancel"))
+    builder.row(InlineKeyboardButton(text="📝 ثبت توضیحات یکجا", callback_data=f"scenario_admin:role_desc_batch:{scenario_id}{suffix}"))
+    builder.row(InlineKeyboardButton(text="📨 ثبت ترتیبی / فوروارد", callback_data=f"scenario_admin:role_desc_sequence:{scenario_id}{suffix}"))
+    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data=f"scenario_admin:cancel:{int(group_id)}" if group_id else "scenario_admin:cancel"))
     return builder.as_markup()
