@@ -4752,8 +4752,11 @@ async def scenario_training_save(message: Message, state: FSMContext) -> None:
         return
     sid = int(data.get("scenario_id", 0) or 0)
     if raw == "/cancel":
+        group_id = data.get("group_scenario_group_id")
         await state.clear()
-        await message.answer("❌ ثبت لینک آموزش لغو شد.", reply_markup=scenario_management_menu())
+        async with session_factory() as session:
+            markup = await _scenario_management_markup(session, group_id)
+        await message.answer("❌ ثبت لینک آموزش لغو شد.", reply_markup=markup)
         return
     if raw == "-":
         url = None
@@ -4771,10 +4774,13 @@ async def scenario_training_save(message: Message, state: FSMContext) -> None:
         scenario.training_url = url
         await session.commit()
         name = scenario.name_fa
+    group_id = data.get("group_scenario_group_id")
     await state.clear()
+    async with session_factory() as session:
+        markup = await _scenario_management_markup(session, group_id)
     await message.answer(
         f"✅ لینک آموزش سناریوی «{escape(name)}» {'حذف شد' if not url else 'ذخیره شد'}.",
-        reply_markup=scenario_management_menu(),
+        reply_markup=markup,
         parse_mode="HTML",
     )
 
