@@ -4804,26 +4804,73 @@ async def scenario_role_description_batch_start(callback: CallbackQuery, state: 
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:role_desc_sequence:"))
+async def scenario_role_description_sequence_start(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
+        rows = list((await session.execute(
+            select(ScenarioRole, Role)
+            .join(Role, Role.id == ScenarioRole.role_id)
+            .where(ScenarioRole.scenario_id == sid)
+            .order_by(ScenarioRole.position, ScenarioRole.id)
+        )).all())
+    if not scenario or not rows:
+        await callback.answer("برای این سناریو نقشی ثبت نشده است.", show_alert=True)
+        return
+    role_ids = []
+    seen = set()
+    for _scenario_role, role in rows:
+        if role.id not in seen:
+            role_ids.append(role.id)
+            seen.add(role.id)
+    await state.update_data(
+        scenario_id=sid,
+        sequence_role_ids=role_ids,
+        sequence_index=0,
+        sequence_mode=True,
+    )
+    await state.set_state(RoleDescriptionState.input)
+    first_role = next(role for _row, role in rows if role.id == role_ids[0])
+    await callback.message.edit_text(
+        f"📨 <b>ثبت ترتیبی توضیحات نقش‌ها</b>\n\n"
+        f"نقش ۱ از {len(role_ids)}: <b>{escape(first_role.name_fa)}</b>\n\n"
+        "حالا توضیح این نقش را بفرست یا یک پیام حاوی توضیحات را Forward کن.\n"
+        "چندخطی بودن توضیحات کاملاً مجاز است.\n\n"
+        "برای انصراف: /cancel",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:role_desc:"))
 async def scenario_role_description_start(callback: CallbackQuery, state: FSMContext) -> None:
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    _, _, sid, rid = callback.data.split(":")
+    _, _, sid, rid = callback.data.split(":", 3)
     async with session_factory() as session:
         scenario = await session.get(Scenario, int(sid))
         role = await session.get(Role, int(rid))
     if not scenario or not role:
         await callback.answer("سناریو یا نقش پیدا نشد.", show_alert=True)
         return
-    await state.clear()
-    await state.update_data(scenario_id=int(sid), role_id=int(rid))
+    await state.update_data(
+        scenario_id=int(sid),
+        role_id=int(rid),
+        sequence_mode=False,
+        sequence_role_ids=[],
+        sequence_index=0,
+    )
     await state.set_state(RoleDescriptionState.input)
     await callback.message.edit_text(
-        f"🎭 {role.name_fa}\n\n"
-        "توضیحات نقش را با این فرمت بفرست:\n"
-        f"{role.name_fa} / توضیحات نقش\n\n"
-        f"توضیح فعلی: {role.description or 'ثبت نشده'}"
+        f"📝 توضیحات نقش «{escape(role.name_fa)}» را بفرست.\n\n"
+        "می‌توانی متن چندخطی ارسال کنی یا یک پیام حاوی توضیحات را Forward کنی.\n\n"
+        f"توضیح فعلی: {escape(role.description or 'ثبت نشده')}",
+        parse_mode="HTML",
     )
     await callback.answer()
 
@@ -4832,53 +4879,130 @@ async def scenario_role_description_start(callback: CallbackQuery, state: FSMCon
 async def scenario_role_description_save(message: Message, state: FSMContext) -> None:
     if message.chat.type != "private" or not message.from_user:
         return
-    if message.from_user.id not in get_settings().admin_id_set:
-        return
-    raw = (message.text or "").strip()
+    raw = (message.text or message.caption or "").strip()
     if raw == "/cancel":
         await state.clear()
         await message.answer("لغو شد.", reply_markup=scenario_management_menu())
         return
+    if not raw:
+        await message.answer(
+            "❌ توضیحات خالی است. متن را ارسال کن یا پیام دارای توضیحات را Forward کن."
+        )
+        return
     data = await state.get_data()
     sid = int(data.get("scenario_id", 0) or 0)
-    lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    if not lines or any("/" not in line for line in lines):
-        await message.answer(
-            "فرمت صحیح هر سطر: نقش/توضیحات\n"
-            "مثال:\nدکتر/هر شب یک نفر را نجات می‌دهد\nپدرخوانده/رهبر تیم مافیا"
+
+    # Sequential mode: save one role and immediately move to the next role.
+    if data.get("sequence_mode"):
+        role_ids = [int(x) for x in data.get("sequence_role_ids", [])]
+        index = int(data.get("sequence_index", 0) or 0)
+        if not sid or not role_ids or index >= len(role_ids):
+            await state.clear()
+            await message.answer("اطلاعات ثبت توضیحات ناقص است.", reply_markup=scenario_management_menu())
+            return
+        role_id = role_ids[index]
+        async with session_factory() as session:
+            scenario = await session.get(Scenario, sid)
+            role = await session.get(Role, role_id)
+            if not scenario or not role:
+                await state.clear()
+                await message.answer("سناریو یا نقش پیدا نشد.", reply_markup=scenario_management_menu())
+                return
+            role.description = raw
+            await session.commit()
+            current_name = role.name_fa
+            next_role = None
+            if index + 1 < len(role_ids):
+                next_role = await session.get(Role, role_ids[index + 1])
+        if next_role:
+            await state.update_data(sequence_index=index + 1)
+            await message.answer(
+                f"✅ توضیحات «{escape(current_name)}» ذخیره شد.\n\n"
+                f"نقش {index + 2} از {len(role_ids)}: <b>{escape(next_role.name_fa)}</b>\n\n"
+                "توضیحات را ارسال یا پیام توضیحات را Forward کن.",
+                parse_mode="HTML",
+            )
+            return
+
+        await state.clear()
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(
+                text="✅ تأیید نهایی",
+                callback_data=f"scenario_admin:role_desc_sequence_confirm:{sid}",
+            )
         )
+        builder.row(
+            InlineKeyboardButton(
+                text="🎭 بازگشت به فهرست نقش‌ها",
+                callback_data=f"scenario_admin:role_list:{sid}",
+            )
+        )
+        await message.answer(
+            f"✅ توضیحات همه {len(role_ids)} نقش ثبت شد.\n\n"
+            "اگر اطلاعات درست است «تأیید نهایی» را بزن.",
+            reply_markup=builder.as_markup(),
+        )
+        return
+
+    role_id = int(data.get("role_id", 0) or 0)
+    if not sid or not role_id:
+        await state.clear()
+        await message.answer("اطلاعات نقش ناقص است.", reply_markup=scenario_management_menu())
         return
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
-        if not scenario:
+        role = await session.get(Role, role_id)
+        if not scenario or not role:
             await state.clear()
-            await message.answer("سناریو پیدا نشد.", reply_markup=scenario_management_menu())
+            await message.answer("سناریو یا نقش پیدا نشد.", reply_markup=scenario_management_menu())
             return
+        role.description = raw
+        await session.commit()
+        roles = list((await session.execute(
+            select(ScenarioRole, Role)
+            .join(Role, Role.id == ScenarioRole.role_id)
+            .where(ScenarioRole.scenario_id == sid)
+            .order_by(ScenarioRole.position, Role.name_fa)
+        )).all())
+    await state.clear()
+    await message.answer(
+        f"✅ توضیحات «{escape(role.name_fa)}» ذخیره شد.",
+        reply_markup=scenario_role_description_list_keyboard(
+            [role for _scenario_role, role in roles], sid
+        ),
+        parse_mode="HTML",
+    )
+
+
+@router.callback_query(lambda c: c.data.startswith("scenario_admin:role_desc_sequence_confirm:"))
+async def scenario_role_description_sequence_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    if not await _scenario_admin_allowed(callback, state):
+        await callback.answer("دسترسی غیرمجاز.", show_alert=True)
+        return
+    sid = int(callback.data.rsplit(":", 1)[1])
+    async with session_factory() as session:
+        scenario = await session.get(Scenario, sid)
         rows = list((await session.execute(
             select(ScenarioRole, Role)
             .join(Role, Role.id == ScenarioRole.role_id)
             .where(ScenarioRole.scenario_id == sid)
-        )).all())
-        role_map = {role.name_fa.strip().casefold(): role for _, role in rows}
-        for line in lines:
-            name, description = [part.strip() for part in line.split("/", 1)]
-            role = role_map.get(name.casefold())
-            if not role:
-                await message.answer(f"❌ نقش «{name}» در این سناریو وجود ندارد.")
-                return
-            if not description:
-                await message.answer(f"❌ توضیحات «{name}» خالی است.")
-                return
-            role.description = description
-        await session.commit()
-        roles = [role for _, role in sorted(rows, key=lambda item: (item[0].position, item[1].name_fa))]
-        scenario_name = scenario.name_fa
+            .order_by(ScenarioRole.position, Role.name_fa)
+        )).all()) if scenario else []
     await state.clear()
-    await message.answer(
-        f"✅ توضیحات نقش‌های «{escape(scenario_name)}» ذخیره شد.",
-        reply_markup=scenario_role_description_list_keyboard(roles, sid),
+    if not scenario:
+        await callback.answer("سناریو پیدا نشد.", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"🎭 <b>توضیحات نقش‌های «{escape(scenario.name_fa)}»</b>\n\n"
+        "ثبت توضیحات با موفقیت تأیید شد.",
+        reply_markup=scenario_role_description_list_keyboard(
+            [role for _scenario_role, role in rows], sid
+        ),
         parse_mode="HTML",
     )
+    await callback.answer("توضیحات تأیید و ذخیره شد.")
+
 
 @router.callback_query(lambda c: c.data.startswith("scenario_admin:edit:"))
 async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> None:
