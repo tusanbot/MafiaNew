@@ -1450,15 +1450,45 @@ def admin_scenario_keyboard(scenarios) -> InlineKeyboardMarkup:
     _back(builder, "admin:dashboard")
     return builder.as_markup()
 
-def scenario_challenge_keyboard(action: str = "create", include_unchanged: bool = False) -> InlineKeyboardMarkup:
+def scenario_challenge_keyboard(
+    action: str = "create",
+    include_unchanged: bool = False,
+    selected: str | None = None,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+
+    def label(icon: str, text: str, value: str) -> str:
+        return f"{'✅ ' if selected == value else ''}{icon} {text}"
+
     builder.row(
-        InlineKeyboardButton(text="🤏🏻 چالش محدود", callback_data=f"scenario_admin:{action}:challenge:limited"),
-        InlineKeyboardButton(text="🤏🏻 چالش آزاد", callback_data=f"scenario_admin:{action}:challenge:free"),
+        InlineKeyboardButton(
+            text=label("🤏🏻", "چالش محدود", "limited"),
+            callback_data=f"scenario_admin:{action}:challenge:limited",
+        ),
+        InlineKeyboardButton(
+            text=label("🤏🏻", "چالش آزاد", "free"),
+            callback_data=f"scenario_admin:{action}:challenge:free",
+        ),
     )
-    builder.row(InlineKeyboardButton(text="🚫 بدون چالش", callback_data=f"scenario_admin:{action}:challenge:off"))
+    builder.row(
+        InlineKeyboardButton(
+            text=label("🚫", "بدون چالش", "off"),
+            callback_data=f"scenario_admin:{action}:challenge:off",
+        )
+    )
     if include_unchanged:
-        builder.row(InlineKeyboardButton(text="↩️ بدون تغییر", callback_data=f"scenario_admin:{action}:challenge:unchanged"))
+        builder.row(
+            InlineKeyboardButton(
+                text="↩️ بدون تغییر",
+                callback_data=f"scenario_admin:{action}:challenge:unchanged",
+            )
+        )
+    builder.row(
+        InlineKeyboardButton(
+            text="➡️ ادامه",
+            callback_data=f"scenario_admin:{action}:challenge_next",
+        )
+    )
     builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
 
@@ -1528,5 +1558,6 @@ def scenario_role_description_list_keyboard(roles, scenario_id: int) -> InlineKe
             )
         )
     builder.row(InlineKeyboardButton(text="📝 ثبت توضیحات یکجا", callback_data=f"scenario_admin:role_desc_batch:{scenario_id}"))
+    builder.row(InlineKeyboardButton(text="📨 ثبت ترتیبی / فوروارد", callback_data=f"scenario_admin:role_desc_sequence:{scenario_id}"))
     builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
