@@ -4786,7 +4786,9 @@ async def scenario_role_list(callback: CallbackQuery, state: FSMContext) -> None
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
         if not scenario:
@@ -4799,11 +4801,14 @@ async def scenario_role_list(callback: CallbackQuery, state: FSMContext) -> None
             .order_by(ScenarioRole.position, Role.name_fa)
         )).all())
         roles = [role for _, role in rows]
+    previous = await state.get_data()
+    group_id = callback_group_id or previous.get("group_scenario_group_id")
     await state.clear()
+    await state.update_data(group_scenario_group_id=group_id)
     await callback.message.edit_text(
         f"🎭 نقش‌های سناریوی «{scenario.name_fa}»\n\n"
         "برای ثبت چند توضیح همزمان، از «📝 ثبت توضیحات یکجا» استفاده کن. فرمت هر سطر: نقش/توضیحات",
-        reply_markup=scenario_role_description_list_keyboard(roles, sid),
+        reply_markup=scenario_role_description_list_keyboard(roles, sid, group_id),
     )
     await callback.answer()
 
@@ -4813,7 +4818,9 @@ async def scenario_role_description_batch_start(callback: CallbackQuery, state: 
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
         rows = list((await session.execute(
@@ -4826,7 +4833,7 @@ async def scenario_role_description_batch_start(callback: CallbackQuery, state: 
         await callback.answer("سناریو پیدا نشد.", show_alert=True)
         return
     previous = await state.get_data()
-    group_scenario_group_id = previous.get("group_scenario_group_id")
+    group_scenario_group_id = callback_group_id or previous.get("group_scenario_group_id")
     await state.clear()
     await state.update_data(
         scenario_id=sid,
@@ -4856,7 +4863,9 @@ async def scenario_role_description_sequence_start(callback: CallbackQuery, stat
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
         rows = list((await session.execute(
@@ -4877,7 +4886,7 @@ async def scenario_role_description_sequence_start(callback: CallbackQuery, stat
     previous = await state.get_data()
     await state.update_data(
         scenario_id=sid,
-        group_scenario_group_id=previous.get("group_scenario_group_id"),
+        group_scenario_group_id=callback_group_id or previous.get("group_scenario_group_id"),
         sequence_role_ids=role_ids,
         sequence_index=0,
         sequence_mode=True,
@@ -4902,7 +4911,11 @@ async def scenario_role_description_start(callback: CallbackQuery, state: FSMCon
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    _, _, sid, rid = callback.data.split(":", 3)
+    parts = callback.data.split(":")
+    sid, rid = int(parts[2]), int(parts[3])
+    callback_group_id = int(parts[4]) if len(parts) > 4 else None
+    if callback_group_id:
+        await state.update_data(group_scenario_group_id=callback_group_id)
     async with session_factory() as session:
         scenario = await session.get(Scenario, int(sid))
         role = await session.get(Role, int(rid))
