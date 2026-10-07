@@ -805,7 +805,7 @@ def scenario_admin_list_keyboard(scenarios, action: str, group_id: int | None = 
         )
     if scenarios:
         builder.adjust(3)
-    _back(builder, f"groupmgmt:scenario:{int(group_id)}" if group_id else "menu:scenarios")
+    _back(builder, f"groupmgmt:select:scenario:{int(group_id)}" if group_id else "menu:scenarios")
     return builder.as_markup()
 
 def scenario_role_keyboard(roles, selected_ids: set[int] | dict[int, int] | None = None, action: str = "create") -> InlineKeyboardMarkup:
@@ -1494,11 +1494,13 @@ def scenario_challenge_keyboard(
     builder.row(InlineKeyboardButton(text="لغو", callback_data="scenario_admin:cancel"))
     return builder.as_markup()
 
-def scenario_delete_confirm_keyboard(scenario_id: int) -> InlineKeyboardMarkup:
+def scenario_delete_confirm_keyboard(scenario_id: int, group_id: int | None = None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
+    suffix = f":{int(group_id)}" if group_id else ""
+    cancel = f"scenario_admin:cancel:{int(group_id)}" if group_id else "menu:scenarios"
     builder.row(
-        InlineKeyboardButton(text="🗑 بله، حذف شود", callback_data=f"scenario_admin:delete_confirm:{scenario_id}"),
-        InlineKeyboardButton(text="انصراف", callback_data="menu:scenarios"),
+        InlineKeyboardButton(text="🗑 بله، حذف شود", callback_data=f"scenario_admin:delete_confirm:{scenario_id}{suffix}"),
+        InlineKeyboardButton(text="انصراف", callback_data=cancel),
     )
     return builder.as_markup()
 
