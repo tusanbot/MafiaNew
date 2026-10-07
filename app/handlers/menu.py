@@ -4702,14 +4702,17 @@ async def scenario_training_select(callback: CallbackQuery, state: FSMContext) -
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
     if not scenario:
         await callback.answer("سناریو پیدا نشد.", show_alert=True)
         return
+    previous = await state.get_data()
     await state.clear()
-    await state.update_data(scenario_id=sid)
+    await state.update_data(scenario_id=sid, group_scenario_group_id=callback_group_id or previous.get("group_scenario_group_id"))
     await state.set_state(ScenarioTrainingState.input)
     current = scenario.training_url or "ثبت نشده"
     await callback.message.edit_text(
@@ -4726,10 +4729,16 @@ async def scenario_training_select(callback: CallbackQuery, state: FSMContext) -
 async def scenario_training_save(message: Message, state: FSMContext) -> None:
     if message.chat.type != "private" or not message.from_user:
         return
-    if message.from_user.id not in get_settings().admin_id_set:
-        return
     raw = (message.text or "").strip()
     data = await state.get_data()
+    group_id = data.get("group_scenario_group_id")
+    allowed = bool(message.from_user.id in get_settings().admin_id_set)
+    if not allowed and group_id:
+        async with session_factory() as auth_session:
+            auth_group = await auth_session.get(Group, int(group_id))
+            allowed = bool(auth_group and await _is_group_admin(message.bot, auth_group, message.from_user.id))
+    if not allowed:
+        return
     sid = int(data.get("scenario_id", 0) or 0)
     if raw == "/cancel":
         await state.clear()
@@ -5113,7 +5122,9 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
         if not scenario:
@@ -5121,7 +5132,7 @@ async def scenario_edit_start(callback: CallbackQuery, state: FSMContext) -> Non
             return
         current_roles_text = await _scenario_roles_text(session, sid)
     context = await state.get_data()
-    group_scenario_group_id = context.get("group_scenario_group_id")
+    group_scenario_group_id = callback_group_id or context.get("group_scenario_group_id")
     await state.clear()
     await state.set_state(ScenarioAdminState.name)
     await state.update_data(
@@ -5150,7 +5161,11 @@ async def scenario_delete_confirm_start(callback: CallbackQuery, state: FSMConte
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
+    if callback_group_id:
+        await state.update_data(group_scenario_group_id=callback_group_id)
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
     if not scenario:
@@ -5158,7 +5173,7 @@ async def scenario_delete_confirm_start(callback: CallbackQuery, state: FSMConte
         return
     await callback.message.edit_text(
         f"⚠️ حذف سناریو «{scenario.name_fa}»\n\nترکیب نقش‌های آن نیز حذف می‌شود. ادامه می‌دهید؟",
-        reply_markup=scenario_delete_confirm_keyboard(sid),
+        reply_markup=scenario_delete_confirm_keyboard(sid, callback_group_id or (await state.get_data()).get("group_scenario_group_id")),
     )
     await callback.answer()
 
@@ -5167,7 +5182,11 @@ async def scenario_delete_confirm(callback: CallbackQuery, state: FSMContext) ->
     if not await _scenario_admin_allowed(callback, state):
         await callback.answer("دسترسی غیرمجاز.", show_alert=True)
         return
-    sid = int(callback.data.rsplit(":", 1)[1])
+    parts = callback.data.split(":")
+    sid = int(parts[2])
+    callback_group_id = int(parts[3]) if len(parts) > 3 else None
+    if callback_group_id:
+        await state.update_data(group_scenario_group_id=callback_group_id)
     async with session_factory() as session:
         scenario = await session.get(Scenario, sid)
         if not scenario:
@@ -5191,7 +5210,14 @@ async def scenario_delete_confirm(callback: CallbackQuery, state: FSMContext) ->
             await session.delete(scenario)
             await session.commit()
             result_text = "🗑 سناریو حذف شد."
-    await callback.message.edit_text(result_text, reply_markup=scenario_management_menu())
+    group_id = (await state.get_data()).get("group_scenario_group_id")
+    await state.clear()
+    if group_id:
+        async with session_factory() as session:
+            scenarios = list((await session.execute(select(Scenario).where(Scenario.enabled.is_(True), Scenario.key != "classic").order_by(Scenario.id))).scalars().all())
+        await callback.message.edit_text(result_text, reply_markup=group_scenario_management_menu(int(group_id), scenarios))
+    else:
+        await callback.message.edit_text(result_text, reply_markup=scenario_management_menu())
     await callback.answer()
 
 
