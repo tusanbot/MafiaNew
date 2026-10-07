@@ -620,7 +620,7 @@ async def profile_birthday_save(message: Message, state: FSMContext) -> None:
         else:
             birthday = parse_birthday(raw)
             if not birthday:
-                await message.answer("❌ تاریخ معتبر نیست. مثال: 2000/10/05 یا 10/05")
+                await message.answer("❌ تاریخ معتبر نیست. مثال: 2000/10/05 یا 5/10")
                 return
             user.birthday = birthday
         await session.commit()
