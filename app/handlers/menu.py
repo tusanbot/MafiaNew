@@ -44,6 +44,7 @@ from app.handlers.keyboards import (
     player_management_menu,
     player_target_management_keyboard,
     player_replace_destination_keyboard,
+    player_faceoff_destination_keyboard,
     ranking_menu,
     admin_panel_menu,
     admin_scenario_keyboard,
