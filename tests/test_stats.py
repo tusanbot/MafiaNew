@@ -36,7 +36,7 @@ def test_rank_progress():
     assert rank_progress(0) == ("🌱 تازه‌نفس", 100, 100)
     assert rank_progress(100) == ("🎭 بازی‌جو", 250, 150)
     assert rank_progress(250) == ("🕵️ بازی‌خوان", 500, 250)
-    assert rank_progress(500) == ("بازیکن حرفه‌ای", 1000, 500)
+    assert rank_progress(500) == ("🔥 حرفه‌ای", 1000, 500)
     assert rank_progress(2500) == ("افسانه مافیا", None, 0)
 
 
