@@ -155,57 +155,50 @@ async def game_locks_handler(message: Message) -> None:
 async def _set_lock(message: Message, field: str, value: str) -> None:
     if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
         return
+
     normalized = (value or "").strip().lower()
     if normalized:
-        enabled = normalized in ("on", "1", "true", "فعال")
         if normalized not in ("on", "off", "1", "0", "true", "false", "فعال", "غیرفعال"):
             await message.answer("مقدار باید on یا off باشد.")
             return
+        enabled = normalized in ("on", "1", "true", "فعال")
     else:
-        async with session_factory() as session:
-            group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
-            if not group:
-                await message.answer("گروه ثبت نشده است.")
-                return
-            settings = (await session.execute(
-                select(GroupSettings).where(GroupSettings.group_id == group.id)
-            )).scalar_one_or_none()
-            if not settings:
-                settings = GroupSettings(group_id=group.id)
-                session.add(settings)
-            enabled = not bool(getattr(settings, field))
-            setattr(settings, field, enabled)
-            await session.commit()
-        if field == "night_lock":
-            try:
-                from app.handlers.gameplay import _set_game_chat_lock
-                await _set_game_chat_lock(message.bot, session, settings and await GameRepository.get_active(session, group.id), enabled)
-            except Exception:
-                pass
-        await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
-        return
+        enabled = None
 
     async with session_factory() as session:
         group = await GroupRepository.get_by_telegram_id(session, message.chat.id)
         if not group:
             await message.answer("گروه ثبت نشده است.")
             return
-        settings = (await session.execute(
+        settings = await session.scalar(
             select(GroupSettings).where(GroupSettings.group_id == group.id)
-        )).scalar_one_or_none()
+        )
         if not settings:
             settings = GroupSettings(group_id=group.id)
             session.add(settings)
-        setattr(settings, field, enabled)
-        await session.commit()
+            await session.flush()
+
+        if enabled is None:
+            enabled = not bool(getattr(settings, field))
+        setattr(settings, field, bool(enabled))
         active_game = await GameRepository.get_active(session, group.id)
+        await session.commit()
+
+        # night_lock also has a real Telegram permission effect. Keep the
+        # database setting and Telegram permissions synchronized in the same
+        # live session; the old implementation attempted to use a closed
+        # session here and silently swallowed the failure.
         if field == "night_lock" and active_game:
-            try:
-                from app.handlers.gameplay import _set_game_chat_lock
-                await _set_game_chat_lock(message.bot, session, active_game, bool(enabled and active_game.phase == "night"))
-            except Exception:
-                pass
-    await message.answer(f"🔐 {'فعال' if enabled else 'غیرفعال'} شد.")
+            await _set_game_chat_lock(
+                message.bot,
+                session,
+                active_game,
+                bool(enabled and active_game.phase == "night"),
+            )
+
+    await message.answer(
+        f"🔐 {'فعال' if enabled else 'غیرفعال'} شد."
+    )
 
 @router.message(Command("chatlock"))
 async def chat_lock_handler(message: Message, command: CommandObject) -> None:
