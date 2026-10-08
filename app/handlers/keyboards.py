@@ -1447,7 +1447,7 @@ def group_birthday_menu(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(InlineKeyboardButton(text="➕ ثبت / ویرایش تولد", callback_data=f"groupmgmt:birthday_add:{group_id}"))
     builder.row(InlineKeyboardButton(text="📋 لیست تولدها", callback_data=f"groupmgmt:birthday_list:{group_id}"))
-    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="groupmgmt:menu"))
+    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="menu:group_management"))
     return builder.as_markup()
 
 
