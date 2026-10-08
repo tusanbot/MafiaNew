@@ -153,6 +153,7 @@ async def game_locks_handler(message: Message) -> None:
         )
 
 async def _set_lock(message: Message, field: str, value: str) -> None:
+    from app.handlers.gameplay import _set_game_chat_lock
     if message.chat.type not in ("group", "supergroup") or not await is_group_manager(message):
         return
 
