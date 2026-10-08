@@ -77,6 +77,15 @@ from app.services.game import create_game, get_game_number, set_game_number, rel
 from app.services.profile import sync_telegram_user
 from app.services.birthday import parse_birthday, birthday_label, get_telegram_profile_birthday
 from app.services.gameplay import current_round, _event
+from app.services.player_management import (
+    remove_player,
+    restore_removed_player,
+    apply_kick,
+    swap_roles_for_faceoff,
+    silence_target_round,
+    grant_extra_turn,
+    parse_turn_payload,
+)
 from app.services.stats import leaderboard, rank_for_score
 from app.services.rich_message import edit_rich_message, send_rich_message
 from app.config import get_settings
@@ -2257,10 +2266,8 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
             await callback.answer("این عملیات فقط در جریان دور بازی قابل اجراست.", show_alert=True)
             return
         if action == "silence":
-            target_round = int(round_no)
-            if game.phase == "night":
-                target_round += 1
-            elif game.phase == "day":
+            queue_payload = None
+            if game.phase == "day":
                 queue_event = await session.scalar(
                     select(GameEvent).where(
                         GameEvent.game_id == game.id,
@@ -2268,23 +2275,14 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
                     ).order_by(GameEvent.id.desc())
                 )
                 if queue_event:
-                    try:
-                        q = json.loads(queue_event.payload or "{}")
-                        queue = [int(x) for x in q.get("queue", [])]
-                        idx = int(q.get("index", -1))
-                        if target.user_id in queue and queue.index(target.user_id) <= idx:
-                            target_round += 1
-                    except (TypeError, ValueError, json.JSONDecodeError):
-                        pass
-            target.silence_until_round = target_round
+                    queue_payload = parse_turn_payload(queue_event.payload)
+            silence_target_round(target, int(round_no), game.phase, queue_payload)
         elif action == "remove":
-            target.alive, target.exit_type = False, "death"
+            remove_player(target, "death")
         elif action == "kick":
-            target.alive, target.exit_type = False, "kick"
-            target_user.kicks = int(target_user.kicks or 0) + 1
-            target_user.score = int(target_user.score or 0) - 1
+            apply_kick(target, target_user)
         elif action == "extra_turn":
-            target.extra_turn_round = int(round_no)
+            grant_extra_turn(target, int(round_no))
         elif action == "warning":
             target.warning_count += 1
             target_user.score -= min(target.warning_count, 5)
@@ -2295,14 +2293,11 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
                 elif settings.auto_silence_on_max_warning:
                     target.silence_until_round = int(round_no) + (1 if game.phase == "night" else 0)
         elif action == "birthday":
-            if target.alive or target.exit_type != "death":
+            if not restore_removed_player(target):
                 await callback.answer("فقط بازیکنی که با «حذف» از بازی خارج شده می‌تواند تولد شود.", show_alert=True)
                 return
-            target.alive, target.exit_type = True, None
-            target.silence_until_round = None
-            target.extra_turn_round = None
         elif action == "slaughter":
-            target.alive, target.exit_type = False, "slaughter"
+            remove_player(target, "slaughter")
         else:
             await callback.answer("عملیات نامعتبر است.", show_alert=True)
             return
