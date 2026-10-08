@@ -12,6 +12,9 @@ class User(Base):
     last_name: Mapped[str | None] = mapped_column(String(255))
     # Recurring birthday stored as a calendar date. Only month/day are used for annual greetings.
     birthday: Mapped[datetime | None] = mapped_column(DateTime(timezone=False), nullable=True)
+    birthday_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    birthday_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    birthday_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     display_name: Mapped[str] = mapped_column(String(255), default="")
     bio: Mapped[str | None] = mapped_column(Text)
     tags: Mapped[str] = mapped_column(Text, default="")
