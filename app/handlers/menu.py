@@ -2421,6 +2421,15 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
         elif action == "kick":
             apply_kick(target, target_user)
         elif action == "extra_turn":
+            if len(parts) == 5:
+                from app.handlers.keyboards import player_action_confirm_keyboard
+                await callback.message.edit_text(
+                    f"⚠️ <b>تأیید ترن اضافه</b>\n\nآیا می‌خواهی برای <b>{tg_name(target_user.display_name or target_user.first_name)}</b> ترن اضافه ثبت شود؟",
+                    reply_markup=player_action_confirm_keyboard(group_id, "extra_turn", user_id, f"gameadmin:active:{group_id}"),
+                    parse_mode="HTML",
+                )
+                await callback.answer("برای ادامه، تأیید کن.")
+                return
             grant_extra_turn(target, int(round_no))
         elif action == "warning":
             target.warning_count += 1
@@ -2436,6 +2445,15 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
                 await callback.answer("فقط بازیکنی که با «حذف» از بازی خارج شده می‌تواند تولد شود.", show_alert=True)
                 return
         elif action == "slaughter":
+            if len(parts) == 5:
+                from app.handlers.keyboards import player_action_confirm_keyboard
+                await callback.message.edit_text(
+                    f"⚠️ <b>تأیید سلاخی</b>\n\nبا تأیید، <b>{tg_name(target_user.display_name or target_user.first_name)}</b> از بازی سلاخی می‌شود و امکان بازگشت با «تولد» را نخواهد داشت.\n\nآیا مطمئنی؟",
+                    reply_markup=player_action_confirm_keyboard(group_id, "slaughter", user_id, f"gameadmin:active:{group_id}"),
+                    parse_mode="HTML",
+                )
+                await callback.answer("برای ادامه، تأیید کن.")
+                return
             remove_player(target, "slaughter")
         else:
             await callback.answer("عملیات نامعتبر است.", show_alert=True)
@@ -2467,7 +2485,7 @@ async def gameadmin_faceoff_to(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6) or (len(parts) == 6 and parts[5] != "confirm"):
         await callback.answer("درخواست فیس‌آف نامعتبر است.", show_alert=True)
         return
     group_id, source_id, destination_id = int(parts[2]), int(parts[3]), int(parts[4])
@@ -2489,6 +2507,15 @@ async def gameadmin_faceoff_to(callback: CallbackQuery) -> None:
         destination_user = await session.get(User, destination.user_id)
         source_role = await session.get(Role, source.role_id) if source.role_id else None
         destination_role = await session.get(Role, destination.role_id) if destination.role_id else None
+        if len(parts) == 5:
+            from app.handlers.keyboards import faceoff_confirm_keyboard
+            await callback.message.edit_text(
+                f"⚠️ <b>تأیید فیس‌آف</b>\n\nنقش <b>{tg_name(source_user.display_name or source_user.first_name if source_user else 'بازیکن')}</b> با <b>{tg_name(destination_user.display_name or destination_user.first_name if destination_user else 'بازیکن')}</b> جابه‌جا خواهد شد.\n\nنتیجه فیس‌آف محرمانه باقی می‌ماند.\n\nآیا مطمئنی؟",
+                reply_markup=faceoff_confirm_keyboard(group_id, source_id, destination_id, f"gameadmin:active:{group_id}"),
+                parse_mode="HTML",
+            )
+            await callback.answer("برای ادامه، تأیید کن.")
+            return
         swap_roles_for_faceoff(source, destination)
         if source_user:
             source_user.faceoffs = int(source_user.faceoffs or 0) + 1
@@ -2535,7 +2562,7 @@ async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6) or (len(parts) == 6 and parts[5] != "confirm"):
         await callback.answer("درخواست جایگزینی نامعتبر است.", show_alert=True)
         return
     group_id, source_id, destination_id = int(parts[2]), int(parts[3]), int(parts[4])
@@ -2549,6 +2576,17 @@ async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
         destination = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == destination_id))
         if not source or not destination:
             await callback.answer("بازیکن جایگزین یا بازیکن مقصد پیدا نشد.", show_alert=True)
+            return
+        if len(parts) == 5:
+            from app.handlers.keyboards import replace_confirm_keyboard
+            replacement_user = await session.get(User, source_id)
+            destination_user = await session.get(User, destination_id)
+            await callback.message.edit_text(
+                f"⚠️ <b>تأیید جایگزینی</b>\n\n<b>{tg_name(replacement_user.display_name or replacement_user.first_name if replacement_user else 'بازیکن')}</b> جایگزین <b>{tg_name(destination_user.display_name or destination_user.first_name if destination_user else 'بازیکن')}</b> خواهد شد.\n\nآیا مطمئنی؟",
+                reply_markup=replace_confirm_keyboard(group_id, source_id, destination_id, f"gameadmin:active:{group_id}"),
+                parse_mode="HTML",
+            )
+            await callback.answer("برای ادامه، تأیید کن.")
             return
         try:
             replaced = await GameRepository.replace_player(session, game, source, destination)
