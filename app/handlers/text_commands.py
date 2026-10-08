@@ -712,6 +712,14 @@ async def text_toggle_lock(message: Message, state: FSMContext) -> None:
         setattr(settings, field, not bool(getattr(settings, field)))
         enabled = bool(getattr(settings, field))
         await session.commit()
+        if field == "night_lock" and game:
+            from app.handlers.gameplay import _set_game_chat_lock
+            await _set_game_chat_lock(
+                message.bot,
+                session,
+                game,
+                bool(enabled and game.phase == "night"),
+            )
     await message.answer(f"{'🔒' if enabled else '🔓'} {command} {'فعال' if enabled else 'غیرفعال'} شد.")
 
 
