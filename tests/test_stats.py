@@ -37,7 +37,7 @@ def test_rank_progress():
     assert rank_progress(100) == ("🎭 بازی‌جو", 250, 150)
     assert rank_progress(250) == ("🕵️ بازی‌خوان", 500, 250)
     assert rank_progress(500) == ("🔥 حرفه‌ای", 1000, 500)
-    assert rank_progress(2500) == ("افسانه مافیا", None, 0)
+    assert rank_progress(2500) == ("👑 افسانه مافیا", None, 0)
 
 
 def test_performance_score_is_weighted_and_capped():
