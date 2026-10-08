@@ -2240,6 +2240,17 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
             )
             await callback.answer()
             return
+        if action == "faceoff":
+            destinations = [(p, u) for p, u in await GameRepository.players(session, game.id) if p.alive and not p.is_reserved and p.user_id != target.user_id]
+            if not destinations:
+                await callback.answer("بازیکن دیگری برای فیس‌آف وجود ندارد.", show_alert=True)
+                return
+            await callback.message.edit_text(
+                f"🎭 فیس‌آف {tg_name(target_user.display_name or target_user.first_name)}\n\nنقش این بازیکن با کدام بازیکن تعویض شود؟",
+                reply_markup=player_faceoff_destination_keyboard(group_id, user_id, destinations),
+            )
+            await callback.answer()
+            return
         round_no = await current_round(session, game.id) if game.status == "running" else None
         if action in {"silence", "extra_turn"} and round_no is None:
             await callback.answer("این عملیات فقط در جریان دور بازی قابل اجراست.", show_alert=True)
