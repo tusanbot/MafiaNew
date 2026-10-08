@@ -457,7 +457,7 @@ async def admin_panel_handler(callback: CallbackQuery, state: FSMContext) -> Non
                     "<code>{username}</code> → یوزرنیم بدون @\n"
                     "<code>{mention}</code> → منشن قابل کلیک\n"
                     "<code>{user_id}</code> → آیدی عددی تلگرام\n"
-                    "<code>{birthday}</code> → تاریخ تولد\n\n"
+                    "<code>{birthday}</code> → تاریخ تولد\n    "<code>{age}</code> → سن (اگر سال تولد ثبت شده باشد)\n\n"
                     "مثال:\n"
                     "🎂 تولدت مبارک {mention} عزیز!\n"
                     "امیدواریم سال جدید زندگیت پر از اتفاق‌های خوب باشه. 🎉\n\n"
@@ -6031,7 +6031,7 @@ async def admin_birthday_message_save(message: Message, state: FSMContext) -> No
     if not raw:
         await message.answer("❌ متن پیام خالی است. متن تبریک را ارسال کن.")
         return
-    allowed = {"name", "first_name", "username", "mention", "user_id", "birthday"}
+    allowed = {"name", "first_name", "username", "mention", "user_id", "birthday", "age"}
     import re
     unknown = sorted(set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)) - allowed)
     if unknown:
