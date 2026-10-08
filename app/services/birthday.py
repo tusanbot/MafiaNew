@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 TEHRAN = ZoneInfo("Asia/Tehran")
 
 BIRTHDAY_MESSAGES = (
-    "🎂 تولدت مبارک {name}!\nامیدواریم سال جدید زندگیت پر از برد، حال خوب و اتفاق‌های قشنگ باشه. 🎉",
+    "╔══════════════════════╗\n      🎂 پرونده ویژه\n╚══════════════════════╝\n\n🚨 یک اتفاق مهم در شهر افتاده!\n\nامروز روز تولد\n🎩 {mention}\nاست.\n\n🎉 شهروندان و مافیا، برای چند لحظه\nسلاح‌ها را زمین می‌گذارند...\n\n🥳 تولدت مبارک {mention} عزیز!\n\n🎁 برات یک سال پر از برد،\nسناریوهای جذاب و بازی‌های خفن\nآرزو می‌کنیم.\n\n🍰 امیدواریم امسال همیشه\nدر سمت برنده‌های بازی باشی!\n\n━━━━━━━━━━━━━━━━━━\n🎭 Mafia Nights\n━━━━━━━━━━━━━━━━━━",
     "🥳 امروز روز توئه {name}!\nاز طرف بچه‌های مافیا: تولدت مبارک و همیشه خوشحال و موفق باشی! 🎁",
     "🎈 یک سال دیگه هم گذشت و هنوز از دستت خلاص نشدیم {name}! 😄\nتولدت مبارک؛ سال فوق‌العاده‌ای برات آرزو می‌کنیم. 🎂",
     "🎉 تولدت مبارک {name}!\nامروز رأی‌گیری ممنوع؛ فقط تبریک و کیک! 🍰 امیدواریم همیشه بدرخشی.",
@@ -106,6 +106,10 @@ async def _birthday_content():
 def _render_template(template: str, user: User) -> str:
     name = user.display_name or user.first_name or "بازیکن"
     mention = tg_mention(user.telegram_id, name)
+    age = ""
+    if user.birthday and int(user.birthday.year) != 2000:
+        today = datetime.now(TEHRAN)
+        age = str(max(0, today.year - int(user.birthday.year) - ((today.month, today.day) < (int(user.birthday.month), int(user.birthday.day)))))
     values = {
         "name": name,
         "first_name": user.first_name or name,
@@ -113,6 +117,7 @@ def _render_template(template: str, user: User) -> str:
         "mention": mention,
         "user_id": str(user.telegram_id),
         "birthday": birthday_label(user.birthday),
+        "age": age,
     }
     class SafeDict(dict):
         def __missing__(self, key):
@@ -140,15 +145,25 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
         await session.commit()
 
     settings, templates = await _birthday_content()
-    fallback = "🎂 تولدت مبارک {mention} عزیز! 🎉"
-    template = random.choice(templates).text if templates else fallback
+    fallback = BIRTHDAY_MESSAGES[0]
+    template = user.birthday_message or (random.choice(templates).text if templates else fallback)
     text = _render_template(template, user)
+    media_type = user.birthday_media_type
+    media_file_id = user.birthday_media_file_id
+    if not media_file_id and settings and settings.enabled and settings.video_file_id:
+        media_type, media_file_id = "video", settings.video_file_id
     try:
-        if settings and settings.enabled and settings.video_file_id:
+        if media_file_id and media_type == "photo":
             if len(text) <= 1024:
-                await bot.send_video(group.telegram_id, settings.video_file_id, caption=text, parse_mode="HTML")
+                await bot.send_photo(group.telegram_id, media_file_id, caption=text, parse_mode="HTML")
             else:
-                await bot.send_video(group.telegram_id, settings.video_file_id)
+                await bot.send_photo(group.telegram_id, media_file_id)
+                await bot.send_message(group.telegram_id, text, parse_mode="HTML")
+        elif media_file_id and media_type == "video":
+            if len(text) <= 1024:
+                await bot.send_video(group.telegram_id, media_file_id, caption=text, parse_mode="HTML")
+            else:
+                await bot.send_video(group.telegram_id, media_file_id)
                 await bot.send_message(group.telegram_id, text, parse_mode="HTML")
         else:
             await bot.send_message(group.telegram_id, text, parse_mode="HTML")
