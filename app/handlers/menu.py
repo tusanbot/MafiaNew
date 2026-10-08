@@ -634,7 +634,7 @@ async def group_management_settings_entry(callback: CallbackQuery) -> None:
                 "defaults": "گروه را برای تنظیمات پایه انتخاب کنید:",
                 "players": "گروه را برای تنظیمات بازیکنان انتخاب کنید:",
                 "notifications": "گروه را برای تنظیمات اعلان‌ها انتخاب کنید:",
-                "birthday": "گروه را برای ثبت تاریخ تولد انتخاب کنید:",
+                "birthday": "گروه را برای مدیریت پیام تبریک تولد انتخاب کنید:",
                 "lobby_media": "گروه را برای تنظیم رسانه لابی انتخاب کنید:",
                 "invitation": "گروه را برای مدیریت دعوت به بازی انتخاب کنید:",
                 "scenario": "گروه را برای مدیریت سناریو انتخاب کنید:",
@@ -820,7 +820,7 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
             await session.commit()
             await callback.message.edit_text(
                 f"🎂 <b>مدیریت تولدهای «{escape(group.title or str(group.telegram_id))}»</b>\n\n"
-                "از این بخش می‌توانی تولد بازیکنان را ثبت، ویرایش و سفارشی‌سازی کنی.",
+                "از این بخش تنظیمات پیش‌فرض تبریک تولد گروه و ثبت تولد بازیکنان را مدیریت می‌کنی.",
                 reply_markup=group_birthday_menu(group.id, settings),
                 parse_mode="HTML",
             )
@@ -1104,7 +1104,13 @@ async def group_birthday_default_message_save(message: Message, state: FSMContex
     group_id = int(data.get("group_id", 0))
     if raw == "/cancel":
         await state.clear()
-        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        async with session_factory() as session:
+            group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+            settings = await _ensure_group_settings(session, group) if group else None
+        if group and settings:
+            await message.answer("لغو شد.", reply_markup=group_birthday_menu(group_id, settings))
+        else:
+            await message.answer("لغو شد.", reply_markup=group_management_menu())
         return
     if not raw:
         await message.answer("❌ متن پیام خالی است.")
@@ -1134,7 +1140,13 @@ async def group_birthday_default_media_save(message: Message, state: FSMContext)
     group_id = int(data.get("group_id", 0))
     if (message.text or "").strip() == "/cancel":
         await state.clear()
-        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        async with session_factory() as session:
+            group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+            settings = await _ensure_group_settings(session, group) if group else None
+        if group and settings:
+            await message.answer("لغو شد.", reply_markup=group_birthday_menu(group_id, settings))
+        else:
+            await message.answer("لغو شد.", reply_markup=group_management_menu())
         return
     async with session_factory() as session:
         group = await _selected_group(session, message.bot, message.from_user.id, group_id)
