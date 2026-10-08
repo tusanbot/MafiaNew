@@ -113,6 +113,7 @@ def test_admin_panel_keyboard_has_core_sections() -> None:
         "admin:groups",
         "admin:scenarios",
         "admin:games",
+        "admin:birthday",
         "admin:settings",
         "menu:root",
     ]
@@ -184,7 +185,7 @@ def test_challenge_requests_are_rendered_on_turn_keyboard() -> None:
 def test_night_control_keyboard_has_locks_and_start_day() -> None:
     from app.handlers.keyboards import continue_night_keyboard
     callbacks = _callbacks(continue_night_keyboard("abc", True, False))
-    assert "night:resolve:abc" in callbacks
+    assert "night:resolve:abc" not in callbacks
     assert "night:lock:abc:night_lock" in callbacks
     assert "night:lock:abc:chat_lock" in callbacks
     assert "night:start_day:abc" in callbacks
@@ -202,7 +203,7 @@ def test_voting_setup_defaults_and_modes() -> None:
 def test_vote_target_keyboard_only_has_vote_action() -> None:
     from app.handlers.keyboards import vote1_target_keyboard
     callbacks = _callbacks(vote1_target_keyboard("abc", 42))
-    assert callbacks == ["vote1:cast:abc:42"]
+    assert callbacks == ["vote1:cast:abc:42", "vote1:next:abc"]
 
 
 def test_defense_selection_and_post_vote_controls() -> None:
