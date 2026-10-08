@@ -34,3 +34,12 @@ def test_group_notification_buttons_keep_selected_group():
     callbacks = _callbacks(group_notification_settings_menu(42, settings))
     assert all(c.startswith("groupnotify:toggle:42:") for c in callbacks[:-1])
     assert callbacks[-1] == "menu:group_management"
+
+
+def test_player_action_confirmation_callbacks():
+    from app.handlers.keyboards import player_action_confirm_keyboard, faceoff_confirm_keyboard, replace_confirm_keyboard
+
+    assert "gameadmin:player_target:42:slaughter:7:confirm" in _callbacks(player_action_confirm_keyboard(42, "slaughter", 7))
+    assert "gameadmin:player_target:42:extra_turn:7:confirm" in _callbacks(player_action_confirm_keyboard(42, "extra_turn", 7))
+    assert "gameadmin:faceoff_to:42:7:9:confirm" in _callbacks(faceoff_confirm_keyboard(42, 7, 9))
+    assert "gameadmin:player_replace_to:42:7:9:confirm" in _callbacks(replace_confirm_keyboard(42, 7, 9))
