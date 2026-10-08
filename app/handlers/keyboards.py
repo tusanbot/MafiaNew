@@ -1441,6 +1441,29 @@ def birthday_message_item_keyboard(message_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def birthday_user_customization_keyboard(group_id: int, user_id: int, has_message: bool = False, has_media: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(
+            text=f"📝 پیام سفارشی: {'تنظیم شده' if has_message else 'ندارد'}",
+            callback_data=f"birthday:user:message:{group_id}:{user_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text=f"🖼🎬 رسانه: {'تنظیم شده' if has_media else 'ندارد'}",
+            callback_data=f"birthday:user:media:{group_id}:{user_id}",
+        )
+    )
+    builder.row(
+        InlineKeyboardButton(
+            text="🗑 پاک‌کردن سفارشی‌سازی",
+            callback_data=f"birthday:user:clear:{group_id}:{user_id}",
+        )
+    )
+    return builder.as_markup()
+
+
 def admin_scenario_keyboard(scenarios) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     for scenario in scenarios:
