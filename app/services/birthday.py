@@ -8,7 +8,7 @@ from aiogram import Bot
 from aiogram.types import Message
 from sqlalchemy import select
 
-from app.db.models import BirthdayAnnouncement, BirthdayMessageTemplate, BirthdaySetting, Game, GamePlayer, Group, User
+from app.db.models import BirthdayAnnouncement, BirthdayMessageTemplate, BirthdaySetting, Game, GamePlayer, Group, GroupSettings, User
 from app.db.session import session_factory
 from app.utils.text import tg_mention
 
@@ -94,13 +94,14 @@ def is_birthday_today(value, now: datetime | None = None) -> bool:
     return int(value.month) == int(now.month) and int(value.day) == int(now.day)
 
 
-async def _birthday_content():
+async def _birthday_content(group: Group):
     async with session_factory() as session:
+        group_settings = await session.scalar(select(GroupSettings).where(GroupSettings.group_id == group.id))
         settings = await session.scalar(select(BirthdaySetting).where(BirthdaySetting.id == 1))
         templates = list((await session.execute(
             select(BirthdayMessageTemplate).where(BirthdayMessageTemplate.enabled.is_(True)).order_by(BirthdayMessageTemplate.id)
         )).scalars().all())
-        return settings, templates
+        return group_settings, settings, templates
 
 
 def _render_template(template: str, user: User) -> str:
@@ -144,13 +145,18 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
         ))
         await session.commit()
 
-    settings, templates = await _birthday_content()
+    group_settings, settings, templates = await _birthday_content(group)
+    if group_settings and not group_settings.birthday_enabled:
+        return False
     fallback = BIRTHDAY_MESSAGES[0]
-    template = user.birthday_message or (random.choice(templates).text if templates else fallback)
+    template = user.birthday_message or (group_settings.birthday_default_message if group_settings and group_settings.birthday_default_message else (random.choice(templates).text if templates else fallback))
     text = _render_template(template, user)
     media_type = user.birthday_media_type
     media_file_id = user.birthday_media_file_id
-    if not media_file_id and settings and settings.enabled and settings.video_file_id:
+    if not media_file_id and group_settings and group_settings.birthday_media_enabled:
+        media_type = group_settings.birthday_media_type
+        media_file_id = group_settings.birthday_media_file_id
+    if not media_file_id and group_settings and group_settings.birthday_media_enabled and settings and settings.enabled and settings.video_file_id:
         media_type, media_file_id = "video", settings.video_file_id
     try:
         if media_file_id and media_type == "photo":
