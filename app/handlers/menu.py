@@ -2307,6 +2307,12 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
             await callback.answer("عملیات نامعتبر است.", show_alert=True)
             return
         await session.commit()
+        if game.phase == "day":
+            try:
+                from app.handlers.gameplay import update_main_roster
+                await update_main_roster(callback.bot, session, game)
+            except Exception:
+                pass
         players = await GameRepository.players(session, game.id, include_reserve=True)
         lines = []
         for p, u in players:
