@@ -2361,7 +2361,7 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
         return
     parts = callback.data.split(":")
-    if len(parts) != 5:
+    if len(parts) not in (5, 6) or (len(parts) == 6 and parts[5] != "confirm"):
         await callback.answer("بازیکن نامعتبر است.", show_alert=True)
         return
     group_id, action, user_id = int(parts[2]), parts[3], int(parts[4])
