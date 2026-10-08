@@ -1441,6 +1441,27 @@ def birthday_message_item_keyboard(message_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+
+
+def group_birthday_menu(group_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="➕ ثبت / ویرایش تولد", callback_data=f"groupmgmt:birthday_add:{group_id}"))
+    builder.row(InlineKeyboardButton(text="📋 لیست تولدها", callback_data=f"groupmgmt:birthday_list:{group_id}"))
+    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="groupmgmt:menu"))
+    return builder.as_markup()
+
+
+def group_birthday_list_keyboard(group_id: int, users) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for user in users:
+        name = tg_plain_name(user.display_name or user.first_name or user.username or str(user.telegram_id))
+        builder.row(InlineKeyboardButton(
+            text=f"🎂 {name}",
+            callback_data=f"groupmgmt:birthday_edit:{group_id}:{user.telegram_id}",
+        ))
+    builder.row(InlineKeyboardButton(text="➕ ثبت / ویرایش تولد", callback_data=f"groupmgmt:birthday_add:{group_id}"))
+    builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data=f"groupmgmt:select:birthday:{group_id}"))
+    return builder.as_markup()
 def birthday_user_customization_keyboard(group_id: int, user_id: int, has_message: bool = False, has_media: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
