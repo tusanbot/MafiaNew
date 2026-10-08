@@ -2,12 +2,12 @@ from app.services.stats import rank_for_score, rank_progress, performance_score,
 
 
 def test_rank_progression():
-    assert rank_for_score(0) == "تازه‌وارد"
-    assert rank_for_score(100) == "بازیکن"
-    assert rank_for_score(250) == "بازیکن باتجربه"
-    assert rank_for_score(500) == "بازیکن حرفه‌ای"
-    assert rank_for_score(1000) == "استاد مافیا"
-    assert rank_for_score(2000) == "افسانه مافیا"
+    assert rank_for_score(0) == "🌱 تازه‌نفس"
+    assert rank_for_score(100) == "🎭 بازی‌جو"
+    assert rank_for_score(250) == "🕵️ بازی‌خوان"
+    assert rank_for_score(500) == "🔥 حرفه‌ای"
+    assert rank_for_score(1000) == "⚔️ استاد میدان"
+    assert rank_for_score(2000) == "👑 افسانه مافیا"
 
 
 def test_achievement_keys_are_unique():
@@ -33,9 +33,9 @@ def test_detailed_user_stats_columns_exist():
 
 
 def test_rank_progress():
-    assert rank_progress(0) == ("تازه‌وارد", 100, 100)
-    assert rank_progress(100) == ("بازیکن", 250, 150)
-    assert rank_progress(250) == ("بازیکن باتجربه", 500, 250)
+    assert rank_progress(0) == ("🌱 تازه‌نفس", 100, 100)
+    assert rank_progress(100) == ("🎭 بازی‌جو", 250, 150)
+    assert rank_progress(250) == ("🕵️ بازی‌خوان", 500, 250)
     assert rank_progress(500) == ("بازیکن حرفه‌ای", 1000, 500)
     assert rank_progress(2500) == ("افسانه مافیا", None, 0)
 
@@ -57,5 +57,5 @@ def test_requested_achievement_targets():
     rows = {row[0]: row for row in ACHIEVEMENTS}
     assert rows["three_win_streak"][1] == "استرایکر"
     assert rows["five_win_streak"][1] == "ابر استرایکر"
-    assert rows["independent_master"][2] == "کسب ۱ برد با تیم مستقل"
-    assert rows["army_one"][2] == "کسب ۳ برد با تیم مستقل"
+    assert rows["independent_3"][2] == "کسب ۳ برد با تیم مستقل"
+    assert rows["independent_5"][2] == "کسب ۵ برد با تیم مستقل"
