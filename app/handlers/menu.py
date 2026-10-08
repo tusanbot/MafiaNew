@@ -2350,10 +2350,7 @@ async def gameadmin_faceoff_to(callback: CallbackQuery) -> None:
         destination_user = await session.get(User, destination.user_id)
         source_role = await session.get(Role, source.role_id) if source.role_id else None
         destination_role = await session.get(Role, destination.role_id) if destination.role_id else None
-        source.role_id, destination.role_id = destination.role_id, source.role_id
-        source.alive, source.exit_type = False, "faceoff"
-        source.silence_until_round = None
-        source.extra_turn_round = None
+        swap_roles_for_faceoff(source, destination)
         if source_user:
             source_user.faceoffs = int(source_user.faceoffs or 0) + 1
         session.add(GameEvent(game_id=game.id, event_type="faceoff", payload=json.dumps({
