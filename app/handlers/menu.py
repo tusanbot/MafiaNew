@@ -2241,17 +2241,38 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
             await callback.answer()
             return
         round_no = await current_round(session, game.id) if game.status == "running" else None
-        if action == "remove":
-            if game.status == "waiting":
-                await session.delete(target)
-            else:
-                target.alive, target.exit_type = False, "death"
+        if action in {"silence", "extra_turn"} and round_no is None:
+            await callback.answer("این عملیات فقط در جریان دور بازی قابل اجراست.", show_alert=True)
+            return
+        if action == "silence":
+            target_round = int(round_no)
+            if game.phase == "night":
+                target_round += 1
+            elif game.phase == "day":
+                queue_event = await session.scalar(
+                    select(GameEvent).where(
+                        GameEvent.game_id == game.id,
+                        GameEvent.event_type == "turn_queue",
+                    ).order_by(GameEvent.id.desc())
+                )
+                if queue_event:
+                    try:
+                        q = json.loads(queue_event.payload or "{}")
+                        queue = [int(x) for x in q.get("queue", [])]
+                        idx = int(q.get("index", -1))
+                        if target.user_id in queue and queue.index(target.user_id) <= idx:
+                            target_round += 1
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        pass
+            target.silence_until_round = target_round
+        elif action == "remove":
+            target.alive, target.exit_type = False, "death"
         elif action == "kick":
             target.alive, target.exit_type = False, "kick"
-        elif action == "silence":
-            target.silence_until_round = round_no
+            target_user.kicks = int(target_user.kicks or 0) + 1
+            target_user.score = int(target_user.score or 0) - 1
         elif action == "extra_turn":
-            target.extra_turn_round = round_no
+            target.extra_turn_round = int(round_no)
         elif action == "warning":
             target.warning_count += 1
             target_user.score -= min(target.warning_count, 5)
@@ -2260,13 +2281,14 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
                 if settings.auto_kick_on_max_warning:
                     target.alive, target.exit_type = False, "kick"
                 elif settings.auto_silence_on_max_warning:
-                    target.silence_until_round = round_no
+                    target.silence_until_round = int(round_no) + (1 if game.phase == "night" else 0)
         elif action == "birthday":
+            if target.alive or target.exit_type != "death":
+                await callback.answer("فقط بازیکنی که با «حذف» از بازی خارج شده می‌تواند تولد شود.", show_alert=True)
+                return
             target.alive, target.exit_type = True, None
             target.silence_until_round = None
             target.extra_turn_round = None
-        elif action == "faceoff":
-            target.alive, target.exit_type = False, "faceoff"
         elif action == "slaughter":
             target.alive, target.exit_type = False, "slaughter"
         else:
