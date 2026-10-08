@@ -119,6 +119,10 @@ class GroupBirthdayState(StatesGroup):
     message = State()
     media = State()
 
+class GroupBirthdayDefaultState(StatesGroup):
+    message = State()
+    media = State()
+
 
 class GroupLobbyMediaState(StatesGroup):
     media = State()
@@ -922,7 +926,7 @@ async def group_birthday_defaults_handler(callback: CallbackQuery, state: FSMCon
         elif action == "media":
             await state.clear()
             await state.update_data(group_id=group.id)
-            await state.set_state(GroupBirthdayState.media)
+            await state.set_state(GroupBirthdayDefaultState.media)
             await callback.message.edit_text(
                 "📤 رسانه پیش‌فرض گروه را ارسال کن.\n\nعکس یا ویدیو قابل ثبت است.\nبرای لغو /cancel",
             )
@@ -931,7 +935,7 @@ async def group_birthday_defaults_handler(callback: CallbackQuery, state: FSMCon
         elif action == "message":
             await state.clear()
             await state.update_data(group_id=group.id)
-            await state.set_state(GroupBirthdayState.message)
+            await state.set_state(GroupBirthdayDefaultState.message)
             await callback.message.edit_text(
                 "📝 پیام تبریک پیش‌فرض گروه را ارسال کن.\n\n"
                 "متغیرهای {name}، {mention}، {username} و {age} قابل استفاده هستند.\n"
@@ -1090,6 +1094,71 @@ async def birthday_user_customization(callback: CallbackQuery, state: FSMContext
         await callback.answer("گزینه نامعتبر است.", show_alert=True)
         return
     await callback.answer()
+
+@router.message(GroupBirthdayDefaultState.message)
+async def group_birthday_default_message_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    data = await state.get_data()
+    group_id = int(data.get("group_id", 0))
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        return
+    if not raw:
+        await message.answer("❌ متن پیام خالی است.")
+        return
+    unknown = sorted(set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)) - {"name","first_name","username","mention","user_id","birthday","age"})
+    if unknown:
+        await message.answer("❌ متغیر نامعتبر: " + ", ".join("{" + x + "}" for x in unknown))
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        if not group:
+            await state.clear()
+            await message.answer("❌ دسترسی گروه تأیید نشد.", reply_markup=group_management_menu())
+            return
+        settings = await _ensure_group_settings(session, group)
+        settings.birthday_default_message = raw if raw != "-" else None
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ پیام تبریک پیش‌فرض گروه ذخیره شد.", reply_markup=group_birthday_menu(group_id, settings))
+
+
+@router.message(GroupBirthdayDefaultState.media)
+async def group_birthday_default_media_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    data = await state.get_data()
+    group_id = int(data.get("group_id", 0))
+    if (message.text or "").strip() == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        if not group:
+            await state.clear()
+            await message.answer("❌ دسترسی گروه تأیید نشد.", reply_markup=group_management_menu())
+            return
+        settings = await _ensure_group_settings(session, group)
+        if (message.text or "").strip() == "-":
+            settings.birthday_media_type = None
+            settings.birthday_media_file_id = None
+        elif message.photo:
+            settings.birthday_media_type = "photo"
+            settings.birthday_media_file_id = message.photo[-1].file_id
+        elif message.video:
+            settings.birthday_media_type = "video"
+            settings.birthday_media_file_id = message.video.file_id
+        else:
+            await message.answer("❌ فقط عکس یا ویدیو بفرست؛ یا برای حذف رسانه - ارسال کن.")
+            return
+        await session.commit()
+    await state.clear()
+    await message.answer("✅ رسانه پیش‌فرض گروه ذخیره شد.", reply_markup=group_birthday_menu(group_id, settings))
+
 
 @router.message(GroupBirthdayState.message)
 async def group_birthday_message_save(message: Message, state: FSMContext) -> None:
