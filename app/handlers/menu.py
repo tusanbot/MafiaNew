@@ -66,6 +66,9 @@ from app.handlers.keyboards import (
     tournament_admin_menu,
     tournament_manage_menu,
     tournament_public_menu,
+    birthday_user_customization_keyboard,
+    group_birthday_menu,
+    group_birthday_list_keyboard,
 )
 from app.repositories.games import GameRepository
 from app.repositories.users import UserRepository
@@ -103,6 +106,8 @@ class TournamentState(StatesGroup):
 
 class GroupBirthdayState(StatesGroup):
     input = State()
+    message = State()
+    media = State()
 
 
 class GroupLobbyMediaState(StatesGroup):
@@ -796,15 +801,10 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
         elif purpose == "tournaments":
             await callback.message.edit_text("🏆 مدیریت تورنمنت‌ها", reply_markup=tournament_admin_menu(group.id))
         elif purpose == "birthday":
-            await state.clear()
-            await state.update_data(group_id=group.id)
-            await state.set_state(GroupBirthdayState.input)
             await callback.message.edit_text(
-                f"🎂 ثبت تاریخ تولد در «{group.title or group.telegram_id}»\n\n"
-                "فرمت: <code>آیدی عددی/تاریخ تولد</code> یا فقط <code>آیدی عددی</code> برای دریافت خودکار از پروفایل تلگرام\n"
-                "مثال: <code>123456789/2000/10/05</code>\n"
-                "یا فقط ماه و روز: <code>123456789/10/05</code>\n\n"
-                "برای انصراف /cancel را بفرست.",
+                f"🎂 <b>مدیریت تولدهای «{escape(group.title or str(group.telegram_id))}»</b>\n\n"
+                "از این بخش می‌توانی تولد بازیکنان را ثبت، ویرایش و سفارشی‌سازی کنی.",
+                reply_markup=group_birthday_menu(group.id),
                 parse_mode="HTML",
             )
         elif purpose == "scenario":
@@ -879,6 +879,218 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(lambda c: c.data.startswith("groupmgmt:birthday_add:"))
+async def group_birthday_add(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    try:
+        group_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+    if not group:
+        await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(group_id=group.id)
+    await state.set_state(GroupBirthdayState.input)
+    await callback.message.edit_text(
+        f"🎂 <b>ثبت / ویرایش تولد</b> — {escape(group.title or str(group.telegram_id))}\n\n"
+        "فرمت: <code>آیدی عددی/تاریخ تولد</code>\n"
+        "مثال: <code>123456789/10/05</code> یا <code>123456789/2000/10/05</code>\n"
+        "برای دریافت تاریخ از پروفایل تلگرام، فقط آیدی عددی را بفرست.\n\n"
+        "برای لغو /cancel",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("groupmgmt:birthday_list:"))
+async def group_birthday_list(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    try:
+        group_id = int(callback.data.rsplit(":", 1)[1])
+    except (ValueError, IndexError):
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
+            return
+        users = list((await session.execute(
+            select(User).join(GamePlayer, GamePlayer.user_id == User.id)
+            .join(Game, Game.id == GamePlayer.game_id)
+            .where(
+                Game.group_id == group.id,
+                User.birthday.is_not(None),
+                GamePlayer.is_reserved.is_(False),
+            ).distinct().order_by(User.display_name, User.first_name)
+        )).scalars().all())
+        text = "📋 <b>تولدهای ثبت‌شده این گروه</b>\n\n"
+        if not users:
+            text += "هنوز تولدی برای بازیکنان این گروه ثبت نشده است."
+        else:
+            text += "\n".join(
+                f"🎂 {tg_mention(u.telegram_id, u.display_name or u.first_name or str(u.telegram_id))} — {birthday_label(u.birthday)}"
+                for u in users
+            )
+        await callback.message.edit_text(
+            text,
+            reply_markup=group_birthday_list_keyboard(group.id, users),
+            parse_mode="HTML",
+        )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("groupmgmt:birthday_edit:"))
+async def group_birthday_edit(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 4:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    group_id, telegram_id = int(parts[2]), int(parts[3])
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        user = await session.scalar(select(User).where(User.telegram_id == telegram_id)) if group else None
+    if not group or not user:
+        await callback.answer("کاربر پیدا نشد یا دسترسی ندارید.", show_alert=True)
+        return
+    await state.clear()
+    await state.update_data(group_id=group.id)
+    await state.set_state(GroupBirthdayState.input)
+    await callback.message.edit_text(
+        f"✏️ <b>ویرایش تولد {tg_mention(user.telegram_id, user.display_name or user.first_name or 'بازیکن')}</b>\n\n"
+        f"تاریخ فعلی: <b>{birthday_label(user.birthday)}</b>\n"
+        "فرمت جدید را بفرست: <code>آیدی/روز/ماه</code> یا <code>آیدی/سال/ماه/روز</code>\n"
+        "برای لغو /cancel",
+        parse_mode="HTML",
+    )
+    await callback.answer()
+
+@router.callback_query(lambda c: c.data.startswith("birthday:user:"))
+async def birthday_user_customization(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    _, _, action, group_raw, user_raw = parts
+    group_id, telegram_id = int(group_raw), int(user_raw)
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        user = await session.scalar(select(User).where(User.telegram_id == telegram_id)) if group else None
+        if not group or not user:
+            await callback.answer("کاربر پیدا نشد یا دسترسی ندارید.", show_alert=True)
+            return
+        if action == "clear":
+            user.birthday_message = None
+            user.birthday_media_type = None
+            user.birthday_media_file_id = None
+            await session.commit()
+            await callback.message.edit_reply_markup(
+                reply_markup=birthday_user_customization_keyboard(group.id, user.telegram_id, False, False)
+            )
+            await callback.answer("سفارشی‌سازی تولد پاک شد.")
+            return
+    await state.clear()
+    await state.update_data(group_id=group_id, user_id=telegram_id)
+    if action == "message":
+        await state.set_state(GroupBirthdayState.message)
+        await callback.message.edit_text(
+            "📝 <b>پیام سفارشی تولد</b>\n\n"
+            "متن را بفرست. متغیرها: {name}، {username}، {mention}، {age}\n"
+            "برای حذف پیام سفارشی، <code>-</code> بفرست.\n"
+            "برای لغو /cancel",
+            parse_mode="HTML",
+        )
+    elif action == "media":
+        await state.set_state(GroupBirthdayState.media)
+        await callback.message.edit_text(
+            "🖼🎬 <b>رسانه سفارشی تولد</b>\n\n"
+            "یک عکس یا ویدیو بفرست. فایل با file_id تلگرام ذخیره می‌شود.\n"
+            "برای حذف رسانه <code>-</code> بفرست.\n"
+            "برای لغو /cancel",
+            parse_mode="HTML",
+        )
+    else:
+        await callback.answer("گزینه نامعتبر است.", show_alert=True)
+        return
+    await callback.answer()
+
+@router.message(GroupBirthdayState.message)
+async def group_birthday_message_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    raw = (message.text or "").strip()
+    if raw == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        return
+    data = await state.get_data()
+    group_id, user_id = int(data.get("group_id", 0)), int(data.get("user_id", 0))
+    if not raw:
+        await message.answer("❌ متن پیام خالی است.")
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        user = await session.scalar(select(User).where(User.telegram_id == user_id)) if group else None
+        if not group or not user:
+            await state.clear()
+            await message.answer("❌ دسترسی یا کاربر نامعتبر است.", reply_markup=group_management_menu())
+            return
+        if raw == "-":
+            user.birthday_message = None
+        else:
+            unknown = sorted(set(re.findall(r"\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)) - {"name","username","mention","age"})
+            if unknown:
+                await message.answer("❌ متغیر نامعتبر: " + ", ".join("{" + x + "}" for x in unknown))
+                return
+            user.birthday_message = raw
+        await session.commit()
+        has_media = bool(user.birthday_media_file_id)
+    await state.clear()
+    await message.answer("✅ پیام سفارشی تولد ذخیره شد.", reply_markup=birthday_user_customization_keyboard(group_id, user_id, raw != "-", has_media))
+
+@router.message(GroupBirthdayState.media)
+async def group_birthday_media_save(message: Message, state: FSMContext) -> None:
+    if message.chat.type != "private" or not message.from_user:
+        return
+    data = await state.get_data()
+    group_id, user_id = int(data.get("group_id", 0)), int(data.get("user_id", 0))
+    if (message.text or "").strip() == "/cancel":
+        await state.clear()
+        await message.answer("لغو شد.", reply_markup=group_management_menu())
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, message.bot, message.from_user.id, group_id)
+        user = await session.scalar(select(User).where(User.telegram_id == user_id)) if group else None
+        if not group or not user:
+            await state.clear()
+            await message.answer("❌ دسترسی یا کاربر نامعتبر است.", reply_markup=group_management_menu())
+            return
+        if (message.text or "").strip() == "-":
+            user.birthday_media_type = None
+            user.birthday_media_file_id = None
+        elif message.photo:
+            user.birthday_media_type = "photo"
+            user.birthday_media_file_id = message.photo[-1].file_id
+        elif message.video:
+            user.birthday_media_type = "video"
+            user.birthday_media_file_id = message.video.file_id
+        else:
+            await message.answer("❌ فقط عکس یا ویدیو بفرست؛ یا برای حذف رسانه - ارسال کن.")
+            return
+        await session.commit()
+        has_message = bool(user.birthday_message)
+        has_media = bool(user.birthday_media_file_id)
+    await state.clear()
+    await message.answer("✅ رسانه سفارشی تولد ذخیره شد.", reply_markup=birthday_user_customization_keyboard(group_id, user_id, has_message, has_media))
+
 @router.message(GroupBirthdayState.input)
 async def group_birthday_save(message: Message, state: FSMContext) -> None:
     if message.chat.type != "private" or not message.from_user:
@@ -922,8 +1134,14 @@ async def group_birthday_save(message: Message, state: FSMContext) -> None:
         await session.commit()
     await state.clear()
     await message.answer(
-        f"✅ تاریخ تولد {tg_mention(tg_id, user.display_name or user.first_name)} ثبت شد: {birthday_label(birthday)}",
-        reply_markup=group_management_menu(),
+        f"✅ تاریخ تولد {tg_mention(tg_id, user.display_name or user.first_name)} ثبت شد: {birthday_label(birthday)}\n\n"
+        "حالا می‌توانی برای همین بازیکن پیام یا رسانه سفارشی تعیین کنی.",
+        reply_markup=birthday_user_customization_keyboard(
+            int(data.get("group_id", 0)),
+            tg_id,
+            bool(user.birthday_message),
+            bool(user.birthday_media_file_id),
+        ),
         parse_mode="HTML",
     )
 
