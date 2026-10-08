@@ -160,6 +160,12 @@ class GroupSettings(Base):
     lobby_media_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     lobby_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     lobby_profile_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Group birthday defaults.
+    birthday_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    birthday_media_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    birthday_media_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    birthday_media_file_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    birthday_default_message: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 class GroupInvitationSetting(Base):
     __tablename__ = "group_invitation_settings"
