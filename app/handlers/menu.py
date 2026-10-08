@@ -2428,6 +2428,60 @@ async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
         if not replaced:
             await callback.answer("انجام جایگزینی ممکن نیست.", show_alert=True)
             return
+
+        # Move any current-round turn references from the departed user to the
+        # substitute, so replacing a speaker never leaves a stale user_id.
+        current_round_no = await current_round(session, game.id) if game.status == "running" else None
+        if current_round_no is not None:
+            turn_events = await session.execute(
+                select(GameEvent).where(
+                    GameEvent.game_id == game.id,
+                    GameEvent.event_type.in_(("turn_queue", "turn_state")),
+                ).order_by(GameEvent.id.desc())
+            )
+            seen = set()
+            for event in turn_events.scalars():
+                if event.id in seen:
+                    continue
+                try:
+                    data = json.loads(event.payload or "{}")
+                    if int(data.get("round_no", -1)) != int(current_round_no):
+                        continue
+                    changed = False
+                    if data.get("user_id") == destination_id:
+                        data["user_id"] = source_id
+                        changed = True
+                    if "queue" in data:
+                        new_queue = [source_id if int(uid) == destination_id else uid for uid in data.get("queue", [])]
+                        if new_queue != data.get("queue", []):
+                            data["queue"] = new_queue
+                            changed = True
+                    if changed:
+                        event.payload = json.dumps(data, ensure_ascii=False)
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    pass
+
+        replacement_user = await session.get(User, source_id)
+        replacement_role = await session.get(Role, destination.role_id) if destination.role_id else None
+        await session.commit()
+        if replacement_user and replacement_role:
+            try:
+                await callback.bot.send_message(
+                    replacement_user.telegram_id,
+                    f"🔁 <b>جایگزینی انجام شد</b>\n\n"
+                    f"صندلی: <b>{destination.seat}</b>\n"
+                    f"نقش: <b>{escape(replacement_role.name_fa or 'بدون نقش')}</b>\n\n"
+                    f"شما با حفظ صندلی و نقش بازیکن مقصد وارد بازی شدی.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        if game.phase == "day":
+            try:
+                from app.handlers.gameplay import update_main_roster
+                await update_main_roster(callback.bot, session, game)
+            except Exception:
+                pass
         await callback.message.edit_text(
             "✅ جایگزینی انجام شد. بازیکن قبلی از فهرست بازی خارج و جایگزین وارد بازی شد.",
             reply_markup=player_management_menu(group_id, f"gameadmin:active:{group_id}"),
