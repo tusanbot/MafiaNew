@@ -2288,6 +2288,77 @@ async def gameadmin_player_target(callback: CallbackQuery) -> None:
         )
     await callback.answer("عملیات انجام شد.")
 
+@router.callback_query(lambda c: c.data.startswith("gameadmin:faceoff_to:"))
+async def gameadmin_faceoff_to(callback: CallbackQuery) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) != 5:
+        await callback.answer("درخواست فیس‌آف نامعتبر است.", show_alert=True)
+        return
+    group_id, source_id, destination_id = int(parts[2]), int(parts[3]), int(parts[4])
+    if source_id == destination_id:
+        await callback.answer("فیس‌آف با خود بازیکن ممکن نیست.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        game = await GameRepository.get_active(session, group.id) if group else None
+        if not group or not game:
+            await callback.answer("بازی فعالی وجود ندارد.", show_alert=True)
+            return
+        source = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == source_id))
+        destination = await session.scalar(select(GamePlayer).where(GamePlayer.game_id == game.id, GamePlayer.user_id == destination_id))
+        if not source or not destination or source.is_reserved or destination.is_reserved or not source.alive or not destination.alive:
+            await callback.answer("هر دو بازیکن باید زنده و داخل بازی باشند.", show_alert=True)
+            return
+        source_user = await session.get(User, source.user_id)
+        destination_user = await session.get(User, destination.user_id)
+        source_role = await session.get(Role, source.role_id) if source.role_id else None
+        destination_role = await session.get(Role, destination.role_id) if destination.role_id else None
+        source.role_id, destination.role_id = destination.role_id, source.role_id
+        source.alive, source.exit_type = False, "faceoff"
+        source.silence_until_round = None
+        source.extra_turn_round = None
+        if source_user:
+            source_user.faceoffs = int(source_user.faceoffs or 0) + 1
+        session.add(GameEvent(game_id=game.id, event_type="faceoff", payload=json.dumps({
+            "source_user_id": source.user_id,
+            "destination_user_id": destination.user_id,
+            "source_role_id": source_role.id if source_role else None,
+            "destination_role_id": destination_role.id if destination_role else None,
+        }, ensure_ascii=False)))
+        await session.commit()
+        if destination_user and source_role:
+            try:
+                await callback.bot.send_message(
+                    destination_user.telegram_id,
+                    f"🎭 <b>فیس‌آف انجام شد</b>\n\nنقش جدیدت: <b>{escape(source_role.name_fa or 'بدون نقش')}</b>\n👤 نقش بازیکن فیس‌آف‌شده به تو منتقل شد.\n\n🔒 نتیجه فیس‌آف تا پایان بازی محرمانه می‌ماند.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        if game.phase == "day":
+            try:
+                from app.handlers.gameplay import update_main_roster
+                await update_main_roster(callback.bot, session, game)
+            except Exception:
+                pass
+        players = await GameRepository.players(session, game.id, include_reserve=True)
+        lines = []
+        for p, u in players:
+            if p.is_substitute:
+                lines.append(f"🔁 جایگزین {p.substitute_position}. {tg_name(u.display_name or u.first_name)}")
+            elif p.is_reserved:
+                lines.append(f"🪑 رزرو {p.reserve_position}. {tg_name(u.display_name or u.first_name)}")
+            else:
+                status = "زنده" if p.alive else {"death":"کشته","kick":"کیک","slaughter":"سلاخی","faceoff":"فیس‌آف"}.get(p.exit_type, "حذف‌شده")
+                lines.append(f"{p.seat}. {tg_name(u.display_name or u.first_name)} — {status}")
+        await callback.message.edit_text(
+            "مدیریت بازیکنان\n\n" + ("\n".join(lines) or "بازیکنی نیست.") + "\n\nعملیات موردنظر را انتخاب کنید.",
+            reply_markup=player_management_menu(group_id, f"gameadmin:active:{group_id}"),
+        )
+    await callback.answer("فیس‌آف انجام شد؛ نتیجه نقش فقط برای بازیکن مقصد ارسال شد.")
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:player_replace_to:"))
 async def gameadmin_player_replace_to(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
