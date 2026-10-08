@@ -1443,10 +1443,15 @@ def birthday_message_item_keyboard(message_id: int) -> InlineKeyboardMarkup:
 
 
 
-def group_birthday_menu(group_id: int) -> InlineKeyboardMarkup:
+def group_birthday_menu(group_id: int, settings=None) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.row(InlineKeyboardButton(text="➕ ثبت / ویرایش تولد", callback_data=f"groupmgmt:birthday_add:{group_id}"))
-    builder.row(InlineKeyboardButton(text="📋 لیست تولدها", callback_data=f"groupmgmt:birthday_list:{group_id}"))
+    enabled = bool(getattr(settings, "birthday_enabled", True)) if settings else True
+    media_enabled = bool(getattr(settings, "birthday_media_enabled", True)) if settings else True
+    builder.row(InlineKeyboardButton(text=f"🎂 تبریک تولد بازیکنان: {'✅' if enabled else '❌'}", callback_data=f"groupbirthday:toggle:{group_id}:birthday_enabled"))
+    builder.row(InlineKeyboardButton(text="📅 ثبت تولد بازیکنان", callback_data=f"groupmgmt:birthday_list:{group_id}"))
+    builder.row(InlineKeyboardButton(text=f"🖼🎬 رسانه گروه: {'✅' if media_enabled else '❌'}", callback_data=f"groupbirthday:toggle:{group_id}:birthday_media_enabled"))
+    builder.row(InlineKeyboardButton(text="📤 ثبت رسانه پیش‌فرض گروه", callback_data=f"groupbirthday:media:{group_id}"))
+    builder.row(InlineKeyboardButton(text="📝 ثبت پیام تبریک پیش‌فرض گروه", callback_data=f"groupbirthday:message:{group_id}"))
     builder.row(InlineKeyboardButton(text="↩️ بازگشت", callback_data="menu:group_management"))
     return builder.as_markup()
 
