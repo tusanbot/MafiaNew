@@ -812,10 +812,12 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
         elif purpose == "tournaments":
             await callback.message.edit_text("🏆 مدیریت تورنمنت‌ها", reply_markup=tournament_admin_menu(group.id))
         elif purpose == "birthday":
+            settings = await _ensure_group_settings(session, group)
+            await session.commit()
             await callback.message.edit_text(
                 f"🎂 <b>مدیریت تولدهای «{escape(group.title or str(group.telegram_id))}»</b>\n\n"
                 "از این بخش می‌توانی تولد بازیکنان را ثبت، ویرایش و سفارشی‌سازی کنی.",
-                reply_markup=group_birthday_menu(group.id),
+                reply_markup=group_birthday_menu(group.id, settings),
                 parse_mode="HTML",
             )
         elif purpose == "scenario":
@@ -888,6 +890,62 @@ async def select_group(callback: CallbackQuery, state: FSMContext) -> None:
                 reply_markup=group_game_menu(group.id),
             )
     await callback.answer()
+
+
+@router.callback_query(lambda c: c.data.startswith("groupbirthday:"))
+async def group_birthday_defaults_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    if not callback.message or not callback.from_user:
+        return
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    action = parts[1]
+    try:
+        group_id = int(parts[2])
+    except ValueError:
+        await callback.answer("درخواست نامعتبر است.", show_alert=True)
+        return
+    async with session_factory() as session:
+        group = await _selected_group(session, callback.bot, callback.from_user.id, group_id)
+        if not group:
+            await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
+            return
+        settings = await _ensure_group_settings(session, group)
+        if action == "toggle" and len(parts) == 4:
+            field = parts[3]
+            if field not in {"birthday_enabled", "birthday_media_enabled"}:
+                await callback.answer("تنظیم نامعتبر است.", show_alert=True)
+                return
+            setattr(settings, field, not bool(getattr(settings, field)))
+            await session.commit()
+        elif action == "media":
+            await state.clear()
+            await state.update_data(group_id=group.id)
+            await state.set_state(GroupBirthdayState.media)
+            await callback.message.edit_text(
+                "📤 رسانه پیش‌فرض گروه را ارسال کن.\n\nعکس یا ویدیو قابل ثبت است.\nبرای لغو /cancel",
+            )
+            await callback.answer()
+            return
+        elif action == "message":
+            await state.clear()
+            await state.update_data(group_id=group.id)
+            await state.set_state(GroupBirthdayState.message)
+            await callback.message.edit_text(
+                "📝 پیام تبریک پیش‌فرض گروه را ارسال کن.\n\n"
+                "متغیرهای {name}، {mention}، {username} و {age} قابل استفاده هستند.\n"
+                "برای لغو /cancel",
+            )
+            await callback.answer()
+            return
+        await callback.message.edit_text(
+            f"🎂 <b>پیام تبریک تولد</b> — {escape(group.title or str(group.telegram_id))}\n\n"
+            "این بخش فقط تنظیمات پیش‌فرض گروه را کنترل می‌کند.",
+            reply_markup=group_birthday_menu(group.id, settings),
+            parse_mode="HTML",
+        )
+    await callback.answer("ذخیره شد.")
 
 
 @router.callback_query(lambda c: c.data.startswith("groupmgmt:birthday_add:"))
