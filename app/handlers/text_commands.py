@@ -352,7 +352,13 @@ async def text_cancel_game(message: Message, state: FSMContext) -> None:
         if not await _is_host(session, game, user):
             await message.answer("فقط گرداننده می‌تواند بازی را لغو کند.")
             return
-        await GameRepository.cancel(session, game)
+        from app.handlers.keyboards import cancel_game_keyboard
+        await message.answer(
+            "⚠️ <b>تأیید لغو بازی</b>\n\nبا تأیید، بازی لغو و اطلاعات بازی از پایگاه داده حذف می‌شود.\n\nآیا مطمئنی؟",
+            reply_markup=cancel_game_keyboard(game.group_id),
+            parse_mode="HTML",
+        )
+        return
         from app.handlers.gameplay import delete_main_roster, release_global_lock
         try:
             await release_global_lock(message.bot, session, game)
@@ -501,6 +507,18 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         target, target_user = result
         command = _normalize_command_text(message.text)
         round_no = await current_round(session, game.id) if game.status == "running" else None
+
+        if command == "ترن اضافه":
+            if not target.alive or round_no is None:
+                await message.answer("ترن اضافه فقط برای بازیکن زنده در بازی در حال اجرا قابل ثبت است.")
+                return
+            from app.handlers.keyboards import player_action_confirm_keyboard
+            await message.answer(
+                f"⚠️ <b>تأیید ترن اضافه</b>\n\nآیا می‌خواهی برای <b>{tg_name(target_user.display_name or target_user.first_name)}</b> ترن اضافه ثبت شود؟",
+                reply_markup=player_action_confirm_keyboard(game.group_id, "extra_turn", target.user_id, f"gameadmin:active:{game.group_id}"),
+                parse_mode="HTML",
+            )
+            return
 
         if command == "تذکر":
             target.warning_count += 1
