@@ -674,6 +674,43 @@ def game_event_management_keyboard(game_id: int, group_id: int) -> InlineKeyboar
     return builder.as_markup()
 
 
+def player_action_confirm_keyboard(group_id: int, action: str, user_id: int, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    labels = {
+        "slaughter": "سلاخی",
+        "extra_turn": "ترن اضافه",
+        "faceoff": "فیس‌آف",
+        "replace": "جایگزینی",
+    }
+    label = labels.get(action, "این عملیات")
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text=f"تأیید {label}",
+        callback_data=f"gameadmin:player_target:{group_id}:{action}:{user_id}:confirm",
+    ))
+    builder.row(InlineKeyboardButton(text="انصراف", callback_data=back_callback or f"gameadmin:active:{group_id}"))
+    return builder.as_markup()
+
+
+def faceoff_confirm_keyboard(group_id: int, source_id: int, destination_id: int, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="تأیید فیس‌آف",
+        callback_data=f"gameadmin:faceoff_to:{group_id}:{source_id}:{destination_id}:confirm",
+    ))
+    builder.row(InlineKeyboardButton(text="انصراف", callback_data=back_callback or f"gameadmin:active:{group_id}"))
+    return builder.as_markup()
+
+
+def replace_confirm_keyboard(group_id: int, source_id: int, destination_id: int, back_callback: str | None = None) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(
+        text="تأیید جایگزینی",
+        callback_data=f"gameadmin:player_replace_to:{group_id}:{source_id}:{destination_id}:confirm",
+    ))
+    builder.row(InlineKeyboardButton(text="انصراف", callback_data=back_callback or f"gameadmin:active:{group_id}"))
+    return builder.as_markup()
+
+
 def cancel_game_keyboard(group_id: int) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.row(
