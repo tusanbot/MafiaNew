@@ -305,8 +305,8 @@ async def _turn_live_countdown(bot, game_key: str):
                 requests = await pending_challenge_requests(session, game) if kind == "main" else []
                 request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
                 visual, icon = _turn_visual(game, kind)
-    title = "چالش" if kind == "challenge" else "نوبت صحبت"
-    text = f"{visual} {icon} {title} {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
+                title = "چالش" if kind == "challenge" else "نوبت صحبت"
+                text = f"{visual} {icon} {title} {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
                 if text == last_text:
                     continue
                 last_text = text
