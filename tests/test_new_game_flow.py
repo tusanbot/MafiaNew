@@ -93,16 +93,13 @@ def test_new_game_color_callbacks_have_four_parts() -> None:
 
 
 def test_night_callbacks_match_keyboard_shapes() -> None:
-    resolve = "night:resolve:abc123".split(":")
-    action = "night:mafia_kill:abc123:456".split(":")
-    assert len(resolve) == 3
-    assert resolve[0:2] == ["night", "resolve"]
-    assert resolve[2] == "abc123"
-    assert len(action) == 4
-    assert action[0] == "night"
-    assert action[1] == "mafia_kill"
-    assert action[2] == "abc123"
-    assert int(action[3]) == 456
+    from app.handlers.keyboards import continue_night_keyboard
+    callbacks = _callbacks(continue_night_keyboard("abc123", True, False, True))
+    assert "night:resolve:abc123" not in callbacks
+    assert "night:lock:abc123:night_lock" in callbacks
+    assert "night:lock:abc123:chat_lock" in callbacks
+    assert "night:lock:abc123:turn_lock" in callbacks
+    assert "night:start_day:abc123" in callbacks
 
 
 def test_admin_panel_keyboard_has_core_sections() -> None:
