@@ -284,6 +284,7 @@ def group_player_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
 
 
 def group_notification_settings_menu(group_id: int, settings) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
     import json
     defaults = {
         "game_start": True, "game_end": True, "role_distribution": True,
