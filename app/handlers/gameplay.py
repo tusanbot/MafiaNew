@@ -92,6 +92,23 @@ def _duration_text(seconds: int) -> str:
     return f"{minutes:02d}:{remainder:02d}"
 
 
+def _turn_visual(game, kind: str) -> tuple[str, str]:
+    """Return a stable visual marker for main turns vs challenge turns."""
+    if not getattr(game, "turn_color_enabled", True):
+        return ("🗣", "🤏🏻") if kind == "challenge" else ("🗣", "🗣")
+    colors = {
+        "سبز": "🟢",
+        "آبی": "🔵",
+        "بنفش": "🟣",
+        "قرمز": "🔴",
+        "زرد": "🟡",
+        "طلایی": "🟡",
+    }
+    if kind == "challenge":
+        return colors.get(getattr(game, "challenge_color", "پیش‌فرض"), "🔴"), "🤏🏻"
+    return colors.get(getattr(game, "turn_color", "پیش‌فرض"), "🟢"), "🗣"
+
+
 async def _load(session, key):
     return await GameRepository.get_by_key(session, key)
 
@@ -207,7 +224,9 @@ async def _send_turn_message(bot, session, game, chat_id: int, turn: dict | None
     kind = str(turn.get("kind", "main"))
     requests = await pending_challenge_requests(session, game) if kind == "main" else []
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
-    text = (f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n"
+    visual, icon = _turn_visual(game, kind)
+    title = "چالش" if kind == "challenge" else "نوبت صحبت"
+    text = (f"{visual} {icon} {title} {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n"
             f"⏱ {_duration_text(_turn_duration(game, kind))}{request_section}")
     markup = day_turn_keyboard(
         game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
@@ -252,7 +271,9 @@ async def _refresh_turn_message(bot, session, game, turn: dict | None = None) ->
     requests = await pending_challenge_requests(session, game) if kind == "main" else []
     request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
     remaining = _turn_remaining(game, turn)
-    text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
+    visual, icon = _turn_visual(game, kind)
+    title = "چالش" if kind == "challenge" else "نوبت صحبت"
+    text = f"{visual} {icon} {title} {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
     try:
         await bot.edit_message_text(text, chat_id=int(data["chat_id"]), message_id=int(data["message_id"]),
                                     reply_markup=day_turn_keyboard(game.game_key, True, game.challenge_enabled, game.turn_color_enabled,
@@ -283,7 +304,9 @@ async def _turn_live_countdown(bot, game_key: str):
                 kind = str(turn.get("kind", "main"))
                 requests = await pending_challenge_requests(session, game) if kind == "main" else []
                 request_section = "\n\n<b>کسایی که درخواست چالش دارن:</b>" if requests else ""
-                text = f"🗣 نوبت صحبت {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
+                visual, icon = _turn_visual(game, kind)
+    title = "چالش" if kind == "challenge" else "نوبت صحبت"
+    text = f"{visual} {icon} {title} {tg_mention(user.telegram_id, raw_name) if user else '<b>بازیکن</b>'}\n\n⏱ {_duration_text(remaining)}{request_section}"
                 if text == last_text:
                     continue
                 last_text = text
@@ -1060,8 +1083,8 @@ async def challenge_grant_handler(callback: CallbackQuery):
         if turn_event and turn_data:
             try:
                 await callback.bot.edit_message_text(
-                    f"🗣 نوبت صحبت {tg_mention(requester.telegram_id, requester_name)}\n\n"
-                    "🤏🏻 <b>درخواست چالش انتخاب شد.</b>",
+                    f"{_turn_visual(game, 'challenge')[0]} 🤏🏻 <b>چالش {tg_mention(requester.telegram_id, requester_name)}</b>\n\n"
+                    "درخواست چالش انتخاب شد.",
                     chat_id=int(turn_data["chat_id"]), message_id=int(turn_data["message_id"]),
                     reply_markup=None, parse_mode="HTML"
                 )
