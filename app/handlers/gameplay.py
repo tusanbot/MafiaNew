@@ -1134,11 +1134,32 @@ async def challenge_place_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        previous_turn = await current_turn(session, game.id)
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
+            previous_turn = await current_turn(session, game.id)
+            if not previous_turn or previous_turn.get("kind") != "main":
+                await callback.answer("در حال حاضر نوبت اصلی برای تعیین جایگاه چالش فعال نیست.", show_alert=True)
+                return
+            turn_owner = await session.get(User, int(previous_turn.get("user_id", 0)))
+            if not turn_owner:
+                await callback.answer("صاحب نوبت فعلی پیدا نشد.", show_alert=True)
+                return
+            # The current speaker may choose placement. The host or a Telegram
+            # group admin may also operate these public controls to recover a stuck flow.
+            allowed = actor.id == turn_owner.id or game.host_user_id == actor.id
+            if not allowed:
+                group = await session.get(Group, game.group_id)
+                if group:
+                    try:
+                        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+                        allowed = member.status in {"creator", "administrator"}
+                    except Exception:
+                        allowed = False
+            if not allowed:
+                await callback.answer("فقط صاحب نوبت، گرداننده یا مدیر گروه می‌تواند جایگاه چالش را تعیین کند.", show_alert=True)
+                return
             try:
-                result = await select_challenge_placement(session, game, actor, int(event_id), placement)
+                result = await select_challenge_placement(session, game, turn_owner, int(event_id), placement)
             except ValueError as exc:
                 await callback.answer(f"⚠️ {exc}", show_alert=True)
                 await session.rollback()
@@ -1179,6 +1200,7 @@ async def challenge_place_handler(callback: CallbackQuery):
                     except Exception:
                         pass
 
+        await callback.answer("جایگاه چالش ثبت شد.")
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
