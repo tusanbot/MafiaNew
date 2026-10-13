@@ -263,15 +263,34 @@ async def text_players(message: Message, state: FSMContext) -> None:
 
 @router.message(_exact("لابی"))
 async def text_lobby(message: Message, state: FSMContext) -> None:
-    if message.chat.type not in {"group", "supergroup"}:
+    if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
         if not game or game.status != "waiting":
             await message.answer("لابی فعالی وجود ندارد.")
             return
-        text, _ = await render_lobby(session, game)
-    await message.answer(text)
+        group = await session.get(Group, game.group_id)
+        scenario = await session.get(__import__("app.db.models", fromlist=["Scenario"]).Scenario, game.scenario_id)
+        host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        players = await GameRepository.players(session, game.id)
+        reserves = await GameRepository.reserves(session, game.id)
+        substitutes = await GameRepository.substitutes(session, game.id)
+        text, full = await render_lobby(session, game)
+        from app.handlers.keyboards import lobby_keyboard_v2
+        markup = lobby_keyboard_v2(
+            game.game_key, scenario, players, reserves, substitutes=substitutes,
+            is_host=bool(host and host.telegram_id == message.from_user.id),
+            can_deal=bool(scenario and len(players) == scenario.max_players),
+            reserve_enabled=game.reserve_enabled,
+            training_url=scenario.training_url if scenario else None,
+            telegram_training_url=scenario.telegram_training_url if scenario else None,
+        )
+        if group:
+            from app.services.lobby_media import send_lobby_message
+            await send_lobby_message(message.bot, session, group, text, markup)
+        else:
+            await message.answer(text, parse_mode="HTML", reply_markup=markup)
 
 
 @router.message(_exact("انتخاب سردست", "سردست"))
