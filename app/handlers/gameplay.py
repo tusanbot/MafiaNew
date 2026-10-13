@@ -1164,6 +1164,9 @@ async def challenge_place_handler(callback: CallbackQuery):
                 await callback.answer(f"⚠️ {exc}", show_alert=True)
                 await session.rollback()
                 return
+            # Acknowledge as soon as the transition is committed; Telegram callback
+            # queries can expire while message edits or sends are in progress.
+            await callback.answer("جایگاه چالش ثبت شد.")
             # Selecting the placement must not finish/invalidate the main turn.
             # The main turn remains the source of truth for an AFTER challenge;
             # for BEFORE it is paused by select_challenge_placement and will be
@@ -1200,7 +1203,6 @@ async def challenge_place_handler(callback: CallbackQuery):
                     except Exception:
                         pass
 
-        await callback.answer("جایگاه چالش ثبت شد.")
         requester = await session.get(User, result["requester_id"])
         name = requester.display_name or requester.first_name if requester else "بازیکن"
         chat_id = await _group_chat_id(session, game)
