@@ -3302,7 +3302,7 @@ def _result_private_keyboard(game_id: int) -> InlineKeyboardMarkup:
 def _result_rich_view(game_id: int, title: str, text: str) -> str:
     # Keep view content and keyboard separate. Passing a canonical keyboard
     # to the Rich Message transport rebuilds every tab's controls on each edit.
-    rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\\n", "<br/>")
+    rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
     return f"<h2>{title}</h2>{rich_body}"
 
 async def _result_group_access(callback: CallbackQuery, session, game) -> tuple[bool, str]:
