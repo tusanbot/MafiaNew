@@ -905,10 +905,18 @@ async def start_match_handler(callback: CallbackQuery):
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+        # If the lobby was sent with a photo/video, keep that media message
+        # as the permanent lobby record and only remove its stale controls.
+        if any(getattr(callback.message, field, None) for field in ("photo", "video", "animation", "document")):
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
         await callback.bot.send_message(
             callback.message.chat.id,
             "🎭 نقش‌ها پخش شد.\n\n👑 انتخاب سردست\n⚙️ تنظیمات بازی\n▶️ شروع دور",
