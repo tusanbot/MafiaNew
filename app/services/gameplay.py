@@ -1193,6 +1193,18 @@ async def _start_next_main_turn(session, game, round_no: int):
         index = int(queue.get("index", -1)) + 1
         extra_queue = [uid for uid in queue.get("extra_queue", []) if uid in alive_ids]
         extra_index = int(queue.get("extra_index", -1))
+    # A text "سکوت" can be applied after the queue was created. Skip any
+    # newly-silenced players when their turn comes up instead of still creating
+    # a speaking message for them.
+    while index < len(queue_ids):
+        candidate = await session.scalar(select(GamePlayer).where(
+            GamePlayer.game_id == game.id,
+            GamePlayer.user_id == queue_ids[index],
+        ))
+        if candidate and candidate.silence_until_round == round_no:
+            index += 1
+            continue
+        break
     if index < len(queue_ids):
         next_user = queue_ids[index]
         await _event(session, game, "turn_queue", {
