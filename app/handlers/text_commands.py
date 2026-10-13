@@ -670,15 +670,14 @@ async def text_silence_short(message: Message, state: FSMContext) -> None:
     message.text = "سکوت بازیکن"
     await text_reply_management(message, state)
 
-@router.message(_exact("پایان بازی"))
+@router.message(_exact("پایان بازی", "اتمام بازی"))
 async def text_finish_game(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"} or not message.from_user:
         return
     async with session_factory() as session:
         game = await _active_game(session, message)
-        user = await _user(session, message)
-        if not game or not await _is_host(session, game, user):
-            await message.answer("فقط گرداننده می‌تواند پایان بازی را اجرا کند.")
+        if not game or not await _is_group_manager(message.bot, session, game, message):
+            await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند پایان بازی را اجرا کند.")
             return
         from app.handlers.keyboards import finish_game_keyboard
         await message.answer("🏁 نتیجه نهایی بازی را انتخاب کن:", reply_markup=finish_game_keyboard(game.group_id))
