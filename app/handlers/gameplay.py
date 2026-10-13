@@ -416,7 +416,13 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 new_turn = await current_turn(session, game.id)
                 if new_turn:
-                    await _send_turn_message(bot, session, game, chat_id, new_turn)
+                    new_message = await _send_turn_message(bot, session, game, chat_id, new_turn)
+                    # Keep automatic advancement alive for every subsequent turn;
+                    # otherwise auto-next only fires once and silently stops.
+                    await _schedule_auto_next(
+                        bot, game_key, chat_id,
+                        new_message.message_id if new_message else None,
+                    )
                 return
     old = _turn_tasks.get(game_key)
     if old and old is not asyncio.current_task():
