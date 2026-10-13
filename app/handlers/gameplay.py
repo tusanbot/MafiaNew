@@ -416,7 +416,13 @@ async def _schedule_auto_next(bot, game_key: str, chat_id: int | None = None, me
                     return
                 new_turn = await current_turn(session, game.id)
                 if new_turn:
-                    await _send_turn_message(bot, session, game, chat_id, new_turn)
+                    new_message = await _send_turn_message(bot, session, game, chat_id, new_turn)
+                    # Keep automatic advancement alive for every subsequent turn;
+                    # otherwise auto-next only fires once and silently stops.
+                    await _schedule_auto_next(
+                        bot, game_key, chat_id,
+                        new_message.message_id if new_message else None,
+                    )
                 return
     old = _turn_tasks.get(game_key)
     if old and old is not asyncio.current_task():
@@ -905,10 +911,18 @@ async def start_match_handler(callback: CallbackQuery):
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+        # If the lobby was sent with a photo/video, keep that media message
+        # as the permanent lobby record and only remove its stale controls.
+        if any(getattr(callback.message, field, None) for field in ("photo", "video", "animation", "document")):
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
         await callback.bot.send_message(
             callback.message.chat.id,
             "🎭 نقش‌ها پخش شد.\n\n👑 انتخاب سردست\n⚙️ تنظیمات بازی\n▶️ شروع دور",
@@ -1134,15 +1148,39 @@ async def challenge_place_handler(callback: CallbackQuery):
         if not game or not actor:
             await callback.answer("بازی یا کاربر پیدا نشد.", show_alert=True)
             return
-        previous_turn = await current_turn(session, game.id)
         lock = _challenge_transition_locks.setdefault(key, asyncio.Lock())
         async with lock:
+            previous_turn = await current_turn(session, game.id)
+            if not previous_turn or previous_turn.get("kind") != "main":
+                await callback.answer("در حال حاضر نوبت اصلی برای تعیین جایگاه چالش فعال نیست.", show_alert=True)
+                return
+            turn_owner = await session.get(User, int(previous_turn.get("user_id", 0)))
+            if not turn_owner:
+                await callback.answer("صاحب نوبت فعلی پیدا نشد.", show_alert=True)
+                return
+            # The current speaker may choose placement. The host or a Telegram
+            # group admin may also operate these public controls to recover a stuck flow.
+            allowed = actor.id == turn_owner.id or game.host_user_id == actor.id
+            if not allowed:
+                group = await session.get(Group, game.group_id)
+                if group:
+                    try:
+                        member = await callback.bot.get_chat_member(group.telegram_id, callback.from_user.id)
+                        allowed = member.status in {"creator", "administrator"}
+                    except Exception:
+                        allowed = False
+            if not allowed:
+                await callback.answer("فقط صاحب نوبت، گرداننده یا مدیر گروه می‌تواند جایگاه چالش را تعیین کند.", show_alert=True)
+                return
             try:
-                result = await select_challenge_placement(session, game, actor, int(event_id), placement)
+                result = await select_challenge_placement(session, game, turn_owner, int(event_id), placement)
             except ValueError as exc:
                 await callback.answer(f"⚠️ {exc}", show_alert=True)
                 await session.rollback()
                 return
+            # Acknowledge as soon as the transition is committed; Telegram callback
+            # queries can expire while message edits or sends are in progress.
+            await callback.answer("جایگاه چالش ثبت شد.")
             # Selecting the placement must not finish/invalidate the main turn.
             # The main turn remains the source of truth for an AFTER challenge;
             # for BEFORE it is paused by select_challenge_placement and will be
@@ -1226,16 +1264,15 @@ async def next_turn_handler(callback: CallbackQuery):
         host = await session.get(User, game.host_user_id) if game.host_user_id else None
         is_host = bool(host and host.id == actor.id)
         is_turn_owner = int(turn.get("user_id", -1)) == actor.id
-        # A challenge turn always needs an explicit way to finish/resume
-        # the flow, even if the normal player-next option is disabled.
-        is_challenge_turn = turn.get("kind") == "challenge"
-        if not is_challenge_turn:
-            if is_host and not game.next_host_enabled:
-                await callback.answer("نکست گرداننده در تنظیمات بازی غیرفعال است.", show_alert=True)
-                return
-            if not is_host and is_turn_owner and not game.next_player_enabled:
-                await callback.answer("نکست بازیکن در تنظیمات بازی غیرفعال است.", show_alert=True)
-                return
+        # The host/player next permissions apply to challenge turns as well as
+        # main turns; otherwise the toggles appeared to change but were bypassed
+        # whenever a challenge turn was active.
+        if is_host and not game.next_host_enabled:
+            await callback.answer("نکست گرداننده در تنظیمات بازی غیرفعال است.", show_alert=True)
+            return
+        if not is_host and is_turn_owner and not game.next_player_enabled:
+            await callback.answer("نکست بازیکن در تنظیمات بازی غیرفعال است.", show_alert=True)
+            return
         if not is_host and not is_turn_owner:
             await callback.answer("فقط گرداننده یا صاحب نوبت فعلی می‌تواند نکست بزند.", show_alert=True)
             return

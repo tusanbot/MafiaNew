@@ -305,10 +305,18 @@ async def deal_roles(callback: CallbackQuery) -> None:
                     )
         except Exception:
             pass
-        try:
-            await callback.message.delete()
-        except Exception:
-            pass
+        # Keep a media-backed lobby visible after role dealing. The caption
+        # remains as the lobby record; only its now-obsolete seat buttons are removed.
+        if any(getattr(callback.message, field, None) for field in ("photo", "video", "animation", "document")):
+            try:
+                await callback.message.edit_reply_markup(reply_markup=None)
+            except Exception:
+                pass
+        else:
+            try:
+                await callback.message.delete()
+            except Exception:
+                pass
         failed = list(dict.fromkeys(failed))
         try:
             await callback.bot.send_message(

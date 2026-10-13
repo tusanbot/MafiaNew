@@ -154,24 +154,6 @@ async def send_birthday_announcement(bot: Bot, group: Group, user: User, birthda
     if group_settings and not group_settings.birthday_enabled:
         return False
 
-    # Record the announcement only after the group has been confirmed eligible.
-    # Otherwise enabling birthdays later the same day could not recover the
-    # already-marked announcement.
-    async with session_factory() as session:
-        existing = await session.scalar(select(BirthdayAnnouncement.id).where(
-            BirthdayAnnouncement.group_id == group.id,
-            BirthdayAnnouncement.user_id == user.id,
-            BirthdayAnnouncement.birthday_key == birthday_key,
-        ))
-        if existing:
-            return False
-        session.add(BirthdayAnnouncement(
-            group_id=group.id,
-            user_id=user.id,
-            birthday_key=birthday_key,
-        ))
-        await session.commit()
-
     fallback = BIRTHDAY_MESSAGES[0]
     template = user.birthday_message or (group_settings.birthday_default_message if group_settings and group_settings.birthday_default_message else (random.choice(templates).text if templates else fallback))
     text = _render_template(template, user)
@@ -222,13 +204,12 @@ async def process_birthday_announcements(bot: Bot, now: datetime | None = None) 
         for user in users:
             if not is_birthday_today(user.birthday, now):
                 continue
+            # Birthday registration is a user-level setting, not dependent on
+            # whether the user has already appeared in a GamePlayer row.
+            # Check all active groups and use Telegram membership as the source
+            # of truth so admin-registered birthdays work for new players too.
             groups = list((await session.execute(
-                select(Group).join(Game, Game.group_id == Group.id)
-                .join(GamePlayer, GamePlayer.game_id == Game.id)
-                .where(
-                    GamePlayer.user_id == user.id,
-                    Group.is_active.is_(True),
-                ).distinct()
+                select(Group).where(Group.is_active.is_(True))
             )).scalars().all())
             for group in groups:
                 try:

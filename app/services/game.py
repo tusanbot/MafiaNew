@@ -179,6 +179,7 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
     reserves = await GameRepository.reserves(session, game.id)
     substitutes = await GameRepository.substitutes(session, game.id)
     scenario = await session.get(Scenario, game.scenario_id)
+    host = await session.get(User, game.host_user_id) if game.host_user_id else None
     min_players = scenario.min_players if scenario else 999
     max_players = scenario.max_players if scenario else 0
 
@@ -190,7 +191,8 @@ async def render_lobby(session: AsyncSession, game) -> tuple[str, bool]:
         "",
         f"\u200f⏱ زمان : {now:%H:%M}",
         f"\u200f📆 تاریخ : {jy:04d}/{jm:02d}/{jd:02d}",
-        f"\u200f🗓 سناریو : {scenario.name_fa if scenario else 'نامشخص'}",
+        f"\u200f🗓 سناریو : {escape(scenario.name_fa) if scenario else 'نامشخص'}",
+        f"\u200f{game_emoji(game, 'leader')} گرداننده : {tg_mention(host.telegram_id, host.display_name or host.first_name or host.username or 'نامشخص') if host else '<b>نامشخص</b>'}",
         "",
         f"\u200fبازیکنان اصلی : {len(players)}/{max_players}",
         "",

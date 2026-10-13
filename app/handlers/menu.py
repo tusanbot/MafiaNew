@@ -993,18 +993,26 @@ async def group_birthday_list(callback: CallbackQuery) -> None:
         if not group:
             await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
             return
-        users = list((await session.execute(
-            select(User).join(GamePlayer, GamePlayer.user_id == User.id)
-            .join(Game, Game.id == GamePlayer.game_id)
-            .where(
-                Game.group_id == group.id,
+        # A birthday belongs to the user profile; it must not require a
+        # historical GamePlayer row. Only show users who are actual members
+        # of this Telegram group.
+        candidates = list((await session.execute(
+            select(User).where(
                 User.birthday.is_not(None),
-                GamePlayer.is_reserved.is_(False),
-            ).distinct().order_by(User.display_name, User.first_name)
+                User.is_active.is_(True),
+            ).order_by(User.display_name, User.first_name)
         )).scalars().all())
+        users = []
+        for candidate in candidates:
+            try:
+                member = await callback.bot.get_chat_member(group.telegram_id, candidate.telegram_id)
+                if getattr(member, "status", None) not in {"left", "kicked"}:
+                    users.append(candidate)
+            except Exception:
+                continue
         text = "📋 <b>تولدهای ثبت‌شده این گروه</b>\n\n"
         if not users:
-            text += "هنوز تولدی برای بازیکنان این گروه ثبت نشده است."
+            text += "هنوز تولدی برای اعضای این گروه ثبت نشده است."
         else:
             text += "\n".join(
                 f"🎂 {tg_mention(u.telegram_id, u.display_name or u.first_name or str(u.telegram_id))} — {birthday_label(u.birthday)}"
@@ -3251,7 +3259,9 @@ async def _game_result_rich_html(session, game, winner: str) -> str:
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
         f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
-        f'<tg-button type="callback_data" style="link" data="gameresult:private:{game.id}">📩 نمایش نتیجه برای من</tg-button>'
+        '</tg-button-row>'
+        '<tg-button-row align="center">'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:private:{game.id}">📩 نمایش نتیجه برای من</tg-button>'
         '</tg-button-row></p>'
     )
 
@@ -3279,17 +3289,21 @@ async def _result_payload(session, game, view: str) -> tuple[str, str]:
     return title, text
 
 
-def _result_rich_view(game_id: int, title: str, text: str) -> str:
-    rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
-    return (
-        f"<h2>{title}</h2>{rich_body}"
-        '<p><tg-button-row align="center">'
-        f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game_id}">🏆 رتبه‌بندی</tg-button>'
-        f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game_id}">🎭 نقش‌ها</tg-button>'
-        f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game_id}">🏁 نتیجه بازی</tg-button>'
-        '</tg-button-row></p>'
-    )
+def _result_private_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    # A private result message needs tab navigation, but not the group-only
+    # "show result for me" action that would be invalid inside a DM.
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🏆 رتبه‌بندی", callback_data=f"gameresult:view:ranking:{game_id}"),
+        InlineKeyboardButton(text="🎭 نقش‌ها", callback_data=f"gameresult:view:roles:{game_id}"),
+        InlineKeyboardButton(text="🏁 نتیجه بازی", callback_data=f"gameresult:view:result:{game_id}"),
+    ]])
 
+
+def _result_rich_view(game_id: int, title: str, text: str) -> str:
+    # Keep view content and keyboard separate. Passing a canonical keyboard
+    # to the Rich Message transport rebuilds every tab's controls on each edit.
+    rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
+    return f"<h2>{title}</h2>{rich_body}"
 
 async def _result_group_access(callback: CallbackQuery, session, game) -> tuple[bool, str]:
     if callback.message.chat.type not in ("group", "supergroup"):
@@ -3346,12 +3360,12 @@ async def game_result_private(callback: CallbackQuery) -> None:
         ))
         if viewer and viewer.chat_id == callback.from_user.id:
             try:
-                await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, is_rtl=True)
+                await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
             except Exception:
-                sent = await send_rich_message(callback.bot, callback.from_user.id, rich, is_rtl=True)
+                sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
                 viewer.message_id = sent.message_id
         else:
-            sent = await send_rich_message(callback.bot, callback.from_user.id, rich, is_rtl=True)
+            sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
             if viewer:
                 viewer.chat_id = callback.from_user.id
                 viewer.message_id = sent.message_id
@@ -3402,7 +3416,7 @@ async def game_result_view(callback: CallbackQuery) -> None:
             try:
                 await edit_rich_message(
                     callback.bot, callback.message.chat.id, callback.message.message_id,
-                    rich_view, is_rtl=True,
+                    rich_view, reply_markup=game_result_keyboard(game.group_id, game.id), is_rtl=True,
                 )
             except Exception:
                 await callback.message.edit_text(
@@ -3424,10 +3438,12 @@ async def game_result_view(callback: CallbackQuery) -> None:
             try:
                 await edit_rich_message(
                     callback.bot, callback.message.chat.id, callback.message.message_id,
-                    rich_view, is_rtl=True,
+                    rich_view, reply_markup=_result_private_keyboard(game.id), is_rtl=True,
                 )
             except Exception:
-                await callback.message.edit_text(text, parse_mode="HTML")
+                await callback.message.edit_text(
+                    text, reply_markup=_result_private_keyboard(game.id), parse_mode="HTML"
+                )
         await session.commit()
     await callback.answer()
 
@@ -3457,7 +3473,7 @@ async def game_result_back(callback: CallbackQuery) -> None:
         try:
             await edit_rich_message(
                 callback.bot, callback.message.chat.id, callback.message.message_id,
-                rich, is_rtl=True,
+                rich, reply_markup=game_result_keyboard(game.group_id, game.id), is_rtl=True,
             )
         except Exception:
             await callback.message.edit_text(
