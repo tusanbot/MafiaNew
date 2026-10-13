@@ -993,18 +993,26 @@ async def group_birthday_list(callback: CallbackQuery) -> None:
         if not group:
             await callback.answer("دسترسی مدیریت این گروه تأیید نشد.", show_alert=True)
             return
-        users = list((await session.execute(
-            select(User).join(GamePlayer, GamePlayer.user_id == User.id)
-            .join(Game, Game.id == GamePlayer.game_id)
-            .where(
-                Game.group_id == group.id,
+        # A birthday belongs to the user profile; it must not require a
+        # historical GamePlayer row. Only show users who are actual members
+        # of this Telegram group.
+        candidates = list((await session.execute(
+            select(User).where(
                 User.birthday.is_not(None),
-                GamePlayer.is_reserved.is_(False),
-            ).distinct().order_by(User.display_name, User.first_name)
+                User.is_active.is_(True),
+            ).order_by(User.display_name, User.first_name)
         )).scalars().all())
+        users = []
+        for candidate in candidates:
+            try:
+                member = await callback.bot.get_chat_member(group.telegram_id, candidate.telegram_id)
+                if getattr(member, "status", None) not in {"left", "kicked"}:
+                    users.append(candidate)
+            except Exception:
+                continue
         text = "📋 <b>تولدهای ثبت‌شده این گروه</b>\n\n"
         if not users:
-            text += "هنوز تولدی برای بازیکنان این گروه ثبت نشده است."
+            text += "هنوز تولدی برای اعضای این گروه ثبت نشده است."
         else:
             text += "\n".join(
                 f"🎂 {tg_mention(u.telegram_id, u.display_name or u.first_name or str(u.telegram_id))} — {birthday_label(u.birthday)}"
