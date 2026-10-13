@@ -562,10 +562,13 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
             target.alive, target.exit_type = False, "kick"
             event_type, response = "player_kicked", f"⛔ {tg_name(target_user.display_name or target_user.first_name)} از بازی کیک شد."
         elif command == "سکوت بازیکن":
+            if game.status != "running" or round_no is None:
+                await message.answer("سکوت فقط هنگام اجرای بازی قابل ثبت است.")
+                return
             if not target.alive:
                 await message.answer("بازیکن زنده نیست.")
                 return
-            target.silence_until_round = (round_no or 0)
+            target.silence_until_round = round_no
             event_type, response = "silence", f"🔇 {tg_name(target_user.display_name or target_user.first_name)} برای این دور ساکت شد."
         elif command == "ترن اضافه":
             if not target.alive or round_no is None:
