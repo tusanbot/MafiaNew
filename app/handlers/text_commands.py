@@ -611,6 +611,46 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         await session.commit()
         if game.status == "running":
             await _refresh_roster(message.bot, session, game, message.chat.id)
+            if command == "سکوت بازیکن" and round_no is not None:
+                # If the target is speaking right now, silence must take effect
+                # immediately rather than leaving their active turn untouched.
+                from app.services.gameplay import current_turn as get_current_turn
+                active_turn = await get_current_turn(session, game.id)
+                if (
+                    active_turn
+                    and active_turn.get("status") in {"active", "paused"}
+                    and active_turn.get("kind") == "main"
+                    and int(active_turn.get("user_id", -1)) == int(target.user_id)
+                ):
+                    from app.handlers.gameplay import (
+                        _finish_turn_message, _delete_turn_challenge_messages,
+                        _send_turn_message, _schedule_auto_next, _turn_transition_locks,
+                    )
+                    lock = _turn_transition_locks.setdefault(game.game_key, __import__("asyncio").Lock())
+                    async with lock:
+                        fresh_turn = await get_current_turn(session, game.id)
+                        if (
+                            fresh_turn
+                            and fresh_turn.get("status") in {"active", "paused"}
+                            and fresh_turn.get("kind") == "main"
+                            and int(fresh_turn.get("user_id", -1)) == int(target.user_id)
+                        ):
+                            await _finish_turn_message(message.bot, session, game, fresh_turn)
+                            await _delete_turn_challenge_messages(message.bot, session, game, fresh_turn)
+                            result = await next_turn(session, game)
+                            if result.get("kind") == "finished_day":
+                                await message.bot.send_message(
+                                    message.chat.id,
+                                    "🗳 نوبت‌های این دور تمام شد. آماده رأی‌گیری هستید.",
+                                    reply_markup=__import__("app.handlers.keyboards", fromlist=["day_keyboard"]).day_keyboard(
+                                        game.game_key, await alive_players(session, game.id)
+                                    ),
+                                )
+                            else:
+                                new_turn = await get_current_turn(session, game.id)
+                                if new_turn:
+                                    await _send_turn_message(message.bot, session, game, message.chat.id, new_turn)
+                                    await _schedule_auto_next(message.bot, game.game_key, message.chat.id)
     await message.answer(response)
 
 
