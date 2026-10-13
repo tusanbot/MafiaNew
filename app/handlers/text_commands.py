@@ -683,27 +683,43 @@ async def text_rebuild_current_turn(message: Message, state: FSMContext) -> None
         if not await _is_group_manager(message.bot, session, game, message):
             await message.answer("فقط گرداننده یا مدیر گروه می‌تواند پیام ترن فعلی را بازسازی کند.")
             return
-        turn = await current_turn(session, game.id)
+        from app.services.gameplay import current_turn as get_current_turn
+        turn = await get_current_turn(session, game.id)
         if not turn or turn.get("status") not in {"active", "paused"}:
             await message.answer("در حال حاضر ترن فعالی برای بازسازی وجود ندارد.")
             return
-        from app.handlers.gameplay import _finish_turn_message, _send_turn_message, _schedule_auto_next
+        from app.handlers.gameplay import (
+            _finish_turn_message, _send_turn_message, _schedule_auto_next,
+            _turn_transition_locks,
+        )
+        lock = _turn_transition_locks.setdefault(game.game_key, __import__("asyncio").Lock())
         try:
-            # Mark the old public message inactive before sending a fresh keyboard.
-            # The persisted turn_state and started_at are untouched, so the timer
-            # continues from its original start time.
-            await _finish_turn_message(message.bot, session, game, turn)
-            rebuilt = await _send_turn_message(message.bot, session, game, message.chat.id, turn)
-            if not rebuilt:
-                await message.answer("بازسازی پیام ترن انجام نشد؛ لطفاً دوباره تلاش کن.")
-                return
-            await _schedule_auto_next(message.bot, game.game_key, message.chat.id, rebuilt.message_id)
+            async with lock:
+                # Re-check after acquiring the same lock used by manual/automatic
+                # next so this repair cannot race a turn transition.
+                fresh_turn = await get_current_turn(session, game.id)
+                if (
+                    not fresh_turn
+                    or fresh_turn.get("status") not in {"active", "paused"}
+                    or fresh_turn.get("kind") != turn.get("kind")
+                    or int(fresh_turn.get("user_id", -1)) != int(turn.get("user_id", -1))
+                    or fresh_turn.get("started_at") != turn.get("started_at")
+                ):
+                    await message.answer("نوبت در حین بازسازی تغییر کرد؛ دوباره دستور «ترن فعلی» را بفرست.")
+                    return
+                # Only retire the old Telegram message; the persisted turn state
+                # and started_at remain unchanged, preserving the timer.
+                await _finish_turn_message(message.bot, session, game, fresh_turn)
+                rebuilt = await _send_turn_message(message.bot, session, game, message.chat.id, fresh_turn)
+                if not rebuilt:
+                    await message.answer("بازسازی پیام ترن انجام نشد؛ لطفاً دوباره تلاش کن.")
+                    return
+                await _schedule_auto_next(message.bot, game.game_key, message.chat.id, rebuilt.message_id)
         except Exception:
             logger.exception("Failed to rebuild current turn message for game %s", game.id)
             await message.answer("❌ بازسازی پیام ترن انجام نشد. خطا ثبت شد؛ دوباره تلاش کن.")
             return
     await message.answer("✅ پیام ترن فعلی بازسازی شد؛ زمان باقی‌مانده تغییر نکرد.")
-
 
 @router.message(_exact("سکوت"))
 async def text_silence_short(message: Message, state: FSMContext) -> None:
