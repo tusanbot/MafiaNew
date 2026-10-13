@@ -3289,6 +3289,16 @@ async def _result_payload(session, game, view: str) -> tuple[str, str]:
     return title, text
 
 
+def _result_private_keyboard(game_id: int) -> InlineKeyboardMarkup:
+    # A private result message needs tab navigation, but not the group-only
+    # "show result for me" action that would be invalid inside a DM.
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="🏆 رتبه‌بندی", callback_data=f"gameresult:view:ranking:{game_id}"),
+        InlineKeyboardButton(text="🎭 نقش‌ها", callback_data=f"gameresult:view:roles:{game_id}"),
+        InlineKeyboardButton(text="🏁 نتیجه بازی", callback_data=f"gameresult:view:result:{game_id}"),
+    ]])
+
+
 def _result_rich_view(game_id: int, title: str, text: str) -> str:
     # Keep view content and keyboard separate. Passing a canonical keyboard
     # to the Rich Message transport rebuilds every tab's controls on each edit.
@@ -3350,12 +3360,12 @@ async def game_result_private(callback: CallbackQuery) -> None:
         ))
         if viewer and viewer.chat_id == callback.from_user.id:
             try:
-                await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, reply_markup=game_result_keyboard(game.group_id, game.id), is_rtl=True)
+                await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
             except Exception:
                 sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=game_result_keyboard(game.group_id, game.id), is_rtl=True)
                 viewer.message_id = sent.message_id
         else:
-            sent = await send_rich_message(callback.bot, callback.from_user.id, rich, is_rtl=True)
+            sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
             if viewer:
                 viewer.chat_id = callback.from_user.id
                 viewer.message_id = sent.message_id
@@ -3428,10 +3438,12 @@ async def game_result_view(callback: CallbackQuery) -> None:
             try:
                 await edit_rich_message(
                     callback.bot, callback.message.chat.id, callback.message.message_id,
-                    rich_view, is_rtl=True,
+                    rich_view, reply_markup=_result_private_keyboard(game.id), is_rtl=True,
                 )
             except Exception:
-                await callback.message.edit_text(text, parse_mode="HTML")
+                await callback.message.edit_text(
+                    text, reply_markup=_result_private_keyboard(game.id), parse_mode="HTML"
+                )
         await session.commit()
     await callback.answer()
 
