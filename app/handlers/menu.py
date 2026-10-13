@@ -3362,7 +3362,7 @@ async def game_result_private(callback: CallbackQuery) -> None:
             try:
                 await edit_rich_message(callback.bot, viewer.chat_id, viewer.message_id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
             except Exception:
-                sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=game_result_keyboard(game.group_id, game.id), is_rtl=True)
+                sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
                 viewer.message_id = sent.message_id
         else:
             sent = await send_rich_message(callback.bot, callback.from_user.id, rich, reply_markup=_result_private_keyboard(game.id), is_rtl=True)
