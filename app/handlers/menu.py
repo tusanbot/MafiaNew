@@ -3251,7 +3251,9 @@ async def _game_result_rich_html(session, game, winner: str) -> str:
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game.id}">🏆 رتبه‌بندی</tg-button>'
         f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game.id}">🎭 نقش‌ها</tg-button>'
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game.id}">🏁 نتیجه بازی</tg-button>'
-        f'<tg-button type="callback_data" style="link" data="gameresult:private:{game.id}">📩 نمایش نتیجه برای من</tg-button>'
+        '</tg-button-row>'
+        '<tg-button-row align="center">'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:private:{game.id}">📩 نمایش نتیجه برای من</tg-button>'
         '</tg-button-row></p>'
     )
 
@@ -3287,7 +3289,9 @@ def _result_rich_view(game_id: int, title: str, text: str) -> str:
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:ranking:{game_id}">🏆 رتبه‌بندی</tg-button>'
         f'<tg-button type="callback_data" style="success" data="gameresult:view:roles:{game_id}">🎭 نقش‌ها</tg-button>'
         f'<tg-button type="callback_data" style="primary" data="gameresult:view:result:{game_id}">🏁 نتیجه بازی</tg-button>'
-        f'<tg-button type="callback_data" style="link" data="gameresult:private:{game_id}">📩 نمایش نتیجه برای من</tg-button>'
+        '</tg-button-row>'
+        '<tg-button-row align="center">'
+        f'<tg-button type="callback_data" style="primary" data="gameresult:private:{game_id}">📩 نمایش نتیجه برای من</tg-button>'
         '</tg-button-row></p>'
     )
 
