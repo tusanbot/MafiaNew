@@ -954,8 +954,11 @@ async def start_day_turns(session, game, first_user_id: int | None = None):
     silent_ids = {user.id for player, user, _ in players if player.silence_until_round == round_no}
     normal = [user.id for _, user, _ in players if user.id not in silent_ids]
     if first_user_id in normal:
-        normal.remove(first_user_id)
-        normal.insert(0, first_user_id)
+        # Preserve the physical seat order after the selected leader. The old
+        # implementation moved the leader to index 0 and then jumped back to
+        # seat 1, which made the speaking sequence disagree with the lobby list.
+        leader_index = normal.index(first_user_id)
+        normal = normal[leader_index:] + normal[:leader_index]
     if not normal:
         raise ValueError("همه بازیکنان زنده این دور ساکت هستند.")
     extra_queue = [
