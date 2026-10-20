@@ -2762,6 +2762,18 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
             )
 
 
+async def _can_change_game_host(session, game) -> bool:
+    """Host changes are allowed only before role distribution."""
+    if not game or game.status != "waiting":
+        return False
+    assigned_role = await session.scalar(
+        select(GamePlayer.id)
+        .where(GamePlayer.game_id == game.id, GamePlayer.role_id.is_not(None))
+        .limit(1)
+    )
+    return assigned_role is None
+
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:host:"))
 async def gameadmin_host_select(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -2771,8 +2783,8 @@ async def gameadmin_host_select(callback: CallbackQuery) -> None:
     context = host_parts[3] if len(host_parts) > 3 else "lobby"
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+        if not await _can_change_game_host(session, game):
+            await callback.answer("🔒 تغییر گرداننده پس از پخش نقش‌ها مجاز نیست؛ تغییر گرداننده فقط پیش از پخش نقش امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2807,8 +2819,8 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
     host_raw = parts[-1]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+        if not await _can_change_game_host(session, game):
+            await callback.answer("🔒 تغییر گرداننده پس از پخش نقش‌ها مجاز نیست؛ تغییر گرداننده فقط پیش از پخش نقش امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2825,8 +2837,25 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
         host = await UserRepository(session).upsert_from_telegram(
             tg_user.id, tg_user.username, tg_user.first_name or "", tg_user.last_name
         )
+        previous_host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if previous_host and previous_host.id == host.id:
+            await callback.answer("این کاربر از قبل گرداننده بازی است.")
+            return
+        game_id = game.id
         game.host_user_id = host.id
         await session.commit()
+        if previous_host and previous_host.telegram_id:
+            try:
+                await callback.bot.send_message(
+                    previous_host.telegram_id,
+                    "🔔 <b>اطلاع‌رسانی تغییر گرداننده</b>\n\n"
+                    f"گردانندگی بازی #{game_id} به {escape(host.display_name or host.first_name or 'گرداننده جدید')} منتقل شد.\n"
+                    "این تغییر پیش از پخش نقش‌ها انجام شده است.",
+                    parse_mode="HTML",
+                )
+            except Exception:
+                # Host changes remain committed even if the previous host has not opened the bot in private.
+                pass
         scenario = await session.get(Scenario, game.scenario_id)
         if context == "lobby":
             from app.services.game import render_lobby
