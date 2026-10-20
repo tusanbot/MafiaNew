@@ -555,8 +555,8 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
                 target.alive, target.exit_type = False, "kick"
                 private_notice = f"⛔ به دلیل رسیدن به {target.warning_count} تذکر، از بازی به‌صورت انضباطی اخراج شدید."
                 group_notice = f"⛔ {target_name} به دلیل رسیدن به {target.warning_count} تذکر، به‌صورت انضباطی از بازی اخراج شد."
-            if private_notice:
-                response += "\n\n" + private_notice
+            if group_notice:
+                response += "\n\n" + group_notice
         elif command == "تذکر-":
             if target.warning_count <= 0:
                 await message.answer("این بازیکن تذکری ندارد.")
