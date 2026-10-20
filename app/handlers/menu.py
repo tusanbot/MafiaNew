@@ -2763,15 +2763,8 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
 
 
 async def _can_change_game_host(session, game) -> bool:
-    """Host changes are allowed only before role distribution."""
-    if not game or game.status != "waiting":
-        return False
-    assigned_role = await session.scalar(
-        select(GamePlayer.id)
-        .where(GamePlayer.game_id == game.id, GamePlayer.role_id.is_not(None))
-        .limit(1)
-    )
-    return assigned_role is None
+    """Allow changing the host while a game is active, including after roles are dealt."""
+    return bool(game and game.status in {"waiting", "running"})
 
 
 @router.callback_query(lambda c: c.data.startswith("gameadmin:host:"))
@@ -2784,7 +2777,7 @@ async def gameadmin_host_select(callback: CallbackQuery) -> None:
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not await _can_change_game_host(session, game):
-            await callback.answer("🔒 تغییر گرداننده پس از پخش نقش‌ها مجاز نیست؛ تغییر گرداننده فقط پیش از پخش نقش امکان‌پذیر است.", show_alert=True)
+            await callback.answer("تغییر گرداننده فقط برای بازیِ در حال اجرا یا لابی فعال امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2850,7 +2843,11 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
                     previous_host.telegram_id,
                     "🔔 <b>اطلاع‌رسانی تغییر گرداننده</b>\n\n"
                     f"گردانندگی بازی #{game_id} به {escape(host.display_name or host.first_name or 'گرداننده جدید')} منتقل شد.\n"
-                    "این تغییر پیش از پخش نقش‌ها انجام شده است.",
+                    (
+                        "⚠️ این تغییر پس از پخش نقش‌ها انجام شده است. اگر این تغییر را تأیید نکرده‌اید، فوراً با مدیر گروه هماهنگ کنید."
+                        if game.status == "running"
+                        else "این تغییر در مرحله لابی انجام شده است."
+                    ),
                     parse_mode="HTML",
                 )
             except Exception:
