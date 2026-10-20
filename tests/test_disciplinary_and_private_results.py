@@ -55,10 +55,12 @@ class _RoleCheckSession:
         return self.assigned_role
 
 
-def test_host_change_is_allowed_only_before_roles_are_distributed():
+def test_host_change_remains_allowed_after_roles_are_distributed():
     waiting_game = SimpleNamespace(id=7, status="waiting")
     running_game = SimpleNamespace(id=7, status="running")
+    finished_game = SimpleNamespace(id=7, status="finished")
 
     assert asyncio.run(_can_change_game_host(_RoleCheckSession(), waiting_game))
-    assert not asyncio.run(_can_change_game_host(_RoleCheckSession(assigned_role=55), waiting_game))
-    assert not asyncio.run(_can_change_game_host(_RoleCheckSession(), running_game))
+    assert asyncio.run(_can_change_game_host(_RoleCheckSession(assigned_role=55), waiting_game))
+    assert asyncio.run(_can_change_game_host(_RoleCheckSession(assigned_role=55), running_game))
+    assert not asyncio.run(_can_change_game_host(_RoleCheckSession(), finished_game))
