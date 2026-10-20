@@ -3305,6 +3305,81 @@ def _result_rich_view(game_id: int, title: str, text: str) -> str:
     rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
     return f"<h2>{title}</h2>{rich_body}"
 
+@router.message(lambda m: m.chat.type == "private" and bool(m.text) and " ".join(m.text.strip().split()) in {"نتیجه بازی", "نتیجه"})
+async def text_private_game_result(message: Message) -> None:
+    """Open the latest finished game result in private with working result tabs."""
+    if not message.from_user:
+        return
+    async with session_factory() as session:
+        user = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+        if not user:
+            await message.answer("ابتدا ربات را شروع کن تا حساب کاربری‌ات ثبت شود.")
+            return
+        game = await session.scalar(
+            select(Game)
+            .join(GamePlayer, GamePlayer.game_id == Game.id)
+            .where(
+                GamePlayer.user_id == user.id,
+                GamePlayer.is_reserved.is_(False),
+                Game.status == "finished",
+            )
+            .order_by(Game.id.desc())
+        )
+        if not game:
+            await message.answer("🏁 هنوز نتیجه بازی پایان‌یافته‌ای برای شما ثبت نشده است.")
+            return
+
+        title, result_text = await _result_payload(session, game, "result")
+        rich = _result_rich_view(game.id, title, result_text)
+        keyboard = _result_private_keyboard(game.id)
+        viewer = await session.scalar(
+            select(GameResultViewer).where(
+                GameResultViewer.game_id == game.id,
+                GameResultViewer.user_id == user.id,
+            )
+        )
+
+        if viewer and viewer.chat_id == message.from_user.id:
+            try:
+                await edit_rich_message(
+                    message.bot, viewer.chat_id, viewer.message_id, rich,
+                    reply_markup=keyboard, is_rtl=True,
+                )
+            except Exception:
+                pass
+            else:
+                viewer.current_view = "result"
+                await session.commit()
+                await message.answer("✅ نتیجه آخرین بازی در پیام قبلی به‌روزرسانی شد.")
+                return
+
+        try:
+            sent = await send_rich_message(
+                message.bot, message.from_user.id, rich,
+                reply_markup=keyboard, is_rtl=True,
+            )
+        except Exception:
+            # Rich Message rendering may be unavailable for some clients; retain
+            # working inline tabs with a normal Telegram HTML message.
+            sent = await message.answer(
+                result_text, reply_markup=keyboard, parse_mode="HTML",
+            )
+
+        if viewer:
+            viewer.chat_id = message.from_user.id
+            viewer.message_id = sent.message_id
+            viewer.current_view = "result"
+        else:
+            session.add(GameResultViewer(
+                game_id=game.id,
+                user_id=user.id,
+                chat_id=message.from_user.id,
+                message_id=sent.message_id,
+                current_view="result",
+            ))
+        await session.commit()
+
+
 async def _result_group_access(callback: CallbackQuery, session, game) -> tuple[bool, str]:
     if callback.message.chat.type not in ("group", "supergroup"):
         return True, ""
