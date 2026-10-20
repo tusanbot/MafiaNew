@@ -2834,6 +2834,11 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
         if previous_host and previous_host.id == host.id:
             await callback.answer("این کاربر از قبل گرداننده بازی است.")
             return
+        roles_distributed = await session.scalar(
+            select(GamePlayer.id)
+            .where(GamePlayer.game_id == game.id, GamePlayer.role_id.is_not(None))
+            .limit(1)
+        ) is not None
         game_id = game.id
         game.host_user_id = host.id
         await session.commit()
@@ -2845,7 +2850,7 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
                     f"گردانندگی بازی #{game_id} به {escape(host.display_name or host.first_name or 'گرداننده جدید')} منتقل شد.\n"
                     (
                         "⚠️ این تغییر پس از پخش نقش‌ها انجام شده است. اگر این تغییر را تأیید نکرده‌اید، فوراً با مدیر گروه هماهنگ کنید."
-                        if game.status == "running"
+                        if roles_distributed or game.status == "running"
                         else "این تغییر در مرحله لابی انجام شده است."
                     ),
                     parse_mode="HTML",
