@@ -450,7 +450,7 @@ async def _refresh_roster(bot, session, game, chat_id: int | None = None):
         pass
 
 
-@router.message(lambda m: bool(m.text) and _normalize_command_text(m.text).startswith("حذف تذکر"))
+@router.message(lambda m: bool(m.text) and (_normalize_command_text(m.text).startswith("حذف تذکر") or _normalize_command_text(m.text).startswith("تذکر منفی")))
 async def text_remove_warning(message: Message, state: FSMContext) -> None:
     if message.chat.type not in {"group", "supergroup"}:
         return
@@ -459,7 +459,7 @@ async def text_remove_warning(message: Message, state: FSMContext) -> None:
         return
     command = _normalize_command_text(message.text)
     parts = command.split()
-    if parts[0:2] != ["حذف", "تذکر"]:
+    if parts[0:2] not in (["حذف", "تذکر"], ["تذکر", "منفی"]):
         return
     if len(parts) == 1 or len(parts) == 2:
         amount = 1
@@ -469,7 +469,7 @@ async def text_remove_warning(message: Message, state: FSMContext) -> None:
             await message.answer("تعداد تذکر باید بیشتر از صفر باشد.")
             return
     else:
-        await message.answer("فرمت درست: «حذف تذکر» یا «حذف تذکر 2»")
+        await message.answer("فرمت درست: «حذف تذکر»، «حذف تذکر 2»، «تذکر منفی» یا «تذکر منفی 2»")
         return
 
     async with session_factory() as session:
@@ -477,8 +477,8 @@ async def text_remove_warning(message: Message, state: FSMContext) -> None:
         if not game or game.status not in {"waiting", "running"}:
             await message.answer("بازی فعالی وجود ندارد.")
             return
-        if not await _is_group_manager(message.bot, session, game, message):
-            await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند تذکر را حذف کند.")
+        if not await _is_group_manager(message.bot, session, game, message, require_host=True):
+            await message.answer("فقط گرداننده بازی می‌تواند تذکر را حذف کند.")
             return
         result, error = await _reply_target(message, session, game)
         if error:
@@ -516,8 +516,8 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         if not game or game.status not in {"waiting", "running"}:
             await message.answer("بازی فعالی وجود ندارد.")
             return
-        if not await _is_group_manager(message.bot, session, game, message):
-            await message.answer("فقط گرداننده بازی یا مدیر گروه می‌تواند این عملیات را انجام دهد.")
+        if not await _is_group_manager(message.bot, session, game, message, require_host=True):
+            await message.answer("فقط گرداننده بازی می‌تواند این عملیات را انجام دهد.")
             return
         result, error = await _reply_target(message, session, game)
         if error:
@@ -526,6 +526,8 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         target, target_user = result
         command = _normalize_command_text(message.text)
         round_no = await current_round(session, game.id) if game.status == "running" else None
+        private_notice = None
+        group_notice = None
 
         if command == "ترن اضافه":
             if not target.alive or round_no is None:
@@ -543,11 +545,18 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
             target.warning_count += 1
             penalty = min(target.warning_count, 5)
             target_user.score -= penalty
-            event_type, response = "warning", f"⚠️ تذکر {target.warning_count} برای {tg_name(target_user.display_name or target_user.first_name)} ثبت شد."
+            target_name = tg_name(target_user.display_name or target_user.first_name or "بازیکن")
+            event_type, response = "warning", f"⚠️ تذکر {target.warning_count} برای {target_name} ثبت شد."
             if target.warning_count >= 4 and game.auto_silence_warnings and round_no is not None:
                 target.silence_until_round = round_no + 1
+                private_notice = f"🔇 به دلیل رسیدن به {target.warning_count} تذکر، سکوت انضباطی برای شما فعال شد."
+                group_notice = f"🔇 {target_name} به دلیل رسیدن به {target.warning_count} تذکر، سکوت انضباطی شد."
             if target.warning_count >= 5 and game.auto_kick_warnings:
                 target.alive, target.exit_type = False, "kick"
+                private_notice = f"⛔ به دلیل رسیدن به {target.warning_count} تذکر، از بازی به‌صورت انضباطی اخراج شدید."
+                group_notice = f"⛔ {target_name} به دلیل رسیدن به {target.warning_count} تذکر، به‌صورت انضباطی از بازی اخراج شد."
+            if group_notice:
+                response += "\n\n" + group_notice
         elif command == "تذکر-":
             if target.warning_count <= 0:
                 await message.answer("این بازیکن تذکری ندارد.")
@@ -561,6 +570,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
                 return
             target.alive, target.exit_type = False, "kick"
             event_type, response = "player_kicked", f"⛔ {tg_name(target_user.display_name or target_user.first_name)} از بازی کیک شد."
+            private_notice = "⛔ شما توسط گرداننده از بازی اخراج شدید."
         elif command == "سکوت بازیکن":
             if game.status != "running" or round_no is None:
                 await message.answer("سکوت فقط هنگام اجرای بازی قابل ثبت است.")
@@ -570,6 +580,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
                 return
             target.silence_until_round = round_no
             event_type, response = "silence", f"🔇 {tg_name(target_user.display_name or target_user.first_name)} برای این دور ساکت شد."
+            private_notice = "🔇 گرداننده شما را تا پایان این دور ساکت کرده است."
         elif command == "ترن اضافه":
             if not target.alive or round_no is None:
                 await message.answer("ترن اضافه فقط برای بازیکن زنده در بازی در حال اجرا قابل ثبت است.")
@@ -655,6 +666,12 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
                                     await _send_turn_message(message.bot, session, game, message.chat.id, new_turn)
                                     await _schedule_auto_next(message.bot, game.game_key, message.chat.id)
     await message.answer(response)
+    if private_notice and target_user.telegram_id:
+        try:
+            await message.bot.send_message(target_user.telegram_id, private_notice)
+        except Exception:
+            # The player may not have opened the bot in private; the group notice is still sent.
+            logger.info("Could not send disciplinary DM to Telegram user %s", target_user.telegram_id)
 
 
 @router.message(_exact("پنل", "مدیریت"))
@@ -969,6 +986,7 @@ async def text_commands(message: Message, state: FSMContext) -> None:
         "<code>نقش من</code> — نمایش نقش بازی فعلی",
         "<code>تبدیل به متن</code> — تبدیل پیام صوتی ریپلای‌شده به متن (فقط گرداننده)",
         "<code>رتبه</code> — نمایش رتبه‌بندی",
+        "<code>نتیجه بازی</code> — نمایش نتیجه آخرین بازی تمام‌شده با تب‌های نتیجه/نقش‌ها/رتبه‌بندی (فقط پیوی)",
         "",
         "بازی:",
         "<code>لابی</code> — نمایش لابی",
@@ -989,7 +1007,7 @@ async def text_commands(message: Message, state: FSMContext) -> None:
         "",
         "مدیریت بازیکن — روی پیام بازیکن ریپلای کن:",
         "<code>تذکر</code> — ثبت تذکر",
-        "<code>تذکر-</code> — حذف یک تذکر",
+        "<code>تذکر-</code> / <code>تذکر منفی</code> / <code>حذف تذکر</code> — حذف تذکر (فقط گرداننده)",
         "<code>کیک بازیکن</code> — خروج بازیکن با کیک",
         "<code>سکوت بازیکن</code> — ساکت کردن بازیکن برای این دور",
         "<code>ترن اضافه</code> — دادن ترن اضافه",

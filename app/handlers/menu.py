@@ -2762,6 +2762,11 @@ async def gameadmin_set_scenario(callback: CallbackQuery) -> None:
             )
 
 
+async def _can_change_game_host(session, game) -> bool:
+    """Allow changing the host while a game is active, including after roles are dealt."""
+    return bool(game and game.status in {"waiting", "running"})
+
+
 @router.callback_query(lambda c: c.data.startswith("gameadmin:host:"))
 async def gameadmin_host_select(callback: CallbackQuery) -> None:
     if not callback.message or not callback.from_user:
@@ -2771,8 +2776,8 @@ async def gameadmin_host_select(callback: CallbackQuery) -> None:
     context = host_parts[3] if len(host_parts) > 3 else "lobby"
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+        if not await _can_change_game_host(session, game):
+            await callback.answer("تغییر گرداننده فقط برای بازیِ در حال اجرا یا لابی فعال امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2807,8 +2812,8 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
     host_raw = parts[-1]
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
-        if not game or game.status != "waiting":
-            await callback.answer("تغییر گرداننده فقط در لابی امکان‌پذیر است.", show_alert=True)
+        if not await _can_change_game_host(session, game):
+            await callback.answer("تغییر گرداننده فقط برای بازیِ در حال اجرا یا لابی فعال امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2825,8 +2830,34 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
         host = await UserRepository(session).upsert_from_telegram(
             tg_user.id, tg_user.username, tg_user.first_name or "", tg_user.last_name
         )
+        previous_host = await session.get(User, game.host_user_id) if game.host_user_id else None
+        if previous_host and previous_host.id == host.id:
+            await callback.answer("این کاربر از قبل گرداننده بازی است.")
+            return
+        roles_distributed = await session.scalar(
+            select(GamePlayer.id)
+            .where(GamePlayer.game_id == game.id, GamePlayer.role_id.is_not(None))
+            .limit(1)
+        ) is not None
+        game_id = game.id
         game.host_user_id = host.id
         await session.commit()
+        if previous_host and previous_host.telegram_id:
+            try:
+                await callback.bot.send_message(
+                    previous_host.telegram_id,
+                    "🔔 <b>اطلاع‌رسانی تغییر گرداننده</b>\n\n"
+                    f"گردانندگی بازی #{game_id} به {escape(host.display_name or host.first_name or 'گرداننده جدید')} منتقل شد.\n"
+                    + (
+                        "⚠️ این تغییر پس از پخش نقش‌ها انجام شده است. اگر این تغییر را تأیید نکرده‌اید، فوراً با مدیر گروه هماهنگ کنید."
+                        if roles_distributed or game.status == "running"
+                        else "این تغییر در مرحله لابی انجام شده است."
+                    ),
+                    parse_mode="HTML",
+                )
+            except Exception:
+                # Host changes remain committed even if the previous host has not opened the bot in private.
+                pass
         scenario = await session.get(Scenario, game.scenario_id)
         if context == "lobby":
             from app.services.game import render_lobby
@@ -3304,6 +3335,81 @@ def _result_rich_view(game_id: int, title: str, text: str) -> str:
     # to the Rich Message transport rebuilds every tab's controls on each edit.
     rich_body = text if title != "🏁 نتیجه بازی" else text.replace("\n", "<br/>")
     return f"<h2>{title}</h2>{rich_body}"
+
+@router.message(lambda m: m.chat.type == "private" and bool(m.text) and " ".join(m.text.strip().split()) in {"نتیجه بازی", "نتیجه"})
+async def text_private_game_result(message: Message) -> None:
+    """Open the latest finished game result in private with working result tabs."""
+    if not message.from_user:
+        return
+    async with session_factory() as session:
+        user = await UserRepository(session).get_by_telegram_id(message.from_user.id)
+        if not user:
+            await message.answer("ابتدا ربات را شروع کن تا حساب کاربری‌ات ثبت شود.")
+            return
+        game = await session.scalar(
+            select(Game)
+            .join(GamePlayer, GamePlayer.game_id == Game.id)
+            .where(
+                GamePlayer.user_id == user.id,
+                GamePlayer.is_reserved.is_(False),
+                Game.status == "finished",
+            )
+            .order_by(Game.id.desc())
+        )
+        if not game:
+            await message.answer("🏁 هنوز نتیجه بازی پایان‌یافته‌ای برای شما ثبت نشده است.")
+            return
+
+        title, result_text = await _result_payload(session, game, "result")
+        rich = _result_rich_view(game.id, title, result_text)
+        keyboard = _result_private_keyboard(game.id)
+        viewer = await session.scalar(
+            select(GameResultViewer).where(
+                GameResultViewer.game_id == game.id,
+                GameResultViewer.user_id == user.id,
+            )
+        )
+
+        if viewer and viewer.chat_id == message.from_user.id:
+            try:
+                await edit_rich_message(
+                    message.bot, viewer.chat_id, viewer.message_id, rich,
+                    reply_markup=keyboard, is_rtl=True,
+                )
+            except Exception:
+                pass
+            else:
+                viewer.current_view = "result"
+                await session.commit()
+                await message.answer("✅ نتیجه آخرین بازی در پیام قبلی به‌روزرسانی شد.")
+                return
+
+        try:
+            sent = await send_rich_message(
+                message.bot, message.from_user.id, rich,
+                reply_markup=keyboard, is_rtl=True,
+            )
+        except Exception:
+            # Rich Message rendering may be unavailable for some clients; retain
+            # working inline tabs with a normal Telegram HTML message.
+            sent = await message.answer(
+                result_text, reply_markup=keyboard, parse_mode="HTML",
+            )
+
+        if viewer:
+            viewer.chat_id = message.from_user.id
+            viewer.message_id = sent.message_id
+            viewer.current_view = "result"
+        else:
+            session.add(GameResultViewer(
+                game_id=game.id,
+                user_id=user.id,
+                chat_id=message.from_user.id,
+                message_id=sent.message_id,
+                current_view="result",
+            ))
+        await session.commit()
+
 
 async def _result_group_access(callback: CallbackQuery, session, game) -> tuple[bool, str]:
     if callback.message.chat.type not in ("group", "supergroup"):
