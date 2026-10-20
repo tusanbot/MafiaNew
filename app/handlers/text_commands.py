@@ -527,6 +527,7 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
         command = _normalize_command_text(message.text)
         round_no = await current_round(session, game.id) if game.status == "running" else None
         private_notice = None
+        group_notice = None
 
         if command == "ترن اضافه":
             if not target.alive or round_no is None:
@@ -549,9 +550,11 @@ async def text_reply_management(message: Message, state: FSMContext) -> None:
             if target.warning_count >= 4 and game.auto_silence_warnings and round_no is not None:
                 target.silence_until_round = round_no + 1
                 private_notice = f"🔇 به دلیل رسیدن به {target.warning_count} تذکر، سکوت انضباطی برای شما فعال شد."
+                group_notice = f"🔇 {target_name} به دلیل رسیدن به {target.warning_count} تذکر، سکوت انضباطی شد."
             if target.warning_count >= 5 and game.auto_kick_warnings:
                 target.alive, target.exit_type = False, "kick"
                 private_notice = f"⛔ به دلیل رسیدن به {target.warning_count} تذکر، از بازی به‌صورت انضباطی اخراج شدید."
+                group_notice = f"⛔ {target_name} به دلیل رسیدن به {target.warning_count} تذکر، به‌صورت انضباطی از بازی اخراج شد."
             if private_notice:
                 response += "\n\n" + private_notice
         elif command == "تذکر-":
