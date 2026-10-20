@@ -469,7 +469,7 @@ async def text_remove_warning(message: Message, state: FSMContext) -> None:
             await message.answer("تعداد تذکر باید بیشتر از صفر باشد.")
             return
     else:
-        await message.answer("فرمت درست: «حذف تذکر» یا «حذف تذکر 2»")
+        await message.answer("فرمت درست: «حذف تذکر»، «حذف تذکر 2»، «تذکر منفی» یا «تذکر منفی 2»")
         return
 
     async with session_factory() as session:
