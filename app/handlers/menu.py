@@ -2813,7 +2813,7 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
     async with session_factory() as session:
         game = await GameRepository.get_by_key(session, key)
         if not await _can_change_game_host(session, game):
-            await callback.answer("🔒 تغییر گرداننده پس از پخش نقش‌ها مجاز نیست؛ تغییر گرداننده فقط پیش از پخش نقش امکان‌پذیر است.", show_alert=True)
+            await callback.answer("تغییر گرداننده فقط برای بازیِ در حال اجرا یا لابی فعال امکان‌پذیر است.", show_alert=True)
             return
         group = await _selected_group(session, callback.bot, callback.from_user.id, game.group_id)
         if not group:
@@ -2848,7 +2848,7 @@ async def gameadmin_set_host(callback: CallbackQuery) -> None:
                     previous_host.telegram_id,
                     "🔔 <b>اطلاع‌رسانی تغییر گرداننده</b>\n\n"
                     f"گردانندگی بازی #{game_id} به {escape(host.display_name or host.first_name or 'گرداننده جدید')} منتقل شد.\n"
-                    (
+                    + (
                         "⚠️ این تغییر پس از پخش نقش‌ها انجام شده است. اگر این تغییر را تأیید نکرده‌اید، فوراً با مدیر گروه هماهنگ کنید."
                         if roles_distributed or game.status == "running"
                         else "این تغییر در مرحله لابی انجام شده است."
